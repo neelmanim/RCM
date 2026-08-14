@@ -1,4 +1,4 @@
-# Production Image for Conversive CRM (React Backend)
+# Production Image for RCM (React Backend)
 FROM python:3.9-slim
 
 WORKDIR /app

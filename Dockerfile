@@ -1,4 +1,4 @@
-# Production Image for Conversive CRM
+# Production Image for RCM
 FROM python:3.9-slim
 
 WORKDIR /app
