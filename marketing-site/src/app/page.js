@@ -14,10 +14,11 @@ export default function Home() {
           <a href="#features" className="hover:text-white transition-colors">Features</a>
           <a href="/blog" className="hover:text-white transition-colors">Blog</a>
           <a href="/status" className="hover:text-white transition-colors">Status</a>
+          <a href="https://app.alternatecrm.com" className="hover:text-white transition-colors">Login</a>
         </div>
-        <button className="px-5 py-2.5 text-sm font-medium rounded-full bg-white/10 border border-white/20 backdrop-blur-md hover:bg-white/20 transition-all">
+        <a href="https://app.alternatecrm.com" className="px-5 py-2.5 text-sm font-medium rounded-full bg-white/10 border border-white/20 backdrop-blur-md hover:bg-white/20 transition-all">
           Get Started
-        </button>
+        </a>
       </nav>
 
       {/* Hero Section */}
