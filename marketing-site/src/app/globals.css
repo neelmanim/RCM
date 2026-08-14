@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@theme {
+  --color-rcm-primary: #3b82f6; /* example blue */
+  --color-rcm-dark: #0f172a;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f172a;
+    --foreground: #f8fafc;
+  }
+}
+
+html, body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
