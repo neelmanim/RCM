@@ -1,0 +1,37 @@
+/*
+ * calendar-tailwind.css
+ *
+ * Tailwind entry point for the Calendar Hub IIFE bundle ONLY.
+ * Intentionally omits @tailwind base (which resets body, h1-h4, etc.)
+ * to prevent CSS leakage into the Vanilla JS shell.
+ */
+
+/*
+ * Omitting @tailwind base also drops Preflight's global border reset, which
+ * normally does TWO things: `border-width: 0` (so nothing has a border by
+ * default) AND `border-style: solid` (so utility classes that add a width
+ * render as a visible line, not the browser's default `none`). Doing only
+ * the second half (an earlier fix) exposed browser-default border-widths on
+ * buttons/inputs/badges as ugly black boxes. Mirror Preflight's exact rule,
+ * scoped to this bundle, instead of pulling in all of base.
+ *
+ * Must come BEFORE @tailwind utilities below: with equal specificity
+ * (`.calhub *` vs a single utility class), the LATER rule in source order
+ * wins ties — utilities need to win over this reset, not the other way
+ * around, or every border-r/border-b utility gets reset back to 0-width.
+ */
+.calhub, .calhub *, .calhub *::before, .calhub *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+@tailwind components;
+@tailwind utilities;
+
+/* Shared card surface — matches components/ui/Modal.jsx's visual language. */
+@layer components {
+  .calhub-card {
+    @apply bg-white border border-slate-200 rounded-2xl shadow-sm;
+  }
+}

@@ -1,0 +1,76 @@
+/*
+ * rcm-widget-tailwind.css
+ *
+ * Tailwind entry point for the RCM Widget IIFE bundle ONLY.
+ * Intentionally omits @tailwind base (resets body, h1-h4, etc.) to prevent
+ * CSS leakage into the Vanilla JS shell. Mirrors calendar-tailwind.css /
+ * leads-tailwind.css exactly.
+ */
+
+.cwreact, .cwreact *, .cwreact *::before, .cwreact *::after {
+  box-sizing: border-box;
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+/*
+ * Tailwind's omitted @tailwind base ALSO defines the CSS custom-property
+ * defaults (--tw-gradient-*, --tw-ring-*, --tw-shadow-*, --tw-*blur, etc.)
+ * that gradient/ring/shadow/filter/backdrop-filter utilities depend on —
+ * without a fallback anywhere, `var(--tw-gradient-from-position)` etc.
+ * resolve to nothing, silently breaking the whole utility (found via the
+ * FAB's bg-gradient-to-br rendering solid white instead of indigo→purple,
+ * making its white icon invisible). Copied verbatim from Tailwind's own
+ * generated base output, scoped to this bundle only.
+ */
+.cwreact, .cwreact *, .cwreact *::before, .cwreact *::after {
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-gradient-from-position: ;
+  --tw-gradient-via-position: ;
+  --tw-gradient-to-position: ;
+  --tw-ring-inset: ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --tw-blur: ;
+  --tw-brightness: ;
+  --tw-contrast: ;
+  --tw-grayscale: ;
+  --tw-hue-rotate: ;
+  --tw-invert: ;
+  --tw-saturate: ;
+  --tw-sepia: ;
+  --tw-drop-shadow: ;
+  --tw-backdrop-blur: ;
+  --tw-backdrop-brightness: ;
+  --tw-backdrop-contrast: ;
+  --tw-backdrop-grayscale: ;
+  --tw-backdrop-hue-rotate: ;
+  --tw-backdrop-invert: ;
+  --tw-backdrop-opacity: ;
+  --tw-backdrop-saturate: ;
+  --tw-backdrop-sepia: ;
+}
+:where(.cwreact) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+@tailwind components;
+@tailwind utilities;

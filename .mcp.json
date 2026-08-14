@@ -1,0 +1,39 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "uvx",
+      "args": ["code-review-graph", "serve"],
+      "cwd": "E:\\Neel Antigravity Projects\\crmalternate\\RCM",
+      "type": "stdio"
+    },
+    "claude-mem": {
+      "command": "npx",
+      "args": ["-y", "claude-mem@latest", "serve"],
+      "type": "stdio",
+      "env": {
+        "CLAUDE_MEM_PROJECT": "rcm-alternatecrm",
+        "CLAUDE_MEM_AUTO_SAVE": "true",
+        "CLAUDE_MEM_COMPRESSION": "aggressive"
+      }
+    },
+    "headroom": {
+      "command": "headroom",
+      "args": ["mcp", "serve"],
+      "type": "stdio",
+      "env": {
+        "HEADROOM_OUTPUT_SHAPER": "1",
+        "HEADROOM_EMBEDDER_RUNTIME": "default"
+      }
+    },
+    "omni-route": {
+      "command": "npx",
+      "args": ["-y", "omni-route@latest", "mcp"],
+      "type": "stdio",
+      "env": {
+        "OMNI_ROUTE_BASE_URL": "https://omni.route/v1",
+        "OMNI_ROUTE_AUTO_FALLBACK": "true",
+        "OMNI_ROUTE_COMPRESSION": "rtk+caveman"
+      }
+    }
+  }
+}

@@ -1,0 +1,123 @@
+# RCM — Claude Code Agent Instructions
+> Product: **RCM (Relationship Customer Management)**
+> Domain: **https://alternatecrm.com/**
+> Stack: Python/FastAPI backend · Vanilla JS frontend · React (frontend-react, deprioritized)
+
+---
+
+## 🔧 Dev Tools Setup
+
+### 1. OmniRoute — AI Gateway
+Use OmniRoute as the unified LLM gateway for all AI calls in this project.
+- Repo: https://github.com/diegosouzapw/OmniRoute
+- Single endpoint, 330+ providers, auto-fallback on quota limits
+- Saves 15–95% tokens via RTK+Caveman compression
+- **Use this when**: making API calls to any LLM from within RCM code
+
+### 2. Claude Mem — Persistent Context
+Captures session context and injects it back in future sessions.
+- Repo: https://github.com/thedotmack/claude-mem
+- **After every major coding session**: run `claude-mem save` to persist context
+- **At session start**: context is auto-injected — you'll remember previous decisions
+- Prevents re-explaining architecture across sessions
+
+### 3. Headroom — Token Compression
+Compress large file reads, tool outputs, and JSON before LLM processing.
+- Repo: https://github.com/headroomlabs-ai/headroom
+- **Use for**: large JSON API responses, log analysis, RAG chunks
+- Achieves 20–60% token reduction on code, 60–95% on JSON
+- Available as library, proxy, or MCP server
+
+### 4. Claude Code Setup (Official)
+Official Anthropic plugin — sets up Claude Code optimally for this project.
+- Plugin: https://claude.com/plugins/claude-code-setup
+- Run `claude-code-setup` on fresh clone to configure environment
+- Handles CLAUDE.md, git hooks, and MCP tool registration automatically
+
+### 5. Task Observer — Skill Builder
+Watches work sessions, captures corrections, auto-improves agent skills.
+- Repo: https://github.com/rebelytics/one-skill-to-rule-them-all
+- Stores improvements in `.skills/` directory
+- Domain-agnostic — works across backend, frontend, and docs tasks
+- **Run passively**: it observes and captures without interrupting flow
+
+---
+
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+- **Before ANY code change**: run `query_graph` and `get_impact_radius` on symbols you're touching
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+|------|----------|
+| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review — token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+---
+
+## Token Optimization Rules
+
+**IMPORTANT: Minimize token usage. Every tool call and file read costs tokens.**
+
+### Scope Boundaries — Ignore These Paths
+- `frontend-react/` — React migration (deprioritized, not in production)
+- `backend-react/` — React backend (not in production)
+- `tests/screenshots/` — Binary PNG files (never read these)
+- `tests/specs/` — Legacy Playwright spec stubs
+- `docs/daily_logs/` — Session-local notes, not project docs
+
+### Graph Tool Rules
+- Always use `detail_level="minimal"` on graph tools unless full detail is needed
+- When graph tool output is saved to a file, read only the first 50 lines
+- Prefer `file_path_pattern` filters on `find_large_functions_tool`
+
+### File Reading Rules
+- **Never read an entire file over 500 lines** in one call
+- When exploring a route file, read just the function signatures first
+- Avoid re-reading files already viewed in the same conversation
+
+### Artifact Rules
+- Do not rewrite entire artifacts for small changes — use edit tools
+- Keep implementation plans concise — tables over paragraphs
+
+---
+
+## Mandatory Pre-Ship Review
+
+**Before any staging → main promotion, run BOTH:**
+- `/ponytail-review` (diff-scoped)
+- `/ponytail-audit` (repo-wide, scoped to files touched)
+
+Treat this as part of finishing work, not an optional extra step.
+
+---
+
+## Project Context
+
+- **No Conversive or RCM Messaging** — all references have been removed
+- **No test databases** — never commit `.db` files
+- **Secrets go in Railway env vars** — never in code or `.env` files committed to git
+- **Domain**: https://alternatecrm.com/
+- **Deploy target**: Railway (backend) + static hosting (frontend)

@@ -1,0 +1,3268 @@
+[
+  {
+    "version": "v11.0.0",
+    "date": "14 Aug 2026",
+    "family": "11.0",
+    "kind": "major",
+    "tags": [
+      { "label": "✨ NEW", "variant": "success" },
+      { "label": "🐛 FIX", "variant": "danger" }
+    ],
+    "title": "Cadence/Messaging Sandbox, Aircall messaging, Analytics fixes",
+    "items": [
+      "**🧪 Cadence/Messaging Sandbox** — test an entire Sales Cadence end-to-end with real WhatsApp/SMS sends, safely, via Playground's new \"Cadence Test\" tab. Every send redirects to a Sandbox Test Phone Number you configure, never a real lead, and test data never shows up in Analytics.",
+      "**✨ Aircall added as a second messaging provider** alongside RCM Built-in Messaging — pick your active vendor in Settings.",
+      "**⚙️ The \"Conversations\" threshold in Analytics is now configurable** (Settings → Call & Pipeline Settings), instead of a fixed 30 seconds.",
+      "**🐛 Fixed Analytics Hub filters resetting on tab switch** and the SDR Performance table's search icon alignment."
+    ]
+  },
+  {
+    "version": "v10.9.14",
+    "date": "14 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "tags": [
+      { "label": "✨ NEW", "variant": "success" },
+      { "label": "🐛 FIX", "variant": "danger" }
+    ],
+    "summary": "**WhatsApp is now available as a Sales Cadence step** — pick from your account's real approved templates right in the Journey Builder. **Messages sent or received through the RCM Widget are now tracked in RCM** (previously left no record anywhere). **Fixed the Leads Hub Source badge overflowing into other columns** for long file names."
+  },
+  {
+    "version": "v10.9.13",
+    "date": "14 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "tags": [
+      { "label": "✨ NEW", "variant": "success" }
+    ],
+    "summary": "**The redesigned Leads experience is now on by default for everyone** — the classic view is still one click away via \"Switch to classic view\". **Removed phone-number masking** for non-admins (the research-completion gate it was built for is retired). **Enroll in Cadence** is now available to Pod Admins and Admins, not just Super Admins."
+  },
+  {
+    "version": "v10.9.12",
+    "date": "14 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "tags": [
+      { "label": "🐛 FIX", "variant": "danger" }
+    ],
+    "summary": "**Pre-migration bug-fix pass on the redesigned Leads experience (beta)** — fixed a stale date filter, a filter combination that silently cancelled itself, Saved Views dropping search text, silent failures on inline edits and bulk actions, a lingering \"Unknown\" placeholder, multiple popovers staying open at once, and a company-connection badge that could reference a lead's own status as if a different lead resolved it. **Analytics Hub: the SDR Performance table now scrolls within its own bounded panel** instead of growing past the page with no reliable way to reach the rows below."
+  },
+  {
+    "version": "v10.9.11",
+    "date": "14 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "tags": [
+      { "label": "🐛 FIX", "variant": "danger" },
+      { "label": "✨ NEW", "variant": "success" }
+    ],
+    "summary": "**Fixed a lingering \"Source: Salesforce\" mislabel** on leads auto-created by the dialer (a follow-up gap from the earlier fix). **Analytics Hub: added a Conversations column** to SDR Performance (calls over 30s that weren't a no-answer/wrong-number/voicemail) and **each team's date filter now uses that team's own timezone** (set per-Pod in POD Management) instead of one shared UTC day, so a US team's late-night calls no longer land on the wrong on-screen date. **Restyled the Send Window's Timezone picker** with a consistent custom dropdown instead of the browser's own inconsistent-looking native list."
+  },
+  {
+    "version": "v10.9.10",
+    "date": "13 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "tags": [
+      { "label": "🚨 P1 HOTFIX", "variant": "danger" },
+      { "label": "✨ NEW", "variant": "success" }
+    ],
+    "summary": "**Fixed an invisible click-blocking bug from the RCM dialer widget** — since it became default-on (v10.9.7), its collapsed floating button still reserved a full ~340x560px invisible area in the bottom-right of every page, silently swallowing clicks on anything else rendered there (e.g. Sales Cadence merge-field chips). Also added: rename a cadence directly from the builder header."
+  },
+  {
+    "version": "v10.9.9",
+    "date": "13 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "tags": [
+      { "label": "✨ NEW", "variant": "success" }
+    ],
+    "summary": "**Sales Cadences: engagement tracking, A/B testing, SMS, send windows, AI copy, auto-reply detection, and a unified Activity view** — see open/click/reply rates per cadence and per step, split-test email subject/body, add an SMS step (via RCM), restrict sends to business hours in a chosen timezone, generate a first draft with AI, and out-of-office replies no longer count as real engagement. A new Activity view merges every email and SMS send/reply into one timeline per cadence."
+  },
+  {
+    "version": "v10.9.8",
+    "date": "13 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "tags": [
+      { "label": "✨ NEW", "variant": "success" }
+    ],
+    "summary": "**Sales Cadences: pod scoping + a new \"email received\" trigger** — scope a cadence to one pod's leads (or leave it open to all), and start a cadence the moment an SDR/AE gets an email from a lead, not just on status change. Also fixed two bulk-delete bugs and added a merge-field cursor affordance."
+  },
+  {
+    "version": "v10.9.7",
+    "date": "13 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "tags": [
+      { "label": "✨ NEW", "variant": "success" }
+    ],
+    "summary": "**React RCM dialer widget is now the default** — the modernized Call/Message widget replaces the older version for everyone; the classic widget stays available as an automatic fallback."
+  },
+  {
+    "version": "v10.9.6",
+    "date": "13 Aug 2026",
+    "family": "10.9",
+    "kind": "major",
+    "tags": [
+      { "label": "✨ NEW", "variant": "success" }
+    ],
+    "title": "Sales Cadences management, Analytics/Power Dialer user guides, source-label fix",
+    "items": [
+      "**🔍 Search, filter, and bulk-delete cadences** — Sales Cadences now has a name search, status filter, pagination, and single/bulk delete (with a warning if leads are still enrolled).",
+      "**📚 New user guide sections** for Power Dialer, Analytics Hub, and Sales Cadences — including how to auto-schedule a call when a lead replies to a cadence email.",
+      "**🐛 Fixed a misleading \"Salesforce\" source label** — a lead created without an explicit source used to silently show as \"Salesforce\" even when it had nothing to do with Salesforce."
+    ]
+  },
+  {
+    "version": "v10.9.5",
+    "date": "13 Aug 2026",
+    "family": "10.9",
+    "kind": "major",
+    "tags": [
+      { "label": "✨ NEW", "variant": "success" }
+    ],
+    "title": "Email Hub — CC/BCC, signatures, rich text, and reliable sync",
+    "items": [
+      "**📎 Cc/Bcc on every email** — loop in a manager or teammate when emailing a lead, on both new emails and replies.",
+      "**✍️ Personal email signature** — add a signature with links and images (e.g. a booking link, social icons) that's appended automatically to every email you send.",
+      "**🔗 Insert links and images in the email body** — compose is no longer plain text only.",
+      "**📥 Email sync now runs automatically** — replies (from the lead, or sent directly from your own Gmail/Outlook) used to only sync in when someone reopened that lead's Email tab. Now it runs on a regular schedule in the background.",
+      "**📊 Analytics Hub is now available to AEs** — scoped to just their own leads and calls, no pod-wide visibility.",
+      "**📞 Fixed a Power Dialer layout bug** where the \"Today's Calls\" panel could get cut off on the right side of the screen, requiring a browser zoom-out to see it."
+    ]
+  },
+  {
+    "version": "v10.9.4",
+    "date": "13 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "summary": "\"Leads Assigned\" now shows a visible subtitle explaining it counts leads created in the selected period, not leads worked, so it no longer reads as a bug when an SDR is actively working an older batch."
+  },
+  {
+    "version": "v10.9.3",
+    "date": "12 Aug 2026",
+    "family": "10.9",
+    "kind": "major",
+    "tags": [
+      { "label": "🐛 BUG FIX", "variant": "danger" }
+    ],
+    "title": "Power Dialer — call log fixes",
+    "items": [
+      "**📞 No more \"Unknown\" with nothing else to go on** — a call that isn't matched to a real name now shows the phone number instead.",
+      "**⏱️ Call duration is now visible** on every logged call, plus a download link next to the recording.",
+      "**🔍 Search, filter, and page through your call list** — no longer one long unbroken list for high-volume days."
+    ]
+  },
+  {
+    "version": "v10.9.2",
+    "date": "12 Aug 2026",
+    "family": "10.9",
+    "kind": "major",
+    "tags": [
+      { "label": "🐛 BUG FIX", "variant": "danger" }
+    ],
+    "title": "Analytics Hub — accuracy fixes",
+    "items": [
+      "**📊 Numbers now match everywhere** — the same call/email/meeting count no longer disagrees between the Analytics Hub dashboard and other views depending on which filter you had selected.",
+      "**📞 No more missing calls** — a call to a number with no matching lead now creates one automatically (instead of getting lost), and Connect Rate now counts a call as connected whenever it was genuinely answered, not just when someone manually logged an outcome.",
+      "**🗑️ Removed the Research metric** from Analytics Hub — it was tracking something the team no longer manages this way, and was mostly just causing confusion."
+    ]
+  },
+  {
+    "version": "v10.9.1",
+    "date": "12 Aug 2026",
+    "family": "10.9",
+    "kind": "minor",
+    "summary": "Fixed the Aircall drawer hiding its own trigger button and having no way to close before login finished, plus a layout bug where opting out left the page squeezed for no reason."
+  },
+  {
+    "version": "v10.9.0",
+    "date": "11 Aug 2026",
+    "family": "10.9",
+    "kind": "major",
+    "tags": [
+      { "label": "✨ NEW", "variant": "indigo" }
+    ],
+    "title": "Aircall Everywhere — global drawer",
+    "items": [
+      "**📞 Log into Aircall right in your browser, from anywhere in the app** — a new drawer opens from the topbar, next to your other actions. Log in once, and the ordinary Call button on any lead rings straight into your browser, no Desktop app required.",
+      "**🖥️ The page stays readable while you're on a call** — the drawer no longer covers or dims the screen; the page shrinks to make room instead, so you can keep reading the lead's details while you talk.",
+      "**💡 A quick one-time tip** the first time you see the drawer — including the one thing that matters: dial from the lead's own Call button, not the pad inside the drawer, so the call stays attached to the right lead."
+    ]
+  },
+  {
+    "version": "v10.8.1",
+    "date": "10 Aug 2026",
+    "family": "10.8",
+    "kind": "major",
+    "tags": [
+      { "label": "🔧 UX", "variant": "indigo" },
+      { "label": "🐛 BUG FIX", "variant": "danger" }
+    ],
+    "title": "Power Dialer — live feedback pass",
+    "items": [
+      "**💾 Your progress now survives a reload** — called/skipped leads are saved per rep, so refreshing the page never resets you back to the start of the queue.",
+      "**⌨️ Keyboard shortcuts** — C to call/advance, S to skip, N to add a note, O to open the lead in the CRM.",
+      "**🔁 Bring a skipped lead back** — a new \"Call back\" action requeues it as your very next call.",
+      "**🔍 Real filters** — search by name/company/phone, filter by stage, or hide leads you've already called.",
+      "**📇 See who you're calling before you dial** — location, company size, and lead source now show on the call card, plus their last contact and outcome.",
+      "**📝 Add a note or open the lead in the CRM** without leaving the queue.",
+      "**📞 The Call button now tells you what it'll do** — \"via Aircall\", \"via RCM\", or \"log manually\", based on your actual dialer setup.",
+      "**🌍 Local time for every lead** — a 🟢/🟡/🔴 badge next to the phone number so you don't call someone at 3am their time.",
+      "**📊 Real pace, not a guess** — today's actual call count and an honest ETA based on your own calling speed, plus a manager-only skip-reason breakdown.",
+      "**🐛 Fixed** — a laggy first load (dozens of extra database queries per page), a broken drag-to-reorder, a search box that felt like it was fighting you while typing, and a few layout glitches (faint borders, a runaway job-title line)."
+    ]
+  },
+  {
+    "version": "v10.8.0",
+    "date": "07 Aug 2026",
+    "family": "10.8",
+    "kind": "major",
+    "tags": [
+      { "label": "✨ NEW", "variant": "indigo" }
+    ],
+    "title": "Power Dialer — replaces Today's Calls",
+    "items": [
+      "**📞 Work through your leads one call after another** — the old \"Today's Calls\" page is now the Power Dialer: a live queue of your callable leads, your call history and stats right alongside it in the same screen.",
+      "**One click to move on** — log or dismiss an outcome and \"Call Next\" lights up. Nothing dials automatically; you're always the one who decides when the next call starts.",
+      "**Skip works anytime** — a call that never connects doesn't block you; Skip is always available to move on to the next lead in your queue.",
+      "**🛡️ Do-not-contact leads are now protected everywhere** — calling never had this check before; a suppressed lead is now blocked before any dial, and skipped automatically (with a visible reason) if it shows up in your queue."
+    ]
+  },
+  {
+    "version": "v10.7.0",
+    "date": "07 Aug 2026",
+    "family": "10.7",
+    "kind": "major",
+    "tags": [
+      { "label": "✨ NEW", "variant": "indigo" }
+    ],
+    "title": "Sales Cadences — visual workflow automation (early access)",
+    "items": [
+      "**🧭 Build multi-step outreach sequences visually** — drag-and-drop email, wait, call-reminder, and branching-condition steps onto a canvas, no code required. Rolling out gradually — Super Admins have it now under the new \"Sales Cadences\" nav item; broader access is coming as it gets more production mileage.",
+      "**⚡ Leads can enroll automatically** when they match a cadence's trigger (e.g. a status change), or a Super Admin can bulk-enroll a selection of leads directly from the Leads page's action bar.",
+      "**🔀 Branch on what actually happens** — wait for a reply, a call outcome, or a status change, and send different leads down different paths.",
+      "**📋 See it on the lead** — if a lead is enrolled in a cadence, its status shows right on the Lead Detail page for the SDR it's assigned to.",
+      "**⏸️ Pause, resume, or archive** a cadence at any time — pausing genuinely stops it (no leads are contacted while paused), archiving safely exits any leads still in progress.",
+      "**🛡️ Built-in safety rails** — no duplicate sends, a contact-suppression check before every automated touch, and rate limits so a bulk enrollment can't accidentally flood a lead or an SDR."
+    ]
+  },
+  {
+    "version": "v10.6.41",
+    "date": "06 Aug 2026",
+    "tags": [
+      { "label": "FIX", "variant": "danger" }
+    ],
+    "title": null,
+    "items": [
+      "**Fixed the Call Monitor's Connected percentage** — it was showing whether a call ended normally, not whether it was actually answered, which made connect rates look far higher than they really were.",
+      "**Fixed some genuinely-unanswered calls not showing up in any of the summary counts.**",
+      "**Fixed the call detail panel (notes/transcript) closing on its own** every 30 seconds while auto-refresh was on."
+    ]
+  },
+  {
+    "version": "v10.6.40",
+    "date": "06 Aug 2026",
+    "tags": [
+      { "label": "FIX", "variant": "danger" }
+    ],
+    "title": null,
+    "items": [
+      "**Fixed the Analytics Hub's Calling number** — it counted every call attempt instead of how many different leads were actually reached, so one lead dialed 3 times looked like 3 leads reached the Calling stage.",
+      "**Fixed a misleading label on the Research Complete card** — the percentage shown is a live snapshot across all leads, not scoped to whatever date range is selected; the subtitle now says so instead of implying otherwise.",
+      "**Fixed a silent gap in Klenty call syncing** — a rejected request from Klenty's API was being treated the same as \"no calls today,\" which let 6 days of real call activity go unsynced without any error. Recovered the missing calls and hardened the sync so this can't happen silently again.",
+      "**Fixed a manually-dialed lead not showing under the right team** — a lead auto-created from dialing an unknown number wasn't tagged with the calling SDR's team, unlike the equivalent Klenty flow."
+    ]
+  },
+  {
+    "version": "v10.6.39",
+    "date": "05 Aug 2026",
+    "tags": [
+      { "label": "FIX", "variant": "danger" }
+    ],
+    "title": null,
+    "items": [
+      "**Fixed a stale Manage Users list after deleting a user or changing someone's role** — the underlying change always saved correctly, but the on-screen list could keep showing the old data for up to 2 minutes.",
+      "**Fixed the floating dialer button covering table controls** — on longer tables (e.g. Manage Users), the last row and pagination could land under it, making those clicks silently do nothing."
+    ]
+  },
+  {
+    "version": "v10.6.38",
+    "date": "04 Aug 2026",
+    "tags": [
+      { "label": "✨ REDESIGN", "variant": "indigo" }
+    ],
+    "title": null,
+    "items": [
+      "**✨ The Help & User Guide has a new look, and you can finally search it** — same 20 topics as before, now with real search across every section and every past release note instead of scrolling through the whole history by hand.",
+      "**💬 The Send Feedback popup was redesigned** to match the rest of the app, with clearer icons for Bug Report / Feature Request / General Feedback.",
+      "**🗑️ Removed references to the Kanban board view**, which has been decommissioned."
+    ]
+  },
+  {
+    "version": "v10.6.37",
+    "date": "04 Aug 2026",
+    "tags": [
+      {
+        "label": "🐛 PERFORMANCE",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**⚡ Lead detail pages and the Kanban board load faster**, especially for leads with a long calling history — found while investigating yesterday's outage; the database wasn't just under-provisioned, some of these pages were also doing far more work than they needed to."
+    ]
+  },
+  {
+    "version": "v10.6.36",
+    "date": "03 Aug 2026",
+    "tags": [
+      {
+        "label": "✨ SALESFORCE SYNC",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✨ Salesforce Leads now carry a lot more with them** — description, SDR name, LinkedIn profile, and job title/address now populate correctly (and the SDR name/LinkedIn stay current if a lead is reassigned), instead of some being blank or silently dropped."
+    ]
+  },
+  {
+    "version": "v10.6.35",
+    "date": "03 Aug 2026",
+    "tags": [
+      {
+        "label": "🛡️ HARDENING",
+        "variant": "warning"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🛡️ Guarded against a rare double-recreate race** for a Salesforce Lead deleted directly in Salesforce — no observed impact, a defensive fix following yesterday's recreate change."
+    ]
+  },
+  {
+    "version": "v10.6.34",
+    "date": "03 Aug 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIXES",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🐛 A lead deleted directly in Salesforce is now actually recreated**, not just unlinked — yesterday's fix cleared the stale link but didn't reliably get it back into Salesforce for a lead past its normal sync stage; it now does."
+    ]
+  },
+  {
+    "version": "v10.6.0 – v10.6.33",
+    "date": "23 Jul – 03 Aug 2026",
+    "tags": [
+      {
+        "label": "✨ NEW FEATURES",
+        "variant": "indigo"
+      },
+      {
+        "label": "🐛 BUG FIXES",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📅 \"Meeting Booked\" now creates a real calendar invite** — custom title, AI-drafted agenda, review-before-send, and a conflict warning.",
+      "**✨ \"Try it (Beta)\" Leads experience is now open to every role** — priority-sorted lists, phone-research gating, and quick-call for SDR/AE/Sales, plus column customization and bulk approve/reject on Disqualify Requests.",
+      "**📞 Fixed Klenty calls being silently dropped or misdated** across sync, Connect Rate, the Inactive-SDR flag, and Analytics Hub reporting — plus an admin-triggerable backfill to recover any gap.",
+      "**🐛 Fixed SDR/AE being unable to see any leads at all** on the redesigned Leads page, and several Analytics Hub filters/charts that were silently ignoring your selections (SDR, Lead Source, date range).",
+      "**🐛 A lead deleted directly in Salesforce now gets recreated automatically**, and sync failures are now always visible and searchable in the Sync Logs page.",
+      "**🎨 A large batch of design-system and usability fixes** across the redesigned Leads page and Analytics Hub — invisible button text, broken filters, unclickable toggles, and native browser popups replaced with the app's own dialogs.",
+      "**🧪 A rebuilt Call/Message widget is being tested internally**, off by default — no change to your current experience yet."
+    ]
+  },
+  {
+    "version": "v10.5.9",
+    "date": "22 Jul 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIXES",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Fixed US phone numbers being misdialed as Indian numbers** in Aircall and RCM — a bare 10-digit number starting with 6–9 was incorrectly assumed to be Indian and dialed with a +91 prefix instead of +1."
+    ]
+  },
+  {
+    "version": "v10.5.8",
+    "date": "22 Jul 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIXES",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📊 Fixed a negative \"Calls Made\" count on Analytics Hub** for some batch filters — an internal de-duplication count wasn't scoped to the selected batch.",
+      "**🎧 Call recordings longer than 30 seconds no longer cut off mid-playback** in Call Monitor."
+    ]
+  },
+  {
+    "version": "v10.5.7",
+    "date": "22 Jul 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIXES",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🐛 Klenty integration health check fixed:** The Klenty connection test was failing with \"Invalid user: whoami\" — it now tests against your real Klenty username.",
+      "**📝 Call transcripts now show up everywhere:** Once RCM/Deepgram finishes processing a call, the transcript now appears on Call Monitor, the Lead's Calls tab, and the Activity Feed — previously it silently never rendered anywhere even when it was ready.",
+      "**🗣️ Transcript speakers now labeled \"Speaker 1\" / \"Speaker 2\"** instead of raw \"Speaker 0\" / \"Speaker 1\"."
+    ]
+  },
+  {
+    "version": "v10.5.6",
+    "date": "22 Jul 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIXES",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Dialer no longer gets stuck on \"connecting call\":** A widget glitch could previously block every future call attempt until a hard refresh. Fixed with a timeout and proper error handling.",
+      "**📶 Dialer widget no longer disappears mid-call on a brief network blip** (Browser Call mode) — it now waits a few seconds to see if the connection recovers on its own before ending the call."
+    ]
+  },
+  {
+    "version": "v10.5.5",
+    "date": "22 Jul 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIXES",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🐛 Disqualify now respects dialer-logged outcomes:** A lead marked \"Wrong Number\" (or another definitive outcome) through the in-app dialer can now be disqualified right away, without needing 5 call attempts first, and the lead page shows the correct latest disposition.",
+      "**🧠 AI Research panel fixed for shared companies:** Switching between two contacts at the same company no longer shows the previous contact's research.",
+      "**📊 Analytics Hub \"Calls Made\" now respects the batch filter** the same way every other number on the page already did.",
+      "**☎️ Fixed some SDRs' calls failing with a RCM \"Agent phone number is required\" error** — per-SDR dialer identity is now actually used when placing calls.",
+      "**🎧 Call recordings: fixed \"Play\" failing right after a call, playback cutting off mid-recording, and a squeezed/broken player layout in Call Monitor.** Every call-recording view (Call Monitor, Lead Detail, My Calls, Activity Feed) now has a working Download option too.",
+      "**⚙️ Settings no longer bounces back to the Connection tab** after saving a change in any other tab.",
+      "**📞 The active-call popup no longer blurs the lead details behind it.**"
+    ]
+  },
+  {
+    "version": "v10.5.3",
+    "date": "21 Jul 2026",
+    "tags": [
+      {
+        "label": "🐛 ANALYTICS FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🐛 Fixed unreliable Analytics Hub batch filter:** Selecting a batch could show \"No lead data\" even when the batch had leads, and the batch dropdown wasn't scoped to the selected POD/date range. Both are now fixed — batches link to leads via a real database ID instead of a filename guess, and the dropdown only ever shows batches that actually have data."
+    ]
+  },
+  {
+    "version": "v10.5.2",
+    "date": "20 Jul 2026",
+    "tags": [
+      {
+        "label": "🐛 SYNC FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🐛 Fixed duplicate Salesforce leads:** The same contact could get pushed to Salesforce as a new Lead on every sync. Fixed a batch-sync bug that silently lost track of successful Salesforce links, and added duplicate detection to the \"New Lead\" button (already present for CSV/Sheet imports)."
+    ]
+  },
+  {
+    "version": "v10.5.1",
+    "date": "20 Jul 2026",
+    "tags": [
+      {
+        "label": "🔄 SYNC",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔄 Salesforce sync can now run automatically:** Settings → Sync Settings has a new \"Auto-Sync Schedule\" toggle — pick a daily UTC time and the sync runs on its own, on top of the existing manual \"Sync Salesforce\" button."
+    ]
+  },
+  {
+    "version": "v10.5.0",
+    "date": "17 Jul 2026",
+    "tags": [
+      {
+        "label": "📞 CALLS",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Klenty call activity now syncs into RCM:** Calls SDRs place through Klenty now pull in automatically each night and show up as call activity, matched to the right lead (or a new lead created if none exists). Admin-only setting, no changes for SDRs."
+    ]
+  },
+  {
+    "version": "v10.4.9",
+    "date": "17 Jul 2026",
+    "tags": [
+      {
+        "label": "📅 CALENDAR",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📅 Calendar meeting times fixed:** Meetings were showing on the day they were logged instead of the actual scheduled time. The real date/time you enter when confirming a meeting is now saved and shown correctly."
+    ]
+  },
+  {
+    "version": "v10.4.8",
+    "date": "17 Jul 2026",
+    "tags": [
+      {
+        "label": "📊 ANALYTICS",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📊 Connect Rate fixed:** Connect Rate was showing 0% across the Analytics Hub, CSV export, Batch Summary, and Ask AI — it was checking for a call status that real calls never use. It now reflects real answered-call outcomes everywhere those numbers appear.",
+      "**📄 CSV export now matches the dashboard:** Exporting SDR performance was missing most calls (Aircall/Klenty/RCM activity wasn't included) and used a different Connect Rate formula than the dashboard. Export now shows the same numbers you see on screen.",
+      "**🔍 Source filter now works on the SDR Table:** Filtering SDR performance by lead source was silently being ignored — it now actually filters."
+    ]
+  },
+  {
+    "version": "v10.4.7",
+    "date": "16 Jul 2026",
+    "tags": [
+      {
+        "label": "🎯 LEADS",
+        "variant": "default"
+      },
+      {
+        "label": "🎧 CALLS",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎯 Leads Hub (Beta):** A redesigned All Leads experience is available to try — multi-select filters, tags, saved views, bulk and single reassignment, inline editing, a note preview per lead, and Disqualify Requests built in. Look for \"Try it (Beta)\" at the top of the Leads page — your classic view is unchanged until you opt in, and you can switch back anytime.",
+      "**🎧 RCM call recordings fixed:** Recordings were failing to appear for some SDRs when RCM's own status check had a temporary issue — recordings are no longer blocked by that unrelated check."
+    ]
+  },
+  {
+    "version": "v10.4.6",
+    "date": "16 Jul 2026",
+    "tags": [
+      {
+        "label": "🎧 CALLS",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎧 Manual Dial (RCM) no longer shows two call widgets:** Dialling a number directly from the Manual Dial button could show a duplicate call panel and sometimes fail to show that the call had been answered. Manual Dial now uses the same reliable call manager as calling a lead directly."
+    ]
+  },
+  {
+    "version": "v10.4.4",
+    "date": "15 Jul 2026",
+    "tags": [
+      {
+        "label": "🎧 CALLS",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎧 Call recordings no longer go dead:** Playing an older call recording (on a lead's Calls tab, My Calls, Activity Feed, or the Calls page) now automatically fetches a fresh link if the saved one has expired, instead of just failing to play."
+    ]
+  },
+  {
+    "version": "v10.4.3",
+    "date": "14 Jul 2026",
+    "tags": [
+      {
+        "label": "🚫 DISQUALIFY",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🚫 Request Disqualify (SDR/AE):** A \"Disqualify Account\" button now appears on each company in the Leads view — submit a reason and a Pod Admin will review it.",
+      "**✅ Disqualify Requests screen (Pod Admin/Super Admin):** New sidebar item to review, approve, or reject pending disqualify requests from your team."
+    ]
+  },
+  {
+    "version": "v10.4.2",
+    "date": "14 Jul 2026",
+    "tags": [
+      {
+        "label": "📅 CALENDAR",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎨 Visual polish:** Fixed missing grid borders and tightened up the overall look.",
+      "**🕓 Live clock:** Current time and timezone now shown in the Calendar header.",
+      "**📋 Meeting details panel:** Clicking a meeting now opens a details panel (name, company, phone, time) with a \"Go to lead\" button, instead of navigating away immediately — so you don't lose your place on the calendar."
+    ]
+  },
+  {
+    "version": "v10.4.1",
+    "date": "14 Jul 2026",
+    "tags": [
+      {
+        "label": "📅 CALENDAR",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📅 Day/Week/Month/List views:** Calendar now has Today, Week, and Month views plus a List toggle, not just a single month grid.",
+      "**🔗 Click a meeting to open the lead:** Every meeting on the Calendar now links straight to that lead's detail page."
+    ]
+  },
+  {
+    "version": "v10.4.0",
+    "date": "13 Jul 2026",
+    "tags": [
+      {
+        "label": "📅 CALENDAR",
+        "variant": "default"
+      },
+      {
+        "label": "✅ DISQUALIFY",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔔 Bell notifications fixed:** Task reminders stopped appearing for every SDR/AE after the topbar was rebuilt in React on 18 Jun — the bell is back and working.",
+      "**📅 Unified Calendar:** A new Calendar page shows every scheduled meeting on one month view — your own for SDRs/AEs, your pod's for Pod Admins, everyone's for Super Admins. Find it in the left sidebar.",
+      "**✅ Account Disqualify (maker-checker):** AEs/SDRs can now request disqualifying every lead under an account that turns out not to be the right ICP fit. A Pod Admin reviews and approves or rejects the request before any leads are actually disqualified — no single person can bulk-disqualify a large lead set alone.",
+      "**📊 Analytics custom date range fixed:** Picking a custom date range in Analytics was silently falling back to the last 30 days. Custom ranges now apply correctly everywhere."
+    ]
+  },
+  {
+    "version": "v10.3.0",
+    "date": "8 Jul 2026",
+    "tags": [
+      {
+        "label": "👥 POD ADMINS",
+        "variant": "default"
+      },
+      {
+        "label": "📊 ANALYTICS",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**👥 Multiple Pod Admins per pod:** A pod can now have more than one Pod Admin. Super Admins can add and remove Pod Admins directly from the Pods page — each pod shows a dedicated \"Pod Admins\" section with individual remove buttons and an \"Add Pod Admin\" dropdown. When a Pod Admin is removed and has no other pods, their role automatically reverts to SDR.",
+      "**📊 Analytics: Account-level Connect % (Acct Connect %):** The SDR Performance table now shows a new \"Acct Connect %\" column. Instead of counting individual lead calls, it counts distinct companies contacted and connected — so if an SDR reaches one person at \"Acme Corp\" (which has 3 contacts in the system), that counts as 1 company connected. This gives a truer picture of account-level outreach success."
+    ]
+  },
+  {
+    "version": "v10.2.0",
+    "date": "7 Jul 2026",
+    "tags": [
+      {
+        "label": "✨ UX",
+        "variant": "purple"
+      },
+      {
+        "label": "📱 MOBILE",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**↔ Sidebar collapse now expands your workspace:** When you collapse the left sidebar, the main content area now grows to fill the freed space — giving you ~148px of extra screen width. Previously the sidebar container reserved that space even when collapsed, wasting screen real estate.",
+      "**📱 Login screen works on mobile — portrait & landscape:** The login page is now fully responsive on phones in both orientations. Portrait: compact brand strip at the top with the login form centred below. Landscape: brand panel and login form sit side-by-side in a compressed layout. The three feature cards (Lead Enrichment, Smart Deduplication, SDR Prioritization) remain visible in both orientations via a horizontal swipe row."
+    ]
+  },
+  {
+    "version": "v10.1.0",
+    "date": "7 Jul 2026",
+    "tags": [
+      {
+        "label": "🛡 STABILITY",
+        "variant": "warning"
+      },
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🧹 Memory leak fixed — no more surprise restarts:** The server was restarting every 4-8 days due to a memory leak in the RCM background sync. The nightly sync now retries failed API pages with backoff and automatically force-closes any call stuck in a non-terminal state for over 24 hours. This was the root cause of 3 forced server restarts since June 18.",
+      "**🔌 Zombie call pollers eliminated:** When RCM returned \"Call not found\" (404) for a stale call, the browser kept polling every 2 seconds forever — silently accumulating in the background. Those polls now terminate immediately on 404, freeing resources.",
+      "**⚡ Webhook response time: 1.4-2.3s → <50ms:** RCM webhook events were taking up to 2.3 seconds to process synchronously. They now return immediately — processing runs in the background. This prevents RCM from sending duplicate events when our server is slow.",
+      "**📊 Error logs page loads faster:** The error log summary was running 4 separate database scans on every page load (1.5–3.6s). A new database index cuts this to ~50ms.",
+      "**🔧 Ankit Bakshi can now dial:** His dialer access was disabled in the system despite having valid RCM credentials. Fixed — he can now make calls.",
+      "**🐛 Assignments panel crash fixed:** Rapidly switching away from the Assignments panel while it was still loading could crash the page with a \"Cannot read properties of null\" error (Diwakar Varadharajan reported this). Fixed with defensive null guards."
+    ]
+  },
+  {
+    "version": "v10.0.0",
+    "date": "18 Jun 2026",
+    "tags": [
+      {
+        "label": "⚡ MAJOR RELEASE",
+        "variant": "default"
+      },
+      {
+        "label": "🚀 PERFORMANCE",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔧 Topbar buttons fully fixed:** New Lead, Dial, Search (⌘K), and Ask AI were all broken after the NavHub React migration. All four are now re-wired with correct event bridging — every action works as expected.",
+      "**✨ Ask AI rebuilt as React overlay:** The Ask AI feature now opens as a proper full-screen overlay with smooth animation. Results render correctly with charts and live data — the previous blank panel bug is fixed.",
+      "**📊 Mixpanel analytics hardened:** Fixed double-initialisation bug that was causing duplicate events. Added 14 new tracked events covering search, Ask AI, dashboard KPI clicks, and topbar actions.",
+      "**📱 Dashboard now responsive:** The dashboard layout adapts to tablet and phone screen sizes. The login page was also made fully responsive in v9.7.12.",
+      "**⚡ Dashboard load time: 2,051ms → ~1,600ms:** Eliminated ForcedReflow, reduced layout shifts (CLS 0.52 → target ~0.04), and deferred Clarity.js to 2.8s so it no longer blocks page paint.",
+      "**💰 Shimmer skeleton replaces \"Loading...\":** The plain \"Loading...\" text on first load is replaced by an animated shimmer skeleton that mirrors the real dashboard layout — giving instant visual feedback while data loads.",
+      "**🏗 Structural CLS fix:** Eliminated the dual-skeleton architecture that caused a 0.26 CLS shift. The React mount point now exists in HTML from parse time with its height pre-reserved — no layout shift when real content mounts."
+    ]
+  },
+  {
+    "version": "v9.8.0",
+    "date": "18 Jun 2026",
+    "tags": [
+      {
+        "label": "🛠 Architecture",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🧱 React sidebar & topbar (NavHub):** The sidebar and topbar are now powered by a React bundle — the same architecture used by the Dashboard and Analytics Hub. Role-based navigation, collapse state, tooltips, and the logout button are all handled in React. All action buttons (Dial, Sync SF, New Lead, Ask AI) are preserved and bridged back to the app.",
+      "**🔑 Logout always visible:** The sign-out button is now permanently visible in both expanded and collapsed sidebar states — it can no longer disappear."
+    ]
+  },
+  {
+    "version": "v9.7.12",
+    "date": "18 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ UX",
+        "variant": "purple"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📱 Login page now mobile-responsive:** The login screen now works correctly on phones and tablets. On tablet (≤768px) the brand panel becomes a compact header and the login form fills the screen below. On phone (≤480px) the brand panel condenses to logo-only and the full login form is shown — no more zooming or horizontal scrolling needed."
+    ]
+  },
+  {
+    "version": "v9.7.11",
+    "date": "18 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ UX",
+        "variant": "purple"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**💬 Sidebar icon tooltips now work:** When the sidebar is collapsed to icon-only view, hovering over any icon now shows a label tooltip to its right. Previously the tooltip was rendered but silently clipped by the browser — now fixed using a floating label that appears correctly above everything else on screen."
+    ]
+  },
+  {
+    "version": "v9.7.10",
+    "date": "18 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ UX",
+        "variant": "purple"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📋 POD Management icon updated:** The POD Management sidebar icon was identical to the Leads icon (both showed a “two people” symbol). POD Management now uses a distinct 2×2 grid icon — clearly communicating “teams / groups” at a glance and eliminating the visual confusion."
+    ]
+  },
+  {
+    "version": "v9.7.9",
+    "date": "18 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Calls tab: faster load, no more background noise:** Opening the Calls tab was silently firing one RCM API request per historical call record. When RCM returned errors for old calls these piled up in server logs and could slow the tab. The background refresh now only runs when data is actually missing — completed calls that already have their recording, duration, and end time are skipped entirely. No user-visible change; everything loads the same, just faster."
+    ]
+  },
+  {
+    "version": "v9.7.8",
+    "date": "18 Jun 2026",
+    "tags": [
+      {
+        "label": "📚 INTERNAL",
+        "variant": "default"
+      },
+      {
+        "label": "Admin only",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📖 Technical Handoff Bible published:** A comprehensive internal reference page is now live at `/technicalunderstanding.html` (Admin/Super Admin only). Covers full architecture, environment variables, all integrations, deployment runbook, incident playbooks, rollback procedure, database migration system, scheduler jobs, and AI agent rules — everything needed to onboard or troubleshoot from one URL."
+    ]
+  },
+  {
+    "version": "v9.7.7",
+    "date": "17 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "💪 RELIABILITY",
+        "variant": "warning"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**💥 Fixed: server crash (OOM) after Dashboard migration to React:** The production server was running out of memory and restarting. Root cause: the new React Dashboard was firing 7 API calls simultaneously the moment it opened — including a heavy Groq AI call. These have been staggered (200–800ms apart) so they no longer pile on the server at once. Dashboard still loads fully; data just fills in smoothly.",
+      "**💾 Fixed: pipeline intelligence memory leak:** The Groq AI pipeline scoring cache had no size limit — it stored one entry per user and never cleaned up. It now uses the same managed cache as the rest of the app, with Redis backing and automatic 15-minute expiry.",
+      "**⚡ Dashboard load speed unchanged:** The staggered loading is barely noticeable — skeletons appear immediately, and the data cards fill in within 1 second of each other. The overall time-to-complete is the same as before."
+    ]
+  },
+  {
+    "version": "v9.7.4",
+    "date": "16 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "📊 ANALYTICS",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📊 Mixpanel analytics enabled:** Full product analytics are now live — session recording, autocapture, and 16 custom events tracking key actions (Lead Viewed, Call Logged, Leads Filtered, Status Changed, etc.).",
+      "**📹 Microsoft Clarity enabled:** Session heatmaps and recordings are now active across all pages (login + dashboard).",
+      "**🔍 Outcome cards now tracked:** Clicking a call outcome card on the dashboard fires a tracked event with the outcome type and count."
+    ]
+  },
+  {
+    "version": "v9.7.3",
+    "date": "16 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 SDR Dashboard: Today's calls count now correct:** Calls made via RCM or Aircall (dialer) were not being counted in the \"Calls Today\" and \"Outcomes Today\" dashboard cards. Fixed — both manual and dialer calls are now included."
+    ]
+  },
+  {
+    "version": "v9.7.0",
+    "date": "16 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🛡 HARDENING",
+        "variant": "warning"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔐 View-As now shows correct data for all roles:** When a Super Admin used View-As to impersonate an SDR or Pod Admin, the Dashboard was still showing the admin's own data (all leads). Fixed — View-As now correctly scopes data to the impersonated user's role and pod.",
+      "**📋 Sidebar: logo-only when collapsed:** Collapsing the sidebar now shows only the RCM logo icon — the \"Powered by RCM\" text no longer bleeds through.",
+      "**🌐 Pod Admin toggle: repositioned + new icons:** The My Pod / Global scope toggle is now grouped with the Refresh button on the right side of the dashboard header. Lock and globe SVG icons replace the previous emojis. Toggle always defaults to My Pod on page load.",
+      "**📞 Dialer: zombie call blocking fixed:** SDRs who got stuck in an \"active call\" block after a silent hangup will now see a purple Force Clear banner — one click to unblock. The stuck-call timeout has also been reduced from 90 minutes to 15 minutes."
+    ]
+  },
+  {
+    "version": "v9.6.0",
+    "date": "16 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🎨 BRAND",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📊 Dashboard: Role-based views properly applied:** SDR and AE users now see only their personal KPIs and call outcomes — the Meetings Booked chart (which required admin access) is removed. Pod Admins retain the full chart and pipeline view.",
+      "**🔗 Call Outcomes are now clickable:** Click any outcome card (e.g. \"Connected 3\") to jump directly to the Leads view filtered by that outcome. Zero-count outcomes are hidden to keep the view clean.",
+      "**🔐 Pod Admin: My Pod / Global toggle:** Pod Admins can now switch between their pod's data and org-wide data with a single click in the dashboard header. The selected scope is remembered as you navigate.",
+      "**🎨 RCM brand update:** New logo is now live across the browser tab (favicon), Apple home screen icon, sidebar, and login page."
+    ]
+  },
+  {
+    "version": "v9.5.7",
+    "date": "15 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "Admin only",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎮 Fixed: Dialer Playground now tests credentials from the form:** The Playground was incorrectly using the admin's own CRM dialer profile instead of the API Key, User ID, and From Number entered in Step 2. Test calls now use the form credentials directly — no profile configuration needed to run Playground tests."
+    ]
+  },
+  {
+    "version": "v9.5.6",
+    "date": "15 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "Admin only",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**⚙️ Admin Panel: Dialer Override now available for all roles:** Super Admins and Pod Admins now have the same \"Dialer Override\" dropdown in Admin → Users as SDRs do. Previously this required a direct database update. Change takes effect immediately — no re-login needed."
+    ]
+  },
+  {
+    "version": "v9.5.5",
+    "date": "15 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "Admin only",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎮 Fixed: Dialer Playground crash on Step 3:** The Playground would crash with \"RCMDialer.mount is not a function\" when advancing to the Live Test step, making it completely unusable. It now calls the CRM dialer API directly and tracks call status in the event log — no page refresh needed."
+    ]
+  },
+  {
+    "version": "v9.5.4",
+    "date": "15 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Fixed: \"active call in progress\" error no longer blocks you permanently:** If a RCM call ended on the network but our system didn't receive the disconnect signal, the dialer would show \"You already have an active call in progress\" with no way out. It now automatically clears the stuck call and shows \"✅ Cleared a stuck call. Please try calling again.\" — no page refresh needed."
+    ]
+  },
+  {
+    "version": "v9.5.3",
+    "date": "15 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**⚙️ Settings — Test Connection banner fix:** After clicking \"Test Connection\" in the Dialer or RCM settings, the result banner (success or error) now clears automatically as soon as you edit any credential field. Previously the banner stayed on screen even after you had changed credentials, which was misleading."
+    ]
+  },
+  {
+    "version": "v9.5.2",
+    "date": "15 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Fixed intermittent crash when using the RCM widget:** Some SDRs were seeing an \"An unexpected JavaScript error occurred\" notification while working in the app — particularly when switching tabs or using the messaging widget. This was caused by the widget trying to update itself before it had finished loading. The widget now safely ignores these early calls and the errors are gone."
+    ]
+  },
+  {
+    "version": "v9.5.1",
+    "date": "12 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 HOTFIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Bridge mode now works correctly:** When an SDR selected \"Phone Bridge\", RCM wasn't told it was a bridge call — so it wasn't ringing the agent's phone first. Fixed: the call mode is now correctly passed so bridge calls ring your phone before connecting to the lead.",
+      "**✅ Caller ID format no longer assumed:** Different telecom providers (Tata, Airtel, etc.) store outbound phone numbers in different formats. We were incorrectly converting the DID, causing a \"Invalid from_number\" error. Now the DID is sent exactly as configured in Settings — no guessing."
+    ]
+  },
+  {
+    "version": "v9.5.0",
+    "date": "12 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 HOTFIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 RCM calls now actually connect:** Clicking the Call button was loading the spinner and then silently failing — the call never went through to the lead's phone. The root cause was a mismatch between what our system was sending to RCM's servers and what RCM actually expects. After testing directly against the live RCM API, the exact required format was confirmed and fixed. Calls now connect reliably on the first try."
+    ]
+  },
+  {
+    "version": "v9.4.4",
+    "date": "11 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎧 Browser call now shows a clear error if audio setup fails:** When you selected \"Browser Call\" and RCM's servers were temporarily unavailable, the dialer used to freeze at \"Ringing…\" with no explanation. Now it immediately shows a clear message — \"RCM did not return audio credentials — try again or switch to Phone Bridge\" — and the dialer resets so you can try again right away.",
+      "**🎧 Browser call now shows what to expect while ringing:** The call widget now shows \"🎧 Lead's phone is ringing — you'll hear them when they answer\" so you know the call is in progress and don't need to do anything else."
+    ]
+  },
+  {
+    "version": "v9.4.3",
+    "date": "11 Jun 2026",
+    "tags": [
+      {
+        "label": "🔧 IMPROVEMENT",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📱 Bridge call now tells you what to do:** When you place a call using \"Phone Bridge\", the dialer widget now shows a pulsing hint — \"📱 Your phone will ring — answer it to connect\" — so you always know to pick up your handset first before the lead is dialled. Previously it just showed \"Ringing…\" with no guidance."
+    ]
+  },
+  {
+    "version": "v9.4.2",
+    "date": "11 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 RCM dialer widget is now fully visible:** The call widget (showing lead name, phone, Mute / Hold / End buttons) was rendering with white text on a white background — completely invisible. Now displayed correctly with the dark-theme design it was intended to use.",
+      "**🎮 Admin Dialer Playground re-enabled:** Super Admins can once again access the Dialer Playground from the sidebar to test outbound calls without touching a real lead record.",
+      "**📞 Aircall call durations now heal automatically:** Calls where Aircall's webhook arrived before the billing data was finalised (showing 0s duration) will now be corrected automatically during the nightly sync."
+    ]
+  },
+  {
+    "version": "v9.4.1",
+    "date": "11 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Call timer now starts when the lead picks up (Bridge mode):** In Phone Bridge mode, the call timer was not starting when the lead answered. The timer now starts correctly the moment the lead picks up.",
+      "**⏱️ Dialler no longer gets silently locked after pressing Cancel:** If you opened the mode selector (Phone Bridge / Browser Call) and then pressed Cancel without making a call, the dialler was silently blocked for the rest of your session — you could not dial anyone until you refreshed the page. This is now fixed."
+    ]
+  },
+  {
+    "version": "v9.4.0",
+    "date": "11 Jun 2026",
+    "tags": [
+      {
+        "label": "🔧 IMPROVEMENT",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 RCM dialer no longer gets stuck after a call ends:** After ending a RCM call, the dialer was sometimes freezing or going blank, requiring a full page refresh before you could dial the next lead. This has been fixed — the dialer now resets itself cleanly after every call so you can dial the next lead immediately."
+    ]
+  },
+  {
+    "version": "v9.3.1",
+    "date": "11 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 HOTFIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Call outcome modal no longer appears on a failed dial:** If your Aircall Desktop app was closed or your status was not set to Available, clicking the dial button was incorrectly showing the \"Did the call connect?\" logging form immediately. The call never went through, so there was nothing to log. This is now fixed — a clear error message appears instead, and the logging form only opens after a real call ends."
+    ]
+  },
+  {
+    "version": "v9.3.0",
+    "date": "10 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIXES",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Aircall call durations fixed:** Call durations were showing as 0s for all Aircall calls. The system was blocking the real duration from being saved when the call ended. Fixed — new calls will now show correct durations.",
+      "**📊 Analytics trend now filters by SDR:** Selecting an SDR in the Activity Trend chart was filtering calls, emails, and meetings — but the Research line stayed the same. Research now correctly filters by SDR.",
+      "**📅 Duplicate dates on trend chart fixed:** The trend chart was sometimes showing the same date twice on the X-axis. Fixed by normalising timezone-aware and timezone-naive timestamps.",
+      "**📋 Dashboard card updated:** The “Research” card on the admin dashboard has been replaced with “Demo Scheduled” — a more meaningful pipeline metric.",
+      "**📄 SDR table now paginates at 7:** The SDR Performance table now shows 7 SDRs per page with pagination controls, instead of showing all SDRs on one page.",
+      "**🔧 Duplicate lead source filter fixed:** The lead source dropdown in Analytics was showing “Uploaded” twice. Duplicates are now removed automatically."
+    ]
+  },
+  {
+    "version": "v9.2.0",
+    "date": "10 Jun 2026",
+    "tags": [
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📦 Smaller, faster responses:** All API responses are now compressed before sending — pages load faster, especially for users in India connecting to US servers.",
+      "**⚡ Instant repeat page loads:** When you navigate back to a page you recently visited, it now loads instantly from your browser cache while fresh data loads in the background.",
+      "**🧠 Smarter memory usage:** Lead list pages now load only the data they need instead of pulling everything from the database. App uses less memory and responds faster.",
+      "**📊 Cache monitoring:** Admins can now see the cache backend status (Redis vs in-memory) in the monitoring health endpoint."
+    ]
+  },
+  {
+    "version": "v9.1.0",
+    "date": "10 Jun 2026",
+    "tags": [
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "danger"
+      },
+      {
+        "label": "🚀 INFRASTRUCTURE",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🚀 Faster after deployments:** App data now persists in a shared cache (Redis) that survives server restarts and deployments. You should no longer experience slow loads right after an update goes live.",
+      "**🛡️ Rock-solid reliability:** If the cache layer ever has an issue, the app automatically falls back to its built-in cache — no errors, no downtime, completely transparent.",
+      "**👥 Better for concurrent usage:** All team members now share the same cache. When one person loads a page, the data is warm for everyone else — no more redundant database hits."
+    ]
+  },
+  {
+    "version": "v9.0.1",
+    "date": "10 Jun 2026",
+    "tags": [
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "danger"
+      },
+      {
+        "label": "🔧 HARDENING",
+        "variant": "warning"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**⚡ Faster page loads across the board:** Under-the-hood performance improvements significantly reduce load times for the Users list, Leaderboard, Dashboard stats, and Call Logs — especially noticeable when multiple team members are using the app at the same time.",
+      "**🛡️ Smarter caching:** The app now prevents multiple simultaneous requests from triggering redundant database queries when the cache refreshes. This eliminates the occasional slow-load spike you may have seen right after a deployment.",
+      "**📊 Dashboard loads with one query instead of two:** The pipeline status counts and parked lead count are now computed in a single database pass, reducing dashboard load time.",
+      "**📞 Call Logs optimised:** The call log page now uses a more efficient query pattern — no more extra round-trips to fetch the user list before loading calls."
+    ]
+  },
+  {
+    "version": "v9.0.0",
+    "date": "09 Jun 2026",
+    "tags": [
+      {
+        "label": "👥 FULL POD SCOPING",
+        "variant": "default"
+      },
+      {
+        "label": "🔧 MAJOR",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔒 Dashboard — My Pod / Global toggle (Pod Admins only):** The main dashboard now shows pod-scoped stats, leaderboard widget, and activity feed by default. A new 🔒 My Pod / 🌐 Global toggle pill in the header lets you switch instantly — your preference is saved for the session.",
+      "**🏆 Leaderboard — pod-scoped by default:** Pod Admins see only their pod's SDRs and AEs on the Leaderboard page. The same toggle pill lets you switch to the global view to see the full org ranking.",
+      "**📡 Activity Feed — pod-scoped by default:** The full Activity Feed page now filters to your pod's calls, emails, and status changes by default. Use the toggle to switch to org-wide view when needed.",
+      "**📈 Analytics Metrics — always pod-scoped:** Summary, daily trend, and SDR performance metrics in the Analytics Hub are automatically scoped to your pod — no toggle needed.",
+      "**📬 Daily Digest — always pod-scoped:** The daily digest email and digest panel now shows only your pod's SDRs, new leads, and stuck leads. Super Admins continue to see org-wide data."
+    ]
+  },
+  {
+    "version": "v8.9.11",
+    "date": "09 Jun 2026",
+    "tags": [
+      {
+        "label": "👥 POD SCOPING",
+        "variant": "default"
+      },
+      {
+        "label": "🔧 UX",
+        "variant": "purple"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔒 Pod Admins now see only their pod's leads:** Pod Admins were previously seeing all leads org-wide, which made it difficult to manage their own pipeline. Leads are now scoped to your pod — you see leads assigned to your SDRs or tagged to your pod as an unassigned pool. Super Admins are unaffected and continue to see all leads.",
+      "**🌐 Global / My Pod toggle on the Leads page (Pod Admins only):** A new toggle pill appears in the leads filter bar for Pod Admins. Switch to 🌐 Global to see the full org-wide lead list when needed, and back to 🔒 My Pod to return to your scoped view. Your preference is saved for the session.",
+      "**📊 Dashboard stats now reflect your pod:** The dashboard total, status breakdown, and kanban board all now show pod-scoped counts by default, giving Pod Admins an accurate picture of their own team's pipeline."
+    ]
+  },
+  {
+    "version": "v8.9.9",
+    "date": "09 Jun 2026",
+    "tags": [
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**⚡ Every page now loads in under 1 second (Phase 3 — Smart Caching):** The dashboard, leaderboard, lead lists, SDR lead view, admin user list, and activity feed all now return in under 20ms server-side after the first load. Repeated visits within a 15–60 second window are served from an in-memory cache — no database query needed. You will notice the app feels significantly snappier on every page switch.",
+      "**📋 Lead list & My Leads are now instant on repeat loads:** Navigating to the lead list or your personal lead view no longer re-runs the full database query on every click. Results are cached per user and page for 15–20 seconds. If a lead is created, assigned, or its status is changed, the cache is cleared immediately so you always see fresh data when something actually changes.",
+      "**🔧 6 additional database indexes (infrastructure):** A TRIM mismatch in the company search index meant company-resolution queries were doing full table scans. Fixed. Notes, login sessions, and assignment lookups also received targeted indexes. Backend-only change — no visible UI difference, just improved reliability under load."
+    ]
+  },
+  {
+    "version": "v8.9.8",
+    "date": "09 Jun 2026",
+    "tags": [
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**⚡ Faster dashboard, leads & search (Phase 2 DB Indexes):** 13 new database indexes now cover the most heavily-used query paths. The dashboard stats, lead list, leaderboard, and search bar were all relying on full-table scans — they now hit indexed columns directly. Expected improvement: dashboard loads in ~300ms (down from ~1s), search in ~150ms (down from ~530ms). No visible UI changes — just speed.",
+      "**📊 Dashboard stats query streamlined:** The dashboard summary card was running an extra database count query on every page load (once per SDR session, ~20 times/visit). That redundant round-trip is removed — the count is now derived from the main query result instead."
+    ]
+  },
+  {
+    "version": "v8.9.7",
+    "date": "08 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📄 Analytics Export now downloads correctly:** Clicking the **Export CSV** button was accidentally navigating away from the Analytics Hub and loading a raw file URL in the browser tab — breaking the entire app until you navigated back manually. Fixed: Export now downloads the CSV to your computer while keeping you on the Analytics Hub page."
+    ]
+  },
+  {
+    "version": "v8.9.6",
+    "date": "08 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📊 Analytics Hub — instant navigation (no reload):** Returning to the Analytics Hub from any other page no longer triggers a full data reload. All charts, filters, and pinned reports stay exactly as you left them — zero flicker, zero waiting. This fix eliminates a background bug where the hub was destroying and rebuilding itself on every visit."
+    ]
+  },
+  {
+    "version": "v8.9.5",
+    "date": "08 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📊 Analytics Hub — 6× fewer API calls on load:** A Chrome DevTools audit revealed the Analytics Hub was making up to 6 duplicate API requests on every visit — funnel, SDR table, trend, and AI recommendation were all firing multiple times. Root causes: an async pod-list fetch was incorrectly triggering a second data load, and the AI insight was re-running on every data refresh rather than only when filters changed. All three causes are now fixed. The hub loads once, correctly.",
+      "**🧠 AI Insight badge — fires at the right time:** The “Low connect rate” / “High effort” AI insight badges now update only when you actually change a filter (POD, date range, batch) — not on every background data refresh. Fewer unnecessary Groq AI requests, faster badge updates when you do change filters."
+    ]
+  },
+  {
+    "version": "v8.9.4",
+    "date": "08 Jun 2026",
+    "tags": [
+      {
+        "label": "⚡ INFRA",
+        "variant": "default"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📊 API Performance Monitoring (admin-facing):** Every API request now logs its response time in Render logs using Google’s RAIL model (<100ms fast, 300ms–1s slow, >1s critical). Slow database queries (>50ms) are flagged automatically. This is the foundation for targeted performance improvements coming in the next sprint — no SDR-facing changes."
+    ]
+  },
+  {
+    "version": "v8.9.3",
+    "date": "08 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🏷️ Error logs now show the correct dialer (admin-facing fix):** When an SDR was blocked from starting a call because another call was still active, the System Logs → Error Logs entry incorrectly showed \"RCM Dialer\" as the source — even for Aircall users. Admins were being misled into investigating RCM when the issue was with Aircall. The error label now correctly reflects whichever dialer the SDR is actually using."
+    ]
+  },
+  {
+    "version": "v8.9.2",
+    "date": "04 Jun 2026",
+    "tags": [
+      {
+        "label": "🚨 URGENT FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🛡️ Dialer no longer permanently blocks SDRs after a missed call:** If a call was started but the system never received the \"call ended\" confirmation (e.g. you closed the browser mid-call or the provider had a brief outage), the next dial attempt would show \"You already have an active call in progress\" — even hours later. This is now fixed. Stale records are automatically cleared after 90 minutes so you can always start a new call without refreshing or contacting support.",
+      "**🧹 Background cleanup runs every 15 minutes:** A new background process sweeps for stuck call records every 15 minutes and heals them automatically. SDRs will no longer need to switch to Klenty or wait for admin intervention when this happens.",
+      "**🔄 Nightly sync now recovers zombie calls:** The overnight RCM data recovery job previously skipped calls it already knew about — even if the status was wrong. It now corrects any missed \"call ended\" records from the provider's history, ensuring call logs are accurate by the next morning."
+    ]
+  },
+  {
+    "version": "v8.9.1",
+    "date": "03 Jun 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚡ PERF",
+        "variant": "danger"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📌 Pin to Dashboard fixed:** AI query results can now be pinned successfully. Previously the pin button returned an error — this is now resolved. Pin any result and it will appear as a live card on your Dashboard tab instantly.",
+      "**🤖 Ask AI — All query types now return results:** Queries asking for comparisons (e.g. \"which SDR had the most calls last week?\"), funnels, or multi-metric breakdowns previously showed \"No data\". All result types now display correctly with charts and tables.",
+      "**💾 Saved reports sidebar polished:** Each saved report now shows a clean two-line layout — title on top, query below. Short reports show a subtle \"tap to run\" hint. No more duplicated text or bare single-line entries.",
+      "**⚡ Dashboard loads faster:** Analytics metrics now cache for 10 minutes (was 2 min). The AI Insight tag no longer causes a delay on page load — it loads silently in the background. Overall dashboard response time is significantly improved.",
+      "**🔔 Backend messages surface in the UI:** When a batch can't be resolved or data is unavailable, the AI now shows a clear amber notice instead of an empty result."
+    ]
+  },
+  {
+    "version": "v8.9.0",
+    "date": "03 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📌 Pin AI reports to your Dashboard:** After running any AI query, hit **\"Pin to Dashboard\"** to save it as a live card. The Dashboard tab now shows your pinned reports at the top — each one re-runs automatically for fresh data every time you visit.",
+      "**🔄 Refresh & unpin per card:** Each pinned card has a **🔄 Refresh** button to re-run the query on demand, and an **✕ Unpin** button to remove it. Your dashboard layout is fully yours to configure.",
+      "**🎛️ Up to 5 pinned reports per admin:** Pin your most-used queries — calls by SDR this week, meetings by pod, connect rate trend — and see them all on one screen without running queries manually.",
+      "**🔒 Pinned reports are user-scoped:** Each admin sees only their own pinned cards. Pod Admins' pinned reports respect their pod scope automatically."
+    ]
+  },
+  {
+    "version": "v8.8.0",
+    "date": "03 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**👔 New AE (Account Executive) role:** A dedicated AE role is now available across the entire system. AEs operate identically to SDRs — they can log calls, send emails, use the dialer, view their own leads, and appear in analytics. AE-only pods are enforced (no mixing with SDR pods). Pod Admins receive a copy of every lead assigned to an AE in their pod for oversight.",
+      "**🏆 AE Leaderboard:** A separate AE tab on the Leaderboard shows AE-specific rankings — calls, meetings, and connect rate — without mixing into the SDR board.",
+      "**📊 Analytics Hub — Activity Trend chart restored:** The Dashboard tab now shows the full **Activity Trend** line chart (Calls, Meetings, Research, Disqualified, Emails over time) with toggleable metrics — matching the analytics you had before.",
+      "**📊 Analytics Hub — 6 rich KPI cards:** All six KPI cards now show contextual subtitles: Research Complete shows % of assigned, Calls Made shows unique leads & avg/lead, Connect Rate shows a Low/Strong badge, Emails Sent shows open & reply rates, and Disqualified shows % of assigned.",
+      "**📊 Analytics Hub — SDR table improvements:** The per-SDR table now shows the correct **Connect %** column (not Conversion Rate), includes an **Inactive** toggle, and a **Search SDR** filter.",
+      "**💡 Analytics Hub — Insight pills:** Rule-based insight badges now appear above the KPI cards (e.g. \"Low connect rate at 12% — review call timing\", \"48 researched leads not yet called\") to surface actionable patterns automatically."
+    ]
+  },
+  {
+    "version": "v8.6.0",
+    "date": "02 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📊 Analytics Hub — AI query bar built into the Analytics page:** The Analytics page is now the **Analytics Hub**. A **✦ Ask AI** command bar sits at the top of the page — type any question about your pipeline and the result appears inline, right above your KPI cards. No page switch needed.",
+      "**🔍 Global AI Query Bar in the top navigation (Admin only):** A new **✦ Ask AI** input appears next to the global search bar on every page. Ask a question from anywhere — a compact result drops down instantly. Hit **\"Open full Analytics Hub →\"** to see the full result with charts. Keyboard shortcut: `⌘/` (or `Ctrl+/`) focuses the bar.",
+      "**🔗 Smart Analytics retired as a separate page:** The sidebar \"Smart Analytics\" link now takes you directly to the unified Analytics Hub. All saved reports, history, and AI workspace remain accessible via **✦ Full AI Workspace** from inside the hub.",
+      "**🔀 Legacy URLs auto-redirect:** Bookmarks or links to `#smart-analytics`, `#metrics`, or `#activity-feed` all redirect seamlessly to `#analytics`."
+    ]
+  },
+  {
+    "version": "v8.5.0",
+    "date": "02 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🧠 Smart Analytics — Ask your pipeline anything (Admin only):** A new **Smart Analytics** panel lets Super Admins and Pod Admins query live pipeline data using plain English — no filters, no reports to configure. Just type \"how many calls did we make this month by SDR?\" and get an instant bar chart. Supports calls, meetings, emails, leads, conversion rate, connect rate, research, and more.",
+      "**📊 Smart charts, auto-selected:** Results display as the most useful chart type — bar charts for SDR/pod comparisons, line charts for day/week/month trends, and tables for raw counts. No manual configuration needed.",
+      "**💾 Save & rerun reports:** Save any query as a named report and rerun it any time with one click. Pod Admins can only see their own saved reports.",
+      "**🔒 Scoped by role:** Pod Admins see only their pod's data. Super Admins see everything. Attempting cross-pod queries as a Pod Admin is automatically blocked.",
+      "**⚡ Auto model discovery:** The AI backend automatically finds the best available Groq model and retries if one is unavailable or rate-limited — no manual configuration needed.",
+      "**🐛 SF sync: duplicate leads no longer cause errors:** When Salesforce blocked a Lead creation because the email already existed (duplicate rule), the sync was showing as a failed error. It now correctly links to the existing Salesforce record instead — no more noise in SF Logs for this case."
+    ]
+  },
+  {
+    "version": "v8.4.0",
+    "date": "01 Jun 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🛡️ HARDENING",
+        "variant": "warning"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎮 Dialer Playground (Admin only):** A new 3-step onboarding wizard lets Super Admins and Admins verify RCM credentials, place a live test call, and confirm the widget is working — all without changing any SDR settings. Find it under 🎮 Playground in the Admin sidebar.",
+      "**⚡ Real-time call status (no more polling):** The RCM call widget now receives live call events (Ringing → Connected → Ended) instantly via Server-Sent Events instead of checking every 2 seconds. Calls feel faster and more responsive. Falls back to polling automatically if the connection drops.",
+      "**🛡️ Double-call prevention:** If an SDR accidentally clicks Call twice (or refreshes mid-call), the second call is now blocked immediately with a clear message: \"You already have an active call in progress.\" No more zombie LiveKit sessions.",
+      "**🔒 Call duration now always accurate:** RCM sometimes re-sends the same call event multiple times. The system now ignores duplicate endings — so call duration in the Calls tab always reflects the real duration, never overwritten by a retry.",
+      "**🎨 Lighter call widget:** The RCM floating call widget now uses a clean light theme — easier to read against both light and dark page backgrounds."
+    ]
+  },
+  {
+    "version": "v8.3.2",
+    "date": "29 May 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔄 RCM nightly call sync now actually runs:** A background job runs every night to recover any RCM calls that the real-time system may have missed (e.g. during a server restart). This job was silently failing every night due to an incorrect internal import — it never ran. Fixed: missed calls are now correctly recovered and appear in Call Logs the next morning."
+    ]
+  },
+  {
+    "version": "v8.3.1",
+    "date": "29 May 2026",
+    "tags": [
+      {
+        "label": "🚨 RCA PATCH",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🛡️ Task reminders no longer show a 500 error under load:** If the database is briefly busy (a common occurrence during peak morning usage when multiple SDRs load the app simultaneously), task reminders now return a clean retry response instead of a server error. You may see the bell refresh a few seconds later — this is expected.",
+      "**🔔 Task bell now refreshes every 60 seconds (was 30s):** Reduced the check-in frequency to ease pressure on the database during high-traffic periods. Tasks still appear promptly when they come due.",
+      "**📊 Aircall \"Desktop offline\" errors decluttered from Error Logs:** When an SDR's Aircall Desktop app is closed (common outside business hours), call failures were showing as critical errors in System Logs. They're now correctly categorised as warnings — so critical errors in the dashboard are actually critical."
+    ]
+  },
+  {
+    "version": "v8.2.0",
+    "date": "28 May 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎙️ SDR: Listen to your call recordings in Today's Calls:** Every call card in Today's Calls now shows a purple **🎙️ Listen** button when a recording is available. Click it to play the recording inline — no need to open the lead. Click again to collapse. If the link has expired, a clear message tells you to open the lead to refresh it.",
+      "**🎚️ Progress bar now visible in Call Monitor:** The audio seek bar was being clipped by a 32px height limit — the recording would play but you couldn't skip to a point in the recording. Fixed: the player now renders at its full native height.",
+      "**🔄 Refresh link button now visible + auto-plays:** The refresh button to get a fresh recording URL was a tiny invisible icon. It's now a clearly labelled **🔄 Refresh link** button. After refreshing, the recording plays automatically — no need to click Play a second time.",
+      "**🧪 22 new automated tests:** First ever coverage for the Today's Calls API — all edge cases now guarded (user isolation, date filtering, null recordings, expired links, sort order)."
+    ]
+  },
+  {
+    "version": "v8.1.0",
+    "date": "28 May 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🚀 Bulk Research now actually works:** The background job (Admin → Settings → AI Settings → Bulk Research) was silently doing nothing due to 5 stacked bugs — it now correctly upgrades all v1 leads to the new Pre-Call Intelligence format. Expect ~3-4 hours to complete for 10K+ leads.",
+      "**⚡ Speed fix — 7× faster:** A rate-limiter bug was sleeping 7.5 seconds before every Groq API call (asyncio clock mismatch). Fixed: the job now runs at full speed (~1 lead/sec on Groq's free tier).",
+      "**🛡️ Memory fix — no more silent crashes:** Loading 11,000 leads into RAM at once was silently killing the background thread. Fixed: leads are now processed in chunks of 100.",
+      "**🔄 Button resets correctly:** The \"Start Bulk Research\" button now shows the correct state on every page load — if no job is running, it's clickable (purple); if running, it shows live progress.",
+      "**📊 New: live status endpoint:** `GET /api/admin/bulk-research/status` — Super Admins can check how many leads have been processed without triggering a new job.",
+      "**🧪 13 new automated tests:** Full test coverage for the bulk research job (auth gate, skip logic, field persistence, failure isolation, resumability)."
+    ]
+  },
+  {
+    "version": "v8.0.0",
+    "date": "27 May 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      },
+      {
+        "label": "🛡️ HARDENING",
+        "variant": "warning"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔥 Pre-Call Intelligence (Research v2):** The AI research card on each lead now shows a **heat score** (🔥 Hot / 🟡 Warm / 🔵 Cool), a personalised **opening line**, persona signal, refined company description, pain points, and pitch angle. Research auto-triggers when you open a lead — no waiting, no manual refresh.",
+      "**🚀 Bulk Research Upgrade (Admin):** Settings → AI Settings → Bulk Research now includes a **pod selector**. Super Admins can upgrade existing v1 leads to the new v2 format in phases — run US Team first, then India Team — to avoid overloading the AI service.",
+      "**⚡ Lead → Calling auto-move:** When you dial a lead, their status automatically transitions to **Calling** — no manual status change needed.",
+      "**🛡️ Aircall error messages improved:** When Aircall is unavailable, you now see a clear, actionable message: \"Please ensure Aircall Desktop is open and your status is set to Available\" — instead of a raw error code.",
+      "**🔒 Dial button spam prevention:** Clicking Call multiple times quickly no longer fires multiple simultaneous call attempts. A guard prevents double-dialling.",
+      "**🐛 Critical: AI research cache fixed:** Research results are now correctly cached per company — leads from the same company reuse the research instead of re-running a new AI call every time."
+    ]
+  },
+  {
+    "version": "v7.2.0",
+    "date": "27 May 2026",
+    "tags": [
+      {
+        "label": "🛡️ HARDENING",
+        "variant": "warning"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔒 Phone validation before every call:** Both Aircall and RCM now validate the phone number before dialling — numbers with extensions are stripped automatically, dots and spaces are cleaned up, and invalid numbers (Indian 1860/1800 service lines, bad area codes, too short/long) are blocked with a clear message instead of a silent failure.",
+      "**📋 Extension stripping:** If a lead's phone number has an extension (e.g. `+1 800-887-8965 ext 288`), the extension is automatically stripped before dialling. You no longer need to manually clean the number.",
+      "**💬 Actionable RCM error messages:** When RCM rejects a call, you now see a specific reason — e.g. \"RCM says: phone number not reachable\" — instead of a raw error code. Every error type (invalid number, auth failure, rate limit, server unavailable, timeout) has a tailored message with what to do next.",
+      "**🛡️ Shared validation module:** Aircall and RCM now share the same phone validation logic — consistent behaviour across both dialers.",
+      "**🧪 1,252 tests passing:** 91 new automated tests added covering all phone edge cases, error codes, and guard conditions. Zero regressions."
+    ]
+  },
+  {
+    "version": "v7.1.0",
+    "date": "26 May 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📊 New: Call Monitor (Admins only):** A dedicated **Call Monitor** page gives Super Admins and Pod Admins a real-time view of all dialer activity across the team — Aircall, RCM, and manual calls in one place. Includes stat cards (Total, Completed, Failed, Avg Duration), full filter bar, inline audio playback, and transcript preview.",
+      "**🔍 Filters:** Filter by SDR, Provider (Aircall / RCM / Manual), Direction (↗ Outbound / ↙ Inbound), Outcome, Date Range, and Has Recording — all filters can be combined. Invalid date ranges are blocked before the API call.",
+      "**🔄 Auto-refresh:** The page refreshes every 60 seconds automatically. A manual **🔄 Refresh** button is always available for immediate updates.",
+      "**🛡️ Pod Admin Scoping:** Pod Admins only see calls from SDRs in their own pod. Cross-org Aircall data is automatically excluded.",
+      "**⚡ Backend Optimised:** Stats cards now correctly reflect the active filters — previously the summary could show inflated totals when Direction or Has Recording filters were applied. COUNT query is also index-friendly (no full JOIN).",
+      "**🧪 44 new tests:** All edge cases are now covered by automated tests — null leads, cross-org calls, empty transcripts, race conditions, and Pod Admin scoping."
+    ]
+  },
+  {
+    "version": "v7.0.0",
+    "date": "26 May 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔍 Dialer Errors Now Visible in System Logs:** When a RCM call fails to start, the exact error reason is now automatically logged under **System Logs → Error Logs** (filter by Dialer). Admins no longer need to check Render server logs to diagnose calling issues.",
+      "**📋 Call Logs Tab Upgraded:** The **System Logs → Call Logs** tab now shows a **Provider** filter (RCM / Aircall), a **Direction** column (outbound/inbound), and colour-coded provider badges. Failed calls are highlighted in red with the exact error message displayed inline — no guessing required.",
+      "**🔴 Failed-Call Badge:** A red badge now appears on the 📞 Call Logs tab button showing the count of failed calls — identical to how the Error Logs badge works. Refreshes every 60 seconds automatically.",
+      "**🛠️ Silent Errors Fixed:** Network retries, unknown RCM webhook events, and credential decryption failures were previously swallowed silently. All now surface as warnings or errors in the logs."
+    ]
+  },
+  {
+    "version": "v6.9.0",
+    "date": "25 May 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**📞 Call Duration Now Shows Correctly:** Calls from RCM were showing 0s instead of the real duration. This was caused by the RCM API using a different field name (`duration_seconds`) than expected. Duration now displays accurately — and if a recording exists, the duration is automatically read from the audio file.",
+      "**🏆 Leaderboard Dials Now Count Properly:** RCM and Aircall dials were not showing up in the Leaderboard. The leaderboard was only counting manual call logs — now it counts all dialer calls too. Your dials today will appear in real time.",
+      "**📊 Avg Duration Fixed:** The Avg Duration stat card on the Calls tab was showing 0s for leads with RCM calls. It now shows — when duration is unknown, and correctly averages only calls with known duration.",
+      "**🔄 Call History Sync Improved:** RCM calls that missed the disconnect event will now automatically recover their duration and ended time the next time you open that lead's page."
+    ]
+  },
+  {
+    "version": "v6.8.1",
+    "date": "25 May 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🚨 P1",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ Calls to ad-hoc numbers now work:** Dialling a phone number not already in the CRM was failing with a server error (HTTP 500) — the call never started. Fixed: the system now correctly creates a temporary lead record for unrecognised numbers."
+    ]
+  },
+  {
+    "version": "v6.8.0",
+    "date": "25 May 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🎙️ RCM Call Recordings Fixed:** Recordings from RCM calls were not appearing in the lead Calls tab. The recording refresh logic now uses the correct provider per call — recordings will appear on the next page load for completed calls.",
+      "**✅ Test Suite Isolation & Reliability:** Refactored backend public API key auth to inject the request's DB session dynamically, fixing database connection bleed and making the full backend unit test suite completely stable.",
+      "**✅ Manual Dial Sync Active Hidden:** The Dial/Call buttons are now dynamically hidden on lead details and lists if a manual dial sync is actively running.",
+      "**✅ Clear Filter Page Reload:** Clicking the \"Clear Filters\" button now triggers a clean page reload to completely reset all filter inputs and pagination states.",
+      "**✅ SDR Settings Dialer Toggle:** SDRs can now toggle the RCM WebRTC dialer widget on or off directly within their Settings panel.",
+      "**✅ SDR Error Logs Resolve Cleaned:** Removed the redundant \"Resolve\" buttons from System Error Logs for SDR-role users.",
+      "**✅ Compact Call Log Modal UI:** Streamlined the call log details modal to occupy less screen space and improve visual hierarchy."
+    ]
+  },
+  {
+    "version": "v6.7.0",
+    "date": "25 May 2026",
+    "tags": [
+      {
+        "label": "✨ FEATURE",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ Cross-Page Navigation:** Previous/Next buttons on the lead detail page can now traverse through *all* leads matching your current search/filters, even across pages, instead of being limited to the current page's subset.",
+      "**✅ Today's Calls Traversal:** Previous/Next buttons are now fully supported when opening leads directly from the \"Today's Calls\" view, allowing you to cycle sequentially through all unique leads called today.",
+      "**⚡ Optimized Backend Queries:** Added lightweight `ids_only` mode to get_leads/get_my_leads endpoints to fetch all matching lead IDs asynchronously without overhead."
+    ]
+  },
+  {
+    "version": "v6.6.0",
+    "date": "22 May 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "📊 ANALYTICS",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ Calls Made now accurate (US Team):** The Analytics dashboard was showing only 19 calls for US Team. Root cause: the system was reading from the manual call log table, which only had 19 entries. All Aircall calls (10,315 total) were invisible. Fixed — analytics now reads from both Aircall data and manual logs, showing the correct total.",
+      "**✅ India Team unaffected:** India Team uses manual call logging — their ~4,969 calls were already counted correctly and remain unchanged.",
+      "**✅ No double-counting:** Where a call exists in both systems (only 1 case found org-wide), it is counted once only.",
+      "**✅ 1,474 historical calls recovered:** Calls from the Aircall historical sync that weren't linked to leads (due to phone number format mismatch) have been matched and linked. These now count toward the correct lead's call history."
+    ]
+  },
+  {
+    "version": "v6.5.0",
+    "date": "22 May 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      },
+      {
+        "label": "⚡ PERF",
+        "variant": "danger"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ Call Logs load instantly:** The System Logs → Call Logs tab was loading slowly (3–8 seconds). Root cause: every page load was fetching all 11,000+ call records into memory just to count totals. Fixed — now uses a direct database aggregation query. First page loads in under 300ms.",
+      "**✅ CORS error fixed (Admin panel was blocked):** All API requests from the production app were showing CORS errors in the browser console. Fixed by updating the allowed origins configuration on the server.",
+      "**✅ Login speed improved:** On each login, the system was fetching a user's entire call history just to count today's calls. Fixed — now queries only today's data directly.",
+      "**✅ 3 database indexes added:** New indexes on call tables mean filters, sorting, and date-range queries run significantly faster as the database grows."
+    ]
+  },
+  {
+    "version": "v6.4.9",
+    "date": "22 May 2026",
+    "tags": [
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      },
+      {
+        "label": "🧪 TESTS",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ API field name consistency fix:** The dialer's phone number field now returns a consistent name across all endpoints — prevents silent mismatches that could cause calls to fail.",
+      "**✅ Test suite fully passing:** All 175 automated tests passing (0 failures). Added a sanity check suite that runs 13 pre-flight infrastructure checks before the full test run — catches server issues before wasting 20 minutes."
+    ]
+  },
+  {
+    "version": "v6.4.8",
+    "date": "22 May 2026",
+    "tags": [
+      {
+        "label": "🛡️ HARDENING",
+        "variant": "warning"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ Timer safety — no cross-call bleed:** If a new call started within 1.5 seconds of the previous call's widget closing, the old call's 45s safety timer could fire against the new call. Fixed — each timer now locks to its own call ID.",
+      "**✅ Calls tab retry window extended:** On slower networks, the automatic Calls tab switch after logging an outcome could miss the timing window. Extended from 600ms → 1200ms.",
+      "**✅ Outcome modal shows correct lead name:** For ad-hoc (non-lead-page) calls, the outcome modal now always shows the correct lead name instead of blank."
+    ]
+  },
+  {
+    "version": "v6.4.7",
+    "date": "May 22, 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ Outcome modal now visible:** The post-call outcome modal was appearing behind the RCM widget (z-index 99,999) and instantly disappearing. Fixed — the modal now always renders on top (z-index 100,000).",
+      "**✅ Calls tab auto-opens after logging:** After submitting a call outcome, the app now navigates to the lead and automatically opens the Calls tab — no manual click required to see the new entry.",
+      "**✅ Declined call no longer stuck on Ringing:** Two-layer guard added — Guard 1 (backend: if `ended_at` is already set, return CALL_ENDED immediately) and Guard 2 (backend: auto-end any RCM call stuck in CALL_STARTED for >50 seconds). Client-side 45s timeout added as a third safety net.",
+      "**✅ Calls tab refresh after call ends:** `_refreshCallsTab()` hook added — if the Calls tab is active when a call ends, it immediately re-fetches without requiring a page reload."
+    ]
+  },
+  {
+    "version": "v6.4.6",
+    "date": "22 May 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ Ringing timeout — backend Guard 2:** RCM calls stuck in `CALL_STARTED` for more than 50 seconds (no `ended_at`) are now automatically closed server-side. Prevents zombie calls from blocking the UI after a recipient declines and the webhook is delayed."
+    ]
+  },
+  {
+    "version": "v6.4.5",
+    "date": "22 May 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ Ringing stuck — backend Guard 1:** If a RCM call's `ended_at` is already written (by the disconnect endpoint or a webhook) but the status poll was still returning `CALL_STARTED` due to RCM API lag, the status endpoint now immediately returns `CALL_ENDED`. Verified live: call `3f6157e6` transitioned correctly 37s after start."
+    ]
+  },
+  {
+    "version": "v6.4.4",
+    "date": "22 May 2026",
+    "tags": [
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**✅ Calls tab refresh hook:** `window._refreshCallsTab(leadId)` is now exposed globally. After a RCM call ends, the hook is called — if the Calls tab is currently active it immediately re-fetches; otherwise it marks the tab stale so the next click fetches fresh data.",
+      "**✅ Manual dial Promise fix:** The \"Phone Bridge / Browser Call\" manual dial button was silently dropping the Promise result — `POST /api/calls/start` was never hit. Fixed by routing all manual dials through `showManualDialWidget()` which correctly handles the full async chain."
+    ]
+  },
+  {
+    "version": "v6.4.3",
+    "date": "21 May 2026",
+    "tags": [
+      {
+        "label": "🔍 SEARCH",
+        "variant": "default"
+      },
+      {
+        "label": "🛡️ HARDENING",
+        "variant": "warning"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔍 Search audit — 9 match paths:** Search now checks first name, last name, full name (both orders), email, company, primary phone, secondary phone, and company phone.",
+      "**⚡ Search performance:** 2-character minimum added — no more single-keystroke DB hits on 11k+ leads."
+    ]
+  },
+  {
+    "version": "v6.4.2",
+    "date": "21 May 2026",
+    "tags": [
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🔍 SEARCH",
+        "variant": "default"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🐛 Full-name search fixed:** Searching \"Melanie Pratt\" (or any \"First Last\" combination) now returns correct results. Previously returned 0 results because first and last name were only matched individually."
+    ]
+  },
+  {
+    "version": "v6.4.1",
+    "date": "21 May 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      }
+    ],
+    "title": null,
+    "items": [
+      "**🔥 Ad-hoc dial fixed:** Clicking \"Phone Bridge\" or \"Browser Call\" in the Ad-hoc Dial panel was silently cancelling the call. The widget went blank and no call was made. Now shows a \"Connecting…\" spinner and initiates correctly.",
+      "**✅ Random lead in footer fixed:** A previous lead's name was incorrectly appearing in the widget footer during ad-hoc dial. Resolved as a side-effect of the main fix."
+    ]
+  },
+  {
+    "version": "v6.4.0",
+    "date": "May 21, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      },
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "📞 RCM Dialer — Reliability, UX Polish & Performance",
+    "items": [
+      "**✅ Call end detection fixed:** Webhook events (declined/no-answer/completed) now immediately close the dialer widget. Previously, RCM's status API returned stale data after the call ended, causing polling to overwrite the webhook update — widget stayed on \"Ringing\" forever.",
+      "**✅ Button clean-up:** For RCM users, the redundant \"Call via RCM\" and \"Message\" buttons are now hidden — the floating widget handles both. Aircall users with RCM messaging still see the Message button.",
+      "**✅ Calls tab pagination:** Call history now loads 10 records at a time with an async \"Load more\" button. Previously all calls were loaded in one request.",
+      "**🔥 Hotfix — Calls were failing (v6.3.5):** The RCM `/calls/initiate` API returned 422 \"Unknown field\" for `agent_email` and `notify_url` fields that were incorrectly added in v6.3.3. Both were removed. Calls now initiate correctly.",
+      "**🔧 Status polling — no-downgrade guard:** Added a priority system (CALL_STARTED=0 → CALL_ANSWERED=1 → CALL_ENDED=2). Polling can only advance the status forward — never overwrite a webhook-set terminal state with a stale intermediate value."
+    ]
+  },
+  {
+    "version": "v5.16.0",
+    "date": "May 20, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      },
+      {
+        "label": "⚙️ BACKEND",
+        "variant": "info"
+      }
+    ],
+    "title": "🚀 SDR UX Overhaul — Smarter Calling, Faster Navigation",
+    "items": [
+      "**✅ New Call Outcome Modal:** Binary \"Did the call connect?\" question → inline chip picker → Log Call. 3 clicks max. Keyboard shortcuts: Y/N to pick branch, 1–9 for outcomes, Enter to submit.",
+      "**✅ Meeting Booked card:** Featured green card at the top of the Yes branch — tap it to expand a date + time picker inline. No separate screen.",
+      "**✅ Aircall Auto-Sync:** If you tag a call in Aircall, the outcome is automatically logged in RCM. The modal shows a quiet green dot while syncing, then dismisses itself.",
+      "**✅ Prev / Next Lead navigation:** When browsing leads, use ← → arrow buttons in the header (or Alt+← / Alt+→ on keyboard) to move between leads without going back to the list.",
+      "**✅ Multi-number call button:** If a lead has 2–3 phone numbers, a chevron ⌄ appears next to the Call button — tap it to choose which number to dial."
+    ]
+  },
+  {
+    "version": "v5.15.5",
+    "date": "May 15, 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🖥️ FRONTEND",
+        "variant": "purple"
+      }
+    ],
+    "title": "🛠️ Console Error Cleanup — 2 Frontend Warnings Eliminated",
+    "items": [
+      "**✅ Fixed: Editing a lead field while navigating away no longer crashes.** If you clicked an editable field and immediately switched to another lead or view, a silent JavaScript error could occur. The editor now safely aborts if the page has already changed.",
+      "**✅ Fixed: Spurious \"background operation failed\" warnings no longer appear in the error log.** Auth-related session events and navigation redirects were incorrectly surfacing as errors. These are now correctly suppressed."
+    ]
+  },
+  {
+    "version": "v5.15.4",
+    "date": "May 15, 2026",
+    "tags": [
+      {
+        "label": "🚨 P1 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🔐 ADMIN",
+        "variant": "default"
+      }
+    ],
+    "title": "🚨 Admin User Deletion — HTTP 500 Crash Fixed",
+    "items": [
+      "**✅ Fixed: Deleting a user from the Admin panel no longer returns a 500 error.** Removing a user who had a linked mailbox was crashing with a database integrity error. The backend now correctly delegates cleanup to the database cascade constraint, resolving the crash with no data loss.",
+      "**No action required:** User deletion works fully again. No data was lost during the incident window."
+    ]
+  },
+  {
+    "version": "v5.15.3",
+    "date": "May 15, 2026",
+    "tags": [
+      {
+        "label": "🔥 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🔍 DISCOVERY UI",
+        "variant": "purple"
+      }
+    ],
+    "title": "🛠️ Discovery Stage UI Polish — 2 Bugs Fixed",
+    "items": [
+      "**✅ Fixed: Discovery gate now clears immediately after logging outcome.** Previously the yellow \"Log outcome first\" banner remained visible even after logging, requiring a manual page refresh. The page now auto-refreshes with the latest data the moment you submit the outcome modal.",
+      "**✅ Fixed: Discovery call label now shows \"Outcome Logged\" instead of \"In Progress\".** Once an outcome is saved for a discovery call, the call entry correctly reflects this state and the amber highlight is removed. Only genuinely unlogged calls show the \"In Progress\" label."
+    ]
+  },
+  {
+    "version": "v5.15.2",
+    "date": "May 15, 2026",
+    "tags": [
+      {
+        "label": "🔥 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "📞 SDR WORKFLOW",
+        "variant": "default"
+      }
+    ],
+    "title": "🛠️ SDR Staging QA Patch — 4 Workflow Bugs Fixed",
+    "items": [
+      "**✅ Fixed: \"Meeting Complete\" and \"Demo Failed\" buttons now work.** Both actions were throwing a silent JavaScript error and doing nothing. The fix makes status transitions (→ Discovery, → Pending Review) reliable.",
+      "**✅ Fixed: Discovery stage gate no longer stays stuck on \"Log outcome first\".** The stuck gate was a knock-on effect of the button crash above — once the call outcome is correctly saved, the gate clears as expected.",
+      "**✅ Fixed: Second duplicate call entry per Aircall call.** Aircall sends phone numbers in different formats on CALL_STARTED vs CALL_ENDED (e.g. `+91 8109...` vs `+91 81097 30301`). The backend now normalises both to digits before matching, so each call creates exactly one log entry."
+    ]
+  },
+  {
+    "version": "v5.15.1",
+    "date": "May 15, 2026",
+    "tags": [
+      {
+        "label": "🔥 BUG FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "📞 CALL LOGS",
+        "variant": "default"
+      }
+    ],
+    "title": "🔧 Duplicate Dialer Call Entries — Fixed (EC-14)",
+    "items": [
+      "**✅ Fixed: Dialer calls no longer appear twice in lead history.** When you log an outcome via the post-call modal, only a single entry now appears — no more duplicate \"DialerCall + CallLog\" ghost record.",
+      "**Root cause:** The backend was guessing which dialer call to attach your outcome to using a 10-minute time window. Calls longer than 10 minutes (or with slow webhooks) fell outside this window and created a second log entry.",
+      "**Fix:** The frontend now passes the exact call ID to the backend when submitting outcomes via the dialer gate — precise match every time, regardless of call duration.",
+      "**Manual calls unaffected:** Logging a call outcome without the dialer (via \"Log Call\" button) continues to work exactly as before."
+    ]
+  },
+  {
+    "version": "v5.15.0",
+    "date": "May 15, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "📞 DIALER",
+        "variant": "default"
+      }
+    ],
+    "title": "📞 Automated Dialer Outcome Gate + Provider Test Buttons",
+    "items": [
+      "**✅ Outcome Gate:** After every dialer-initiated call (Aircall or RCM), a sticky banner and outcome modal automatically appear — you can't accidentally skip logging a call result.",
+      "**✅ Auto-recovery:** If you refresh the page mid-call, the banner reappears on reload and remains until the outcome is logged.",
+      "**✅ Auto-dismiss note:** If you close the modal without logging, a timestamped note is automatically added to the lead so no context is lost.",
+      "**✅ Aircall timing fix:** The outcome modal now opens immediately if Aircall hasn't registered the call yet (no `provider_call_id`) — you're never left waiting.",
+      "**🔧 Provider Test Buttons:** Admins can now test Aircall and RCM credentials independently in Settings — no more having to test both at once."
+    ]
+  },
+  {
+    "version": "v5.14.0",
+    "date": "May 15, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🔭 SDR PIPELINE",
+        "variant": "default"
+      }
+    ],
+    "title": "🛡️ SDR Discovery Pipeline — Status Transitions, Counter Integrity & Demo Failed Routing",
+    "items": [
+      "**✅ Pending Review Status:** SDRs can now transition a lead to Pending Review after a failed demo — routes it for admin review instead of marking it terminal immediately.",
+      "**✅ Demo Failed Routing:** Logging a Demo Failed outcome now correctly sets the lead status to Pending Review rather than leaving it in Demo Scheduled.",
+      "**✅ Meeting Complete Guard Expanded:** The Meeting Complete action now works from Meeting Scheduled, 1st Discovery Meeting, and Demo Scheduled statuses — no more blocked transitions mid-pipeline.",
+      "**✅ Discovery Counter Fixed:** `discovery_meeting_count` is now correctly incremented when a meeting is marked complete via the call-log path — counter was previously only updating through the Add Discovery shortcut.",
+      "**🔧 Test Suite Hardened:** Standalone test scripts (`test_discovery_gate.py`, `test_e2e_email_tracking.py`) refactored to not crash pytest during collection — wrapped in `__main__` guard."
+    ]
+  },
+  {
+    "version": "v5.13.0",
+    "date": "May 13, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🔭 DISCOVERY",
+        "variant": "default"
+      }
+    ],
+    "title": "🔭 SDR Discovery Pipeline — Full Workflow Completion",
+    "items": [
+      "**✅ Add Discovery Call:** The \"Add Discovery Call\" button now persists to the database and advances the lead stage correctly — was previously a no-op.",
+      "**✅ Complete Discovery:** New \"Complete Discovery\" button on the lead detail page advances the lead from 1st Discovery Meeting to Discovery Complete.",
+      "**✅ Schedule Demo:** New \"Schedule Demo\" button appears at Discovery Complete stage — one click advances to Demo Scheduled.",
+      "**⚠️ Max Attempts Banner:** SDRs at their call attempt limit now see a persistent warning banner directly on the lead detail page — not just in the call modal.",
+      "**📅 Meeting Datetime Required:** When logging a call with outcome \"Meeting Confirmed\", a date/time picker now appears and is required before submission — meeting time is automatically prepended to call notes."
+    ]
+  },
+  {
+    "version": "v5.12.3",
+    "date": "May 13, 2026",
+    "tags": [
+      {
+        "label": "🛡️ HARDENING",
+        "variant": "warning"
+      }
+    ],
+    "title": "🔒 P1 Import Route Resilience — Split-Brain & Session Corruption Fixed",
+    "items": [
+      "**Fixed: Lead import no longer silently loses upload logs.** The upload log and leads are now committed atomically — no more split-brain where leads land but the history entry is lost.",
+      "**Fixed: One bad row no longer crashes an entire CSV/GSheet import.** Per-row savepoints mean a single constraint violation is isolated — the rest of your upload completes successfully.",
+      "**Protocol:** Rule 11 added to AGENT_PROTOCOL.md — mandates single atomic commit for all lead write operations."
+    ]
+  },
+  {
+    "version": "v5.12.2",
+    "date": "May 12, 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🛡️ STABILITY",
+        "variant": "warning"
+      }
+    ],
+    "title": "🔧 Dialer Edge-Case Hardening — 5 Critical Fixes",
+    "items": [
+      "**Fixed: Aircall users no longer see \"Call via Aircall\" when dialer is inactive.** Call button correctly shows \"Log Call\" if your dialer is configured but disabled.",
+      "**Fixed: Messaging widget crash (classList error) eliminated.** The Message button is now hidden for Aircall and no-dialer users — only RCM users see it.",
+      "**Fixed: 403 errors on page load resolved.** Widget no longer hits an admin-only settings endpoint — sender configuration now comes directly from your per-user dialer status.",
+      "**Fixed: \"Log Call\" button tooltip updated** to \"Log the outcome of a manual call\" when no active dialer is present.",
+      "**Defensive: isDialerActive** now additionally checks the `active` flag, preventing any call routing to a misconfigured disabled dialer."
+    ]
+  },
+  {
+    "version": "v5.12.1",
+    "date": "May 12, 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "📞 Aircall Routing Fix — Call Button Now Works Correctly",
+    "items": [
+      "**Fixed:** Clicking \"Call via Aircall\" was incorrectly showing the RCM \"Phone Bridge / Browser Call\" modal — now skipped entirely for Aircall users.",
+      "**Aircall flow:** Button click → direct call via Aircall Phone app → toast confirmation. No intermediate modal.",
+      "**RCM flow unchanged:** Mode selector still appears for RCM users to choose Phone Bridge or Browser Call."
+    ]
+  },
+  {
+    "version": "v5.12.0",
+    "date": "May 12, 2026",
+    "tags": [
+      {
+        "label": "🔥 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "📞 AIRCALL",
+        "variant": "default"
+      }
+    ],
+    "title": "📞 Aircall UX — Provider-Aware Call Button & Widget Gate",
+    "items": [
+      "**Smarter call button:** The \"Log Call\" button now clearly labels itself \"📞 Call via Aircall\" (green) or \"💬 Call via RCM\" (purple) — no more guessing which dialer is active.",
+      "**RCM widget suppressed:** The RCM floating messaging button (FAB) no longer appears for Aircall SDRs — it only initialises for RCM users.",
+      "**No config changes needed:** Provider detection is automatic based on your admin dialer settings."
+    ]
+  },
+  {
+    "version": "v5.11.0",
+    "date": "May 12, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🩺 DIAGNOSTICS",
+        "variant": "default"
+      }
+    ],
+    "title": "🩺 Integration Health Diagnostics — Dialer & Chat",
+    "items": [
+      "**GET /api/dialer/health:** Instantly check your Contact Center config — provider, API credentials, caller ID, and live API connectivity.",
+      "**GET /api/chat/health:** Check RCM messaging setup — enabled flag, api_key, user_id, account_id, sender_id, and live API ping.",
+      "**Safe & masked:** No secrets exposed — credential values shown as `abc***xyz`. Auth required.",
+      "**Status field:** Returns `\"ok\"` or `\"degraded\"` with per-check detail messages — great for debugging staging vs prod."
+    ]
+  },
+  {
+    "version": "v5.10.0",
+    "date": "May 12, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "💬 MESSAGING",
+        "variant": "default"
+      }
+    ],
+    "title": "💬 RCM Floating Widget — Unified Messaging Surface",
+    "items": [
+      "**💬 Message Button:** A green **Message** button on every lead detail page opens the floating RCM widget with the lead's name and phone pre-loaded.",
+      "**🪟 Floating Widget:** The widget is now the only messaging surface — it floats over the page and supports active-call state (timer, disconnect button).",
+      "**🚫 No-phone guard:** Leads without a phone number see a clear notice instead of a blank compose area.",
+      "**📞 Timer sync:** Widget call timer anchors to the actual call start time — no drift between dialer and messaging UI.",
+      "**⚙️ Admin-Controlled:** Super Admins enable this via **Settings → Sync → RCM Messaging**. SDRs without it enabled see no UI change."
+    ]
+  },
+  {
+    "version": "v5.9.0",
+    "date": "May 11, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🔍 OBSERVABILITY",
+        "variant": "default"
+      }
+    ],
+    "title": "🔴 Error Logs — System Health Visibility for Admins",
+    "items": [
+      "**🔍 Error Logs Tab:** New tab in Audit Logs — every frontend JS error and backend 500 is automatically captured and translated into plain English. No more Render logs.",
+      "**🟡 / 🔴 Severity Cards:** Critical vs Warning, with plain-English title, description, \"What to do\" hint, user email, timestamp, and ×N dedup badge.",
+      "**✓ Resolve:** One-click resolve per error — card fades out, live badge clears. Resolver name recorded automatically from your login.",
+      "**🎯 Role-Scoped:** Super Admin sees all; Pod Admin sees pod errors; SDRs see their own only.",
+      "**🗑️ Auto-Purge:** Logs older than 15 days deleted nightly — zero manual cleanup needed.",
+      "**⚡ Zero Performance Impact:** All error capturing is fire-and-forget in background threads."
+    ]
+  },
+  {
+    "version": "v5.8.2",
+    "date": "May 11, 2026",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "🐛 Research → Calling Gate Fix",
+    "items": [
+      "**🔧 Research Gate Fixed:** Fixed a blocker where the \"Complete AI research first\" warning appeared even after all four research fields were fully populated. The transition to **Calling** status now correctly unlocks as soon as research is complete.",
+      "**ℹ️ What was happening:** The frontend was checking for HTML input elements that don't exist — research fields render as read-only text, so the check always failed. The fix reads research data directly from the lead record, matching what the backend validates.",
+      "**✅ No action needed:** The fix is automatic — if your research fields are filled, you can now move to Calling immediately."
+    ]
+  },
+  {
+    "version": "v5.8.0",
+    "date": "May 8, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🤖 AI",
+        "variant": "default"
+      },
+      {
+        "label": "🔧 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "🤖 AI Research Prompt Editor + Sandbox Export Fix",
+    "items": [
+      "**✍️ Prompt Editor (AI Settings):** Super Admins can now customize the AI research prompt — live character counter, click-to-insert `{lead_context}` variable, and Save / Reset to Default. Shows Custom vs Default badge.",
+      "**🔄 Dynamic AI Prompts:** The research backend now injects your custom prompt at runtime. Falls back to the system default if none is set — fully backward compatible.",
+      "**⚡ Sandbox Refresh Fixed:** \"Refresh from Production\" was timing out on large databases. Now exports one table at a time — each request stays within Render's 30s limit.",
+      "**🧹 Sandbox UI Fix:** Fixed the \"Loading sandbox configuration...\" text persisting below the rendered settings panel."
+    ]
+  },
+  {
+    "version": "v5.7.6",
+    "date": "May 8, 2026",
+    "tags": [
+      {
+        "label": "🔧 HOTFIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "🤖 AI Research Fixed — \"Unexpected end of JSON input\" Error Resolved",
+    "items": [
+      "**🔗 Root Cause Fixed:** The AI Research button was calling the wrong server (the static frontend instead of the API backend) due to a relative URL. This returned an HTML error page instead of JSON, causing the \"Unexpected end of JSON input\" error. Now correctly routes to the backend API.",
+      "**💾 Save Error Surfacing:** Research saves that fail (e.g. network issues) now show an error toast instead of falsely displaying ✅ Saved — so you always know if your data was actually stored.",
+      "**📊 Progress Ring Accuracy:** The progress sub-text now correctly says \"X required fields left to unlock Calling\" based on the 4 core fields, not the optional 11. Once the 4 required fields are filled, it shows \"✅ Core research done — you can move to Calling\"."
+    ]
+  },
+  {
+    "version": "v5.7.1",
+    "date": "May 6, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🛡️ HARDENING",
+        "variant": "warning"
+      }
+    ],
+    "title": "🛡️ System Hardening & Upload Center Fixes",
+    "items": [
+      "**🧠 OOM Prevention:** Large CSV uploads (over 5,000 rows) are now rejected server-side before they can exhaust memory.",
+      "**🏥 Deep Health Check:** The /health endpoint now verifies live database connectivity and reports pool utilization.",
+      "**💥 Upload Wizard Fix:** Fixed a crash in the CSV upload wizard caused by undeclared variables.",
+      "**🔄 Rollback Dialog Fix:** Replaced the native browser confirm dialog with a custom modal to prevent accidental auto-dismissal.",
+      "**🗺️ Column Detection Fix:** CSV uploads now correctly auto-detect `first_name` and `last_name` column headers."
+    ]
+  },
+  {
+    "version": "v5.7.0",
+    "date": "May 6, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "📞 OUTCOMES",
+        "variant": "default"
+      }
+    ],
+    "title": "🎯 Dynamic Call Outcomes — Config-Driven Outcome Management",
+    "items": [
+      "**⚙️ Admin Outcome Config:** Super Admins can now enable/disable call outcomes, create up to 10 custom outcomes, and require notes — all from Settings → Sync, with no redeployment needed.",
+      "**🏷️ Outcome Groups:** Each outcome belongs to a behavioral group (positive, negative, neutral, not_answered, terminal) with an associated action (continue, schedule_callback, disqualify).",
+      "**🚪 Left the Company:** New builtin outcome that auto-disqualifies leads who have left their company.",
+      "**📝 Notes Required:** Outcomes flagged as \"notes required\" block call logging until the SDR provides notes.",
+      "**📞 RCM Fix:** Fixed HTTP 400 errors from legacy DialerCall records storing phone numbers instead of call IDs.",
+      "**🧪 827 Backend + 86 Playwright Tests Passing.**"
+    ]
+  },
+  {
+    "version": "v5.6.0",
+    "date": "May 4, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "📞 WEBRTC",
+        "variant": "default"
+      }
+    ],
+    "title": "📞 RCM Dialer — WebRTC Browser Calling & Call Mode Selector",
+    "items": [
+      "**🌐 LiveKit WebRTC:** Calls now use the LiveKit WebRTC SDK for real-time browser audio — sub-second voice connection with no external app.",
+      "**📞 Call Mode Selector:** Before each call, choose between Browser Call (WebRTC) or Phone Bridge mode. Browser Call is the default.",
+      "**🔒 HMAC Auth:** All RCM API calls now use secure HMAC token authentication via RCMAuthManager.",
+      "**📦 Payload Alignment:** Cleaned up API payloads — removed legacy fields for strict RCM API v2 compliance.",
+      "**🧪 773 Tests Passing:** Updated edge case tests for HMAC auth and payload alignment. 0 failures."
+    ]
+  },
+  {
+    "version": "v5.4.0",
+    "date": "April 29, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "📞 DIALER",
+        "variant": "default"
+      }
+    ],
+    "title": "📞 RCM Contact Center Dialer — Dual-Dialer Architecture",
+    "items": [
+      "**📞 RCM Dialer:** Full integration with RCM Contact Center API for browser-based calling. SDRs assigned to RCM make calls directly in the browser — no external app needed.",
+      "**🌐 In-Browser Call Widget:** A floating, draggable call widget with real-time duration timer, mute/hold/hangup controls, and recording indicator. Works on desktop and mobile.",
+      "**👤 Per-SDR Routing:** Each SDR can be assigned to either Aircall or RCM — the system dynamically picks the right provider at call time. Nothing changes for Aircall users.",
+      "**🔄 Dual Sync:** Call sync jobs now run for both providers independently — call history stays complete regardless of which dialer an SDR uses.",
+      "**🔗 Real-Time Webhooks:** RCM call events (started, answered, ended) are processed in real time — call logs update automatically.",
+      "**📋 Provider Badge:** Call history cards now show \"via RCM\" or \"via Aircall\" badges so you can see which dialer was used for each call.",
+      "**🧪 51 New Tests:** Comprehensive test suite covering all RCM provider operations, webhook parsing, retry logic, and edge cases. 701 total tests passing."
+    ]
+  },
+  {
+    "version": "v5.3.0",
+    "date": "April 28, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🔄 ROLLBACK",
+        "variant": "default"
+      },
+      {
+        "label": "🔧 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "🔄 Batch Rollback, Data Alignment & UX Stability",
+    "items": [
+      "**🔄 12-Hour Batch Rollback:** Admins can undo an entire import batch (CSV or Google Sheet) within 12 hours of upload. Worked leads (with call history or status changes) are automatically protected. A live countdown timer shows remaining rollback window.",
+      "**📋 Expandable Upload History:** Upload History rows now expand to show per-SDR assignment details — which SDR received which leads — directly inline.",
+      "**📊 Lead Count Alignment:** Dashboard and Leads page now show identical counts. Parked leads are globally excluded from list/kanban views to match dashboard metrics.",
+      "**🤖 AI Research Fix:** Auto-trigger now fires when fewer than 3 research fields are filled (previously required exactly 0), fixing cases where partial research blocked auto-population.",
+      "**📅 Sidebar Reorganization:** \"Daily Digest\" moved below Dashboard for better admin access. \"Today\\\\'s Calls\" now visible only to SDRs.",
+      "**🧪 104/104 Tests Green:** 26 new stability tests + 10 pre-existing test fixes. Full regression suite passing."
+    ]
+  },
+  {
+    "version": "v5.2.0",
+    "date": "April 27, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "📵 DATA QUALITY",
+        "variant": "default"
+      }
+    ],
+    "title": "📵 No-Phone Lead Quarantine — Data Quality & SDR Protection",
+    "items": [
+      "**📵 Phone Validation:** CSV and Google Sheet uploads now validate phone fields. Rows without any valid phone number (≥7 digits) are automatically skipped — count reported in upload summary.",
+      "**🚫 Status Quarantine:** Phoneless leads are set to \"No Phone - Parked\" — a new status that prevents assignment to SDRs. Dashboard shows a red 📵 card with the parked count.",
+      "**🔄 Auto-Revert:** When a phone number is added to a parked lead, it automatically reverts to \"Lead Assigned\". SDRs get auto-assigned; Admin edits keep it unassigned.",
+      "**📈 Clean Analytics:** Parked leads are excluded from all analytics — funnel, SDR table, daily digest, and dashboard totals — ensuring metrics only reflect actionable pipeline.",
+      "**🔒 Assignment Guards:** Bulk-assign and auto-assign endpoints now filter out parked leads, preventing accidental assignment of phoneless leads."
+    ]
+  },
+  {
+    "version": "v5.1.0",
+    "date": "April 27, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "⚡ PERF",
+        "variant": "danger"
+      }
+    ],
+    "title": "📊 Daily Digest — Super Admin Leadership Summary + Assignment Performance Optimization",
+    "items": [
+      "**📊 Daily Digest (Super Admin):** New one-page operational summary with 6 KPI cards showing delta % vs. same weekday last week, pipeline flow transitions, SDR performance snapshot (sorted by activity), and notable events (top performer, stuck leads, batch uploads). Includes date picker and PDF export.",
+      "**⚡ Assignment Endpoint Optimization:** Switched admin assignment views from full lead serialization to lightweight summary format — faster page loads for unassigned/assigned lead tables.",
+      "**🔧 N+1 Query Fix:** Replaced joinedload with subqueryload for call_logs in assignment routes, eliminating redundant database queries on large lead sets.",
+      "**📅 Chronological Sort:** Leads in assignment views now sorted by creation date (newest first) for consistent ordering."
+    ]
+  },
+  {
+    "version": "v5.0.1",
+    "date": "April 22, 2026",
+    "tags": [
+      {
+        "label": "🔒 SECURITY",
+        "variant": "warning"
+      }
+    ],
+    "title": "🔧 Post-Deploy Stabilization — Security, UX & UI Fixes",
+    "items": [
+      "**🔒 View-As Token Isolation:** Fixed a critical bug where \"View As\" permanently overwrote the admin's JWT token, changing their actual role. Now uses isolated sessionStorage — an amber banner shows when View-As is active with a one-click Exit button.",
+      "**⌨️ Search Hotkeys:** Press **⌘K** (Mac) or **Ctrl+K** (Windows) to instantly focus the search bar from anywhere. **/** (forward slash) also works when not in a text field. A subtle ⌘K hint badge appears in the search bar.",
+      "**📦 POD Add SDR Dropdown Fix:** Fixed the \"Add SDR\" dropdown in POD Management being clipped behind the card boundary. Dropdown now renders above adjacent cards correctly."
+    ]
+  },
+  {
+    "version": "v5.0.0",
+    "date": "April 22, 2026",
+    "tags": [],
+    "title": "🚀 Performance & UX Re-Engineering — Search, Skeleton Loaders, State & Timezone Fixes",
+    "items": [
+      "**📞 Phone Search:** Global search bar now supports phone number lookup (primary & secondary) — search by full or partial number, including +country code format.",
+      "**💀 Skeleton Loaders:** All blocking spinners replaced with animated skeleton loaders across Admin, Assignments, Audit Logs, SDR Settings, and SF Logs — 60-80% faster perceived load time.",
+      "**🔄 Tab State Persistence:** Switching tabs (Leads → Dashboard → Leads) no longer resets your filters, pagination, or sort settings. State clears naturally on browser tab close or logout.",
+      "**⏰ Task Reminder Timezone Fix:** Fixed reminders firing 5+ hours late (e.g. 11 AM reminder alerting at 4:30 PM). Timezone conversion now correctly handles IST → UTC.",
+      "**📅 Notification Delay Fix:** Morning notifications no longer appear the next day — same timezone root cause resolved.",
+      "**🧪 20 New Tests:** Comprehensive search test suite covering phone matching, SDR scope enforcement, SQL injection safety, and edge cases."
+    ]
+  },
+  {
+    "version": "v4.12.0",
+    "date": "April 20, 2026",
+    "tags": [],
+    "title": "📊 Analytics Dashboard Redesign — Hierarchical Filters, SDR Picker, Chart & Layout Fixes",
+    "items": [
+      "**① → ④ Filter Hierarchy:** POD → Date Range → Batch → Refine. Each step unlocks the next — numbered step pills guide you through the sequence.",
+      "**🗺️ Breadcrumb Trail:** A persistent bar at the top always shows exactly what context you're viewing (POD / date range / batch selected).",
+      "**💡 Insight Bar:** Rule-based status tags (No Calls Today, Low Connect Rate, On Track) + a live AI Recommendation powered by Groq — loads non-blocking, cached for 2 minutes.",
+      "**📊 Funnel Strip:** Horizontal Leads → Calls → Connects → Meetings with % conversion between each stage.",
+      "**📋 6 KPI Cards:** Leads, Research, Emails, Calls, Connect %, and Disqualified — all in a unified metric grid.",
+      "**🔍 Searchable SDR Picker:** Replaced the scrollable SDR pill row with a search-driven picker — type to filter, select as a removable chip, or click \"All SDRs\" to reset. No more horizontal scrolling.",
+      "**📈 5-Metric Trend Toggles:** Toggle Calls, Meetings, Research, Disqualified, or Emails on the trend chart without refetching data.",
+      "**🔀 All Batches Mode:** Replace the SDR table with a full-width batch comparison table — per-batch Leads, Calls, Connect %, Meetings, and Emails with a totals row.",
+      "**📐 Layout Fixes:** Chart and SDR table panels now size independently — no chart stretching. SDR table scrolls internally (max 440px), eliminating whitespace below the chart.",
+      "**⏩ Compact Pagination:** SDR table pagination redesigned as compact ← / → buttons with \"N / M\" page indicator."
+    ]
+  },
+  {
+    "version": "v4.11.2",
+    "date": "April 19, 2026",
+    "tags": [
+      {
+        "label": "🔧 CRITICAL FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "📊 Analytics Batch Filter — Data Discrepancy Fix",
+    "items": [
+      "**📊 Batch Filter Fixed:** Selecting a batch in the analytics dashboard now correctly shows all assigned leads, calls, emails, and meetings for that batch. Previously showed 0 leads due to a broken internal column reference.",
+      "**📈 All Endpoints Updated:** Batch filtering now works consistently across KPI cards, trend chart, SDR performance table, and email breakdown — previously only KPI cards attempted (broken) batch filtering.",
+      "**📧 Email Source Filter:** Fixed email breakdown source filter using wrong matching logic, ensuring accurate email counts when filtering by source type."
+    ]
+  },
+  {
+    "version": "v4.11.1",
+    "date": "April 19, 2026",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "📊 Analytics Dashboard Stabilization — Filters, Data Accuracy & UX",
+    "items": [
+      "**📊 Source Filter:** Cleaned up lead source dropdown — raw import strings replaced with clean labels (Google Sheet, Uploaded, Salesforce, Manual)",
+      "**👥 Pod Filter Fixed:** Pod filter now renders correctly for Super Admins — was silently missing due to a localStorage key mismatch",
+      "**🔗 Pod → SDR Cascade:** Selecting a Pod now filters the SDR dropdown to show only SDRs in that Pod",
+      "**☑️ Inactive SDR Detection:** Overhauled logic — SDRs are flagged inactive only when they have no login AND zero call/email activity",
+      "**📅 Meetings Count Fixed:** Meetings now count from all assigned leads regardless of date filter — no more false zeros",
+      "**📡 Activity Feed Visibility:** Toggle moved between SDR table and trend charts for easier access"
+    ]
+  },
+  {
+    "version": "v4.10.3",
+    "date": "April 16, 2026",
+    "tags": [
+      {
+        "label": "🔧 HOTFIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "🔒 Security Fix — Phone Number Hidden in Dashboard Priority Queue",
+    "items": [
+      "**🔒 Priority Queue Phone Masking:** Phone numbers in the Dashboard Priority Queue are now hidden until research is complete — consistent with the lead list. Leads with incomplete research show a **🔒 Hidden** badge and the Call button is blocked. Complete research on the lead detail page to unlock calling.",
+      "**🛡️ Data Leakage Fix:** Previously, phone numbers were visible to SDRs in the Priority Queue regardless of research status — this was a data exposure bug."
+    ]
+  },
+  {
+    "version": "v4.10.0",
+    "date": "April 16, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "📂 Batch Tracker moved to Upload Center + Lead Link Fix",
+    "items": [
+      "**📂 Batch Tracker in Upload Center:** The Upload Batch Tracker has moved from the Activity Feed to a dedicated tab inside the Upload Center — more intuitive to find, right next to your upload tools.",
+      "**📊 Summary Cards:** The Batch Tracker tab shows Total Batches, Leads in DB, Meetings Scheduled, and overall Conversion % at a glance.",
+      "**🔍 Per-Lead Drill-Down:** Click any batch card to see every individual lead — name, company, status, assigned SDR, call count, last call outcome, and research status.",
+      "**🔗 Lead Navigation Fixed:** Lead name links in the drill-down table now correctly open the lead's detail page.",
+      "**🧹 Activity Feed Cleaned Up:** Activity Feed is now exclusively focused on real-time call, email, status, and research events."
+    ]
+  },
+  {
+    "version": "v4.9.0",
+    "date": "April 13, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Research-First Workflow Enhancements",
+    "items": [
+      "**🔒 Phone Number Masking:** The Phone and Secondary Phone fields are now masked and hidden behind a \"Hidden (Complete Research)\" badge until all research fields are completed.",
+      "**🎯 Auto-Expanded Call Strategy:** When a lead transitions to the Calling status, the Call Strategy accordion automatically expands so your Hook and Pitch Angle are immediately visible.",
+      "**🤖 Automated AI Research Trigger:** Clicking any of the research accordions will automatically trigger the AI Research generation, provided you haven't already started manual research."
+    ]
+  },
+  {
+    "version": "v4.8.2",
+    "date": "April 13, 2026",
+    "tags": [
+      {
+        "label": "🔧 HOTFIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Aircall API Integration Fix",
+    "items": [
+      "**📞 Aircall Empty Response Crash:** Fixed a production issue where the Aircall dialer integration would crash (JSONDecodeError) when the API returned an HTTP success code but an empty response body. Call initiation now handles empty responses gracefully."
+    ]
+  },
+  {
+    "version": "v4.8.1",
+    "date": "April 10, 2026",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Lead Management Workflow Improvements + SDR Filter Fix",
+    "items": [
+      "**📵 No-Phone Disqualification:** Leads without phone numbers can now be disqualified directly using the \"No Phone Number\" reason — no call logging required. A yellow info banner guides users on no-phone leads",
+      "**🗑️ Direct Lead Deletion:** Admin-only \"Delete Lead\" button on the lead detail page with confirmation modal — no more navigating to Assignments for single-lead removal",
+      "**👤 SDR Filter (All Leads):** Admins can filter leads by assigned SDR on the All Leads page. Date filters auto-clear when an SDR is selected",
+      "**🔧 Assignments SDR Filter Fix:** Fixed the SDR filter on the Assignments tab not filtering results — caused by duplicate element IDs between tabs",
+      "**🔧 Date Range Collision Fix:** SDR filter no longer shows zero results when older leads fall outside the default 6-month date range"
+    ]
+  },
+  {
+    "version": "v4.8.0",
+    "date": "April 10, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "📡 Unified Activity Feed — Track Call Outcomes & Team Interactions",
+    "items": [
+      "**📡 Activity Feed:** New admin-only dashboard aggregating all SDR calls, emails, status changes, and research into a single filterable, paginated view — understand what happened, how customers connected, and what's pending",
+      "**🎯 Call Strategy View:** Expanded call details now show the personalization angle, research hypothesis, call notes, recording player, and transcript — everything a manager needs without opening the lead",
+      "**📧 Structured Email Section:** Email details display subject, direction, body preview, and open tracking stats in a professional grid layout",
+      "**📝 Notes / Summary Column:** Table column shows intelligent preview of call notes, email subjects, or status transitions at a glance",
+      "**🔍 Smart Search:** Searching by lead or company automatically bypasses date filters to search across all time",
+      "**🧹 Deduplication:** Only the latest activity per lead per type is shown — keeping the feed clean and focused",
+      "**📥 CSV Export:** Download filtered activities as a spreadsheet including Call Strategy"
+    ]
+  },
+  {
+    "version": "v4.7.0",
+    "date": "April 9, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Lead Priority Queue — Post-Call Deprioritization",
+    "items": [
+      "**⬇️ Automatic Deprioritization:** Leads are now automatically deprioritized after calls are logged, keeping your My Leads list focused strictly on fresh, unworked contacts",
+      "**🟡 Medium Priority:** A lead called once today is marked as Medium priority (amber row border + \"Called Today\" badge)",
+      "**⬇️ Deprioritized:** A lead called 2+ times today sinks to the bottom (faded row + \"Deprioritized\" badge)",
+      "**↑ Re-prioritize:** You can explicitly push a lead back to High priority by clicking the \"↑ Re-prioritize\" button on the lead's row",
+      "**📈 Sorted by Score:** My Leads table is now properly ordered with High priority floating to the top, regardless of when they were added"
+    ]
+  },
+  {
+    "version": "v4.6.2",
+    "date": "April 8, 2026",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Outcome Filter Precision Fix + Task Time Picker",
+    "items": [
+      "**🔍 Call Back Later Filter (Regression Fix):** Leads who had a historical \"Call Back Later\" call but were subsequently updated to a different outcome (e.g. \"Meeting Confirmed\") were incorrectly appearing in the filter. Now only the **most recent call per lead** is evaluated using a ranked window function",
+      "**🕐 Task Time Picker:** Task creation form now includes a **due time** field alongside the due date — so notifications fire at the exact time you need them, not just on the day",
+      "**🛡️ Task Error Handling:** \"Add Task\" button now shows a loading state and restores itself on API failure with a toast notification — no more silent crashes or ghost entries",
+      "**🧪 +20 Tests:** 4 backend regression tests for the outcome filter, plus 16 Playwright E2E tests covering filter precision, task CRUD, time picker, snooze/dismiss state, and filter persistence"
+    ]
+  },
+  {
+    "version": "v4.6.1",
+    "date": "April 8, 2026",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Dialer Outcome Filter Fix + Task Notification Stability",
+    "items": [
+      "**🔍 Dialer Outcome Filter:** Fixed a bug where clicking a call outcome filter (e.g. \"Call Back Later\") on the dashboard would miss leads called via Aircall or RCM dialer. All leads with that outcome now appear correctly regardless of which calling method was used",
+      "**🔔 Task Notifications:** Fixed \"ghost task\" issue — snoozing or dismissing a task now only removes it from the notification panel when the server confirms the action. If there's a network issue, the button re-enables so you can try again",
+      "**🧪 43 New Tests:** Backend test coverage added for task lifecycle (create, complete, snooze, dismiss) and outcome filtering across both manual and dialer call sources"
+    ]
+  },
+  {
+    "version": "v4.6.0",
+    "date": "April 8, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Pod-Based Upload Assignment + Branding Update",
+    "items": [
+      "**📦 Pod-Based Uploads:** Upload Center now lets you assign leads to an entire Pod instead of a single SDR — leads are distributed via intelligent round-robin across all SDRs in the pod",
+      "**🏢 Company Grouping:** Leads from the same company are always assigned to the same SDR — no more scattered outreach to the same hospital across multiple reps",
+      "**👤 SDR Dropdown Retained:** Both \"Assign to Pod\" and \"Assign to SDR\" dropdowns available — mutually exclusive, selecting one auto-clears the other",
+      "**🔄 Leads Follow User:** When an SDR is transferred between Pods, their active leads automatically move with them to the new Pod",
+      "**🎨 Branding Update:** Updated to \"RCM · Powered by RCM\" with new RCM favicon and logo across login page, sidebar, and browser tab"
+    ]
+  },
+  {
+    "version": "v4.5.0",
+    "date": "April 7, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Universal Lead Creation for All Roles",
+    "items": [
+      "**🆕 New Lead for Everyone:** The \"+ New Lead\" button is now available to SDRs, Pod Admins, and Super Admins — perfect for adding referrals mid-call when a lead gives you a new contact or number",
+      "**📝 Expanded Form:** Create leads with full detail — First/Last Name, Company, Title, Phone, Secondary Phone, Email, LinkedIn URL, and Initial Status in a clean two-column layout",
+      "**🔗 Auto-Assign:** New leads are automatically assigned to you and appear instantly in your \"My Leads\" list. Pod assignment is inherited from your team",
+      "**🔒 Security:** Backend auth guard added. Initial status restricted to \"Lead Assigned\" or \"Research\" only"
+    ]
+  },
+  {
+    "version": "v4.4.1",
+    "date": "April 7, 2026",
+    "tags": [
+      {
+        "label": "🎨 UI",
+        "variant": "purple"
+      }
+    ],
+    "title": "Sidebar Toggle Redesign",
+    "items": [
+      "**📐 Toggle Relocated:** Sidebar collapse/expand button moved from the bottom bar to a floating circular button at the top edge of the sidebar — sits outside the sidebar on the boundary for a cleaner, modern look",
+      "**🎯 Subtle Chevron:** Replaced double « » chevrons with single ‹ › for a more professional appearance — small 28px white circle with drop shadow"
+    ]
+  },
+  {
+    "version": "v4.4.0",
+    "date": "April 7, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Collapsible Sidebar + Email Formatting Fix + Origin Tagging",
+    "items": [
+      "**📐 Collapsible Sidebar:** Toggle between expanded (260px with labels) and compact (72px icon-only) mode — state persists across sessions, hover tooltips in collapsed mode, works for all roles",
+      "**✉️ Email Formatting:** Emails now preserve your line breaks and paragraphs — previously all formatting was lost when the recipient received the email",
+      "**📧 Origin Tagging:** Outbound emails include a subtle \"RCM · Powered by RCM\" footer and invisible X-Mailer header for tracking emails sent from the CRM"
+    ]
+  },
+  {
+    "version": "v4.3.3",
+    "date": "April 6, 2026",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "SDR Metrics Accuracy + Email Connect Fix",
+    "items": [
+      "**📊 SDR Metrics:** Metrics dashboard now only counts SDR users — admin and Pod Admin activity no longer inflates KPIs, trends, or the SDR performance table",
+      "**✉️ Email Connect:** After connecting email, SDRs now correctly return to My Settings instead of seeing a blank page",
+      "**🔔 Success Toast:** \"Email connected successfully\" confirmation now appears for all user roles after OAuth"
+    ]
+  },
+  {
+    "version": "v4.3.2",
+    "date": "April 6, 2026",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Email Fixes — Full Body + Accurate Open Tracking",
+    "items": [
+      "**📧 Full Email Body:** Emails are no longer truncated — you can now see the complete email including the sender's signature and contact details",
+      "**👁️ Accurate Open Tracking:** Email open counts now only track when the recipient opens the email — the sender's own view in their Sent folder is no longer counted",
+      "**✂️ Signature Preserved:** Email sign-offs like \"Best, Name\" are no longer stripped from the email body"
+    ]
+  },
+  {
+    "version": "v4.3.0",
+    "date": "April 6, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Email UI Redesign + Attachment Support",
+    "items": [
+      "**✉️ Email Redesign:** Professional flat card layout replaces gradient chat bubbles — outbound emails have amber left border, inbound emails have blue left border",
+      "**📎 Attachments:** Email cards show attachment chips with download links — click to download files directly",
+      "**🔄 Auto-Refresh:** Email and Calls tabs auto-refresh when switching between them",
+      "**📏 Smart Sizing:** Email cards fit content width — short emails no longer stretch to full width"
+    ]
+  },
+  {
+    "version": "v4.2.0",
+    "date": "April 2, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Conversations Tab + Email Open Tracking",
+    "items": [
+      "**💬 Conversations:** New tab on lead detail — message leads directly from RCM via the RCM messaging integration. Uses phone fallback and per-SDR identity tagging",
+      "**📧 Email Open Tracking:** Outbound emails now track opens — a green \"Opened\" badge shows view count and first-opened time, gray \"Sent\" badge for unread emails",
+      "**👁️ Per-SDR Identity:** Each SDR can be assigned a Conversations user ID in Admin panel for proper message attribution",
+      "**📱 Phone Fallback:** Conversations uses secondary phone when primary is missing, so more leads can be reached",
+      "**🔒 Webhook Resilience:** Email tracking webhook handles edge cases — unknown messages, rapid-fire opens, missing fields — without errors"
+    ]
+  },
+  {
+    "version": "v4.1.1",
+    "date": "April 1, 2026",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Security Hardening + Delete Fix + Navigation Cleanup",
+    "items": [
+      "**🔒 Security Hardening:** Internal security improvements — logging cleanup, authentication defaults tightened, credential handling improved",
+      "**🗑️ Delete Fix:** Fixed bulk delete failing for leads with email activity or dialer call records",
+      "**🔧 My Settings:** \"My Settings\" now only appears for SDR and Pod Admin — Super Admins use the full Settings page"
+    ]
+  },
+  {
+    "version": "v4.1.0",
+    "date": "April 1, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Company-Level Call Resolution + Metrics Fix",
+    "items": [
+      "**🏢 Company Connected:** When a meeting is booked with any contact at a company, all other leads at that company are flagged with a \"Company Connected\" badge — preventing redundant outreach",
+      "**📋 Lead List Badge:** \"✅ Company Connected\" badges appear in company group headers and on individual lead rows",
+      "**📄 Detail Banner:** Lead detail shows an amber \"Company Already Connected\" banner with the resolved contact's name",
+      "**📞 Call Warning:** Call modal shows a warning when calling into a company that already has a meeting booked",
+      "**📊 Metrics Fix:** Fixed SDR Metrics meeting count — was showing 2 instead of 7 due to missing activity log events from the call outcome path"
+    ]
+  },
+  {
+    "version": "v4.0.2",
+    "date": "March 31, 2026",
+    "tags": [],
+    "title": "Aircall Dialer Fixes + Call Outcome Improvements",
+    "items": [
+      "**📞 Aircall Fix:** Fixed user matching — all Aircall users are now fetched across pages. SDRs who couldn't initiate calls can now use click-to-call",
+      "**📋 No More Duplicates:** Logging a call outcome after an Aircall call now updates the same record instead of creating a duplicate entry",
+      "**📞 Meeting Scheduled:** \"Meeting Scheduled\" outcome no longer moves the lead — lead stays in Calling for tentative bookings. Only \"Meeting Confirmed\" transitions the lead and triggers Salesforce sync"
+    ]
+  },
+  {
+    "version": "v4.0.1",
+    "date": "March 31, 2026",
+    "tags": [],
+    "title": "Metrics & Activity Fixes + Email Connect UX",
+    "items": [
+      "**📊 Metrics Fix:** Fixed dashboard metrics showing zeros — stale login-only data no longer blocks real activity reporting",
+      "**👤 Activity Status:** User status badges (Active/Idle/Inactive) now reflect real heartbeat and interaction data instead of login timestamps",
+      "**🧹 Session Cleanup:** Stale sessions (>30 min without activity) are now auto-closed — no more zombie sessions",
+      "**✉️ Email Connect:** Connecting your email now redirects you back to Settings with a success confirmation instead of dropping you on Leads"
+    ]
+  },
+  {
+    "version": "v4.0.0",
+    "date": "March 30, 2026",
+    "tags": [],
+    "title": "Architecture Overhaul — 502/503 Root Cause Fixes",
+    "items": [
+      "**⚡ Email Sync Rewrite:** Rewrote from async to sync — emails return instantly from cache, Nylas syncs in background with isolated DB session (fixes 502)",
+      "**🚀 Webhook 10x Faster:** Replaced O(N) in-memory lead scan with O(1) SQL phone lookup — response time dropped from ~5s to <50ms (fixes 503)",
+      "**📱 Phone Matching:** SQL-level matching handles all formats — E.164, digits-only, dashes, spaces — via indexed query",
+      "**✉️ Email Preview:** Quoted text, forwarded messages, and signatures stripped from previews",
+      "**♿ Accessibility:** Fixed Chrome label-for warnings on email compose toggles",
+      "**🧪 237 Tests:** 40 new root-cause-specific tests covering sync behavior, phone matching, and webhook resilience"
+    ]
+  },
+  {
+    "version": "v3.10.0",
+    "date": "March 27, 2026",
+    "tags": [],
+    "title": "Aircall Dialer Integration + Call Recording + Unified Calls Tab",
+    "items": [
+      "**📞 Aircall Dialer:** Click-to-call from lead detail — automatic call tracking, duration, and recording capture via Aircall",
+      "**🎙️ Call Recordings:** Embedded audio player on call cards — listen and download recordings directly",
+      "**📊 Unified Calls Tab:** Manual logs and Aircall calls merged into a single sorted view with stats",
+      "**✉️ Email Tab:** Emails moved to a dedicated tab with threaded view and quoted text stripping",
+      "**⚙️ Dialer Config:** Super Admins configure Aircall credentials and phone numbers in Settings → Dialer",
+      "**🔒 Auto-Tracking:** Manual call logging disabled when Aircall is active — prevents duplicates",
+      "**🐛 Bug Fixes:** Fixed call modal race condition, orphaned records, and FAILED ghost entries"
+    ]
+  },
+  {
+    "version": "v3.9.2",
+    "date": "March 27, 2026",
+    "tags": [],
+    "title": "Company Filter + Pagination Persistence + Phone Fixes",
+    "items": [
+      "**🏢 Company Filter:** Filter leads by hospital/company — view all personas at once without switching pages",
+      "**📌 Pagination Memory:** Leads page remembers your page, search, and filters when navigating to a lead and back",
+      "**📱 Phone Fallback:** Phone column now shows secondary phone when primary is missing — \"No Phone\" only when both are empty",
+      "**📞 Secondary Phone Fix:** Fixed bug where secondary phone wasn't saved during lead upload",
+      "**🎨 Filter Layout:** Improved All Leads filter bar layout — all controls in one clean inline row",
+      "**🏆 Leaderboard:** Removed stray dashes under SDR names without POD assignment"
+    ]
+  },
+  {
+    "version": "v3.9.1",
+    "date": "March 27, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Auto-Assign SDR on Upload + Email Fix + Time Tracking",
+    "items": [
+      "**👤 Auto-Assign SDR:** Upload Center now includes an \"Assign to SDR\" dropdown — select an SDR to auto-assign all newly imported leads",
+      "**✉️ Email Validation:** Company names in Email column no longer cause false-positive duplicate skips during upload",
+      "**⏱️ Time Tracking Fix:** SDR Metrics \"Time Spent\" now uses activity heartbeats — no more inflated idle-time numbers",
+      "**🔧 Dropdown Filter:** \"Assign to SDR\" dropdown shows only SDR and Pod Admin roles"
+    ]
+  },
+  {
+    "version": "v3.9.0",
+    "date": "March 26, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "AI Research + Smart Leads Table + Keep-Alive",
+    "items": [
+      "**🤖 AI Research:** One-click AI-powered lead enrichment using Groq LLM — fills 10+ research fields with company-level caching",
+      "**🏢 Company Grouping:** Leads table groups contacts by company with visual headers and lead count",
+      "**📵 No-Phone Highlighting:** Leads without phone numbers are flagged with yellow rows and red badges",
+      "**📝 Notes Preview:** Latest note shown directly in leads table — see notes without clicking into each lead",
+      "**⚙️ AI Settings:** Super Admins can configure LLM provider, API key, and model from Settings",
+      "**🔄 Keep-Alive:** Server self-pings every 10 min to prevent cold starts on Render free tier"
+    ]
+  },
+  {
+    "version": "v3.8.1",
+    "date": "March 26, 2026",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Email Fix + Data Cleanup + SDR Metrics Improvements",
+    "items": [
+      "**✉️ Email Name Fix:** Inbound email replies now display the lead's name instead of their email address",
+      "**👤 Duplicate Name Cleanup:** Fixed leads with duplicate full names caused by CSV import mapping",
+      "**📊 SDR Metrics Data:** KPI cards, charts, and Per-SDR table now show real-time data even before daily aggregation runs",
+      "**📊 Chart Fix:** Fixed \"No data yet\" messages stacking up when switching date filters"
+    ]
+  },
+  {
+    "version": "v3.8.0",
+    "date": "March 25, 2026",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Lead Enrichment + Smart Assignment + Email Integration",
+    "items": [
+      "**📞 Secondary Phone:** New \"Secondary Phone\" field on lead detail — auto-populated from imports or editable by SDRs",
+      "**🔗 LinkedIn Link:** Clickable \"View Profile\" link on lead detail Contact Information card",
+      "**🏢 Company-Based Round Robin:** Auto-assign now groups all contacts from the same company to a single SDR",
+      "**📱 Broadened Phone Mapping:** Upload recognizes 20+ phone column variants (e.g., \"Enriched Mobile Phone\", \"Direct Phone\")",
+      "**⚡ Assignments Performance:** Assignments tab loads 5-10x faster — fixed per-lead settings query and added eager loading",
+      "**✉️ Nylas Email Integration:** OAuth flow, email sending, activity logging, and webhook listener for inbound email tracking"
+    ]
+  },
+  {
+    "version": "v3.7.0",
+    "date": "March 24, 2026",
+    "tags": [],
+    "title": "Bulk Assignment Management",
+    "items": [
+      "**🔍 SDR Filter:** Filter Assignments page by specific SDR to manage their workload",
+      "**📦 Bulk Unassign:** Select multiple leads and unassign them in one click (Pod Admin + Super Admin)",
+      "**🗑️ Bulk Delete:** Permanently delete selected leads with all associated data — Super Admin only",
+      "**✅ Floating Action Bar:** Context-aware toolbar with Assign, Unassign, and Delete actions",
+      "**🐛 Bug Fix:** \"Lead Assigned\" status filter now correctly shows matching leads",
+      "**🧪 E2E Tests:** Expanded from 35 to 48 end-to-end tests"
+    ]
+  },
+  {
+    "version": "v3.6.0",
+    "date": "March 23, 2026",
+    "tags": [],
+    "title": "RCM Rebrand + Login Revamp",
+    "items": [
+      "**🚀 RCM Rebrand:** Renamed from \"RCM CRM\" to \"RCM\" across all user-facing surfaces",
+      "**✨ Revamped Login Page:** New dark navy + amber/gold design with floating spark animations",
+      "**Updated Tagline:** \"Turn raw leads into qualified prospects\""
+    ]
+  },
+  {
+    "version": "v3.5.0 – v3.5.2",
+    "date": "March 23, 2026",
+    "tags": [],
+    "title": "Leaderboard + Metrics UX + Settings + SF Push + Export Fix",
+    "items": [
+      "**🏆 Leaderboard Time-Periods:** Filter rankings by 7D / 30D / 90D / All Time",
+      "**📈 SDR Metrics UX:** Date range picker, SDR search, pagination",
+      "**⚙️ Settings Revamp:** 2-tab layout, hidden for SDRs",
+      "**19-Field SF Push:** Enriched Salesforce push with research notes",
+      "**Export Fix:** Fixed metrics CSV/XLSX 401 error"
+    ]
+  },
+  {
+    "version": "v3.0.0 – v3.4.0",
+    "date": "March 11–18, 2026",
+    "tags": [],
+    "title": "Upload Center · Outcomes · Admin Panel · Multi-Role · Core CRM",
+    "items": [
+      "**📤 Upload Center:** CSV/XLSX import with smart mapping and deduplication",
+      "**🏷️ Opportunity Outcome:** Won/Lost tracking for Meeting Scheduled leads",
+      "**🛡️ Admin Panel:** Stats cards, search, filters, activity badges, CSV export",
+      "**🔒 Audit Logs:** 4-tab unified view (Activity, Login, Feedback, SF Logs)",
+      "**👥 Three-Role System:** Super Admin, Pod Admin, SDR with POD management",
+      "**📊 Core CRM:** Dashboard, leads, pipeline, call logging, Salesforce sync, Google SSO"
+    ]
+  }
+]

@@ -1,0 +1,266 @@
+/*
+ * analytics-tailwind.css
+ *
+ * Tailwind entry point for the Analytics Hub IIFE bundle ONLY.
+ * Intentionally omits @tailwind base (which resets body, h1-h4, etc.)
+ * to prevent CSS leakage into the Vanilla JS shell (EC-11).
+ *
+ * Only components + utilities are included — all the classes used by
+ * DashboardTab, AskAiTab, and their sub-components.
+ */
+
+/* Skip @tailwind base — no global resets that would fight the Vanilla shell */
+
+/*
+ * Preflight's compositional-utility custom-property defaults (transforms/
+ * rings/shadows/gradients) are skipped along with @tailwind base above, so
+ * any standalone transform utility (e.g. -translate-y-1/2, used to center
+ * the SDR Performance search icon) silently no-ops: the browser can't
+ * resolve `translate(var(--tw-translate-x), var(--tw-translate-y))` when
+ * --tw-translate-x was never initialized, so the whole `transform` property
+ * falls back to `none`. Mirrors sales-journey-tailwind.css/help-tailwind.css's
+ * fix for the same bug, scoped to .analytics-hub-root.
+ */
+.analytics-hub-root, .analytics-hub-root *, .analytics-hub-root *::before, .analytics-hub-root *::after {
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-gradient-from-position: ;
+  --tw-gradient-via-position: ;
+  --tw-gradient-to-position: ;
+  --tw-ring-inset: ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+}
+
+/*
+ * Preflight's <button> normalization is skipped along with @tailwind base
+ * above, so buttons fall back to native OS chrome: no background reset
+ * (visible native fill/focus highlight) and no color/font inheritance from
+ * ambient Tailwind classes. Reproduces just that part of Preflight, at the
+ * same low specificity Preflight itself uses (:where() keeps this at 0,0,1
+ * — any button's own Tailwind utility class still wins), scoped to
+ * .analytics-hub-root.
+ */
+:where(.analytics-hub-root) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;
+
+/* Animations used by DashboardTab */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* ─── Pinned Reports Section ─────────────────────────────────────────────── */
+.pinned-reports-section {
+  margin-bottom: 1.25rem;
+}
+
+.pinned-reports-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.pinned-reports-icon { color: #6366f1; }
+
+.pinned-reports-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #334155;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pinned-reports-count {
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: #6366f1;
+  color: white;
+  border-radius: 999px;
+  padding: 1px 7px;
+  line-height: 1.6;
+}
+
+.pinned-reports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.875rem;
+}
+
+.pinned-reports-skeleton-row {
+  display: flex;
+  gap: 0.875rem;
+}
+
+.pinned-card-skeleton {
+  flex: 1;
+  height: 180px;
+  border-radius: 1rem;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─── Pinned Card ─────────────────────────────────────────── */
+.pinned-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04), 0 4px 12px rgba(99,102,241,0.06);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.pinned-card:hover {
+  box-shadow: 0 4px 16px rgba(99,102,241,0.14);
+  transform: translateY(-1px);
+}
+
+.pinned-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.pinned-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.pinned-card-pin-icon { color: #6366f1; flex-shrink: 0; }
+
+.pinned-card-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pinned-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.pinned-card-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  background: transparent;
+}
+
+.pinned-card-btn--refresh { color: #64748b; }
+.pinned-card-btn--refresh:hover { background: #f1f5f9; color: #6366f1; }
+.pinned-card-btn--unpin  { color: #94a3b8; }
+.pinned-card-btn--unpin:hover  { background: #fee2e2; color: #dc2626; }
+
+.pinned-card-query {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  font-style: italic;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pinned-card-body {
+  flex: 1;
+  min-height: 100px;
+}
+
+.pinned-card-loading,
+.pinned-card-error,
+.pinned-card-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.pinned-card-error {
+  color: #f59e0b;
+  background: #fffbeb;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  justify-content: flex-start;
+}
+
+.pinned-card-scalar {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #6366f1;
+  text-align: center;
+  padding: 0.75rem 0;
+  margin: 0;
+}
+
+.pinned-card-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.pinned-card-table td { padding: 4px 8px; }
+.pinned-card-table-label { color: #475569; }
+.pinned-card-table-value { color: #1e293b; font-weight: 700; text-align: right; }
+.pinned-card-table-even td { background: #f8fafc; }
+
+.pinned-card-footer {
+  font-size: 0.65rem;
+  color: #cbd5e1;
+  text-align: right;
+  padding-top: 0.25rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+/* Spinner used in pinned cards */
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

@@ -1,0 +1,26 @@
+# ─── RCM Backend — Railway Deployment Config ────────────────────────────────
+# https://docs.railway.app/reference/config-as-code
+
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[deploy.envVars]
+# Set these in Railway Dashboard → Variables (never commit real values)
+# DATABASE_URL = "postgresql://..."   # Railway auto-injects if Postgres plugin added
+# ANTHROPIC_API_KEY = ""
+# JWT_SECRET_KEY = ""
+# NYLAS_API_KEY = ""
+# AIRCALL_API_KEY = ""
+# SALESFORCE_CLIENT_ID = ""
+# SALESFORCE_CLIENT_SECRET = ""
+# FRONTEND_URL = "https://alternatecrm.com"
+# ALLOWED_ORIGINS = "https://alternatecrm.com,https://app.alternatecrm.com"
+# ENVIRONMENT = "production"

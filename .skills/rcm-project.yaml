@@ -1,0 +1,50 @@
+# Task Observer — RCM Session Skills
+# Auto-populated by the Task Observer tool during coding sessions.
+# Corrections and judgment calls captured here improve future agent behavior.
+#
+# Tool: https://github.com/rebelytics/one-skill-to-rule-them-all
+# Instructions: Run task-observer passively during Claude Code sessions.
+# It watches, captures corrections, writes them as skills below.
+
+skills:
+  - id: rcm-no-legacy-brands
+    priority: critical
+    trigger: "any mention of conversive, sms-magic, leadspark"
+    action: "STOP — these brands are removed. Use 'RCM', 'Built-in Messaging', or 'rcm_*' equivalents."
+    learned_from: "2026-08-15 rebrand session"
+
+  - id: rcm-no-db-commits
+    priority: critical
+    trigger: "git add *.db OR committing sqlite files"
+    action: "STOP — never commit .db files. They are gitignored and contain PII/test data."
+    learned_from: "2026-08-15 rebrand session"
+
+  - id: rcm-no-env-commits
+    priority: critical
+    trigger: "git add .env OR hardcoding API keys"
+    action: "STOP — secrets go in Railway env vars. Use .env.example as template only."
+    learned_from: "2026-08-15 rebrand session"
+
+  - id: rcm-railway-deploy
+    priority: high
+    trigger: "deploying backend"
+    action: "Deploy to Railway at https://railway.app. Config is in railway.toml. DB is PostgreSQL via Railway plugin."
+    learned_from: "2026-08-15 rebrand session"
+
+  - id: rcm-domain
+    priority: medium
+    trigger: "domain, URL, frontend URL, CORS"
+    action: "Domain is alternatecrm.com. API at api.alternatecrm.com. Frontend at alternatecrm.com."
+    learned_from: "2026-08-15 rebrand session"
+
+  - id: rcm-messaging-label
+    priority: medium
+    trigger: "UI label for messaging, dialer, SMS"
+    action: "Use 'Built-in Messaging' for UI-facing labels. Never use 'Conversive' or 'SMS Magic'."
+    learned_from: "2026-08-15 rebrand session"
+
+  - id: rcm-mcp-graph-first
+    priority: high
+    trigger: "exploring code, tracing callers, understanding impact"
+    action: "Use code-review-graph MCP tools first (semantic_search_nodes, query_graph, get_impact_radius). Fall back to grep only if graph doesn't cover it."
+    learned_from: "GEMINI.md project instructions"

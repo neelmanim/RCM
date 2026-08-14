@@ -1,0 +1,940 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+ * NavHub.css — scoped styles for NavSidebar + NavTopbar IIFE bundle
+ * All selectors are prefixed with .nh- to prevent leakage into main content.
+ * Matches the existing vanilla CSS design token values from style.css.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Tokens (mirrored from style.css) ──────────────────────────────────────── */
+:root {
+  --nh-sidebar-bg:       #1a2035;
+  --nh-sidebar-width:    220px;
+  --nh-sidebar-collapsed-width: 72px;
+  --nh-sidebar-text:     rgba(255, 255, 255, 0.75);
+  --nh-sidebar-border:   rgba(255, 255, 255, 0.06);
+  --nh-active-bg:        #4f46e5;
+  --nh-active-text:      #ffffff;
+  --nh-hover-bg:         rgba(255, 255, 255, 0.06);
+  --nh-topbar-height:    60px;
+  --nh-transition:       0.22s ease;
+}
+
+/* ── Sidebar shell ─────────────────────────────────────────────────────────── */
+.nh-sidebar {
+  width: var(--nh-sidebar-width);
+  min-height: 100vh;
+  background: var(--nh-sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: width var(--nh-transition);
+  flex-shrink: 0;
+  z-index: 10;
+  overflow: visible; /* allow tooltip to overflow */
+}
+
+.nh-sidebar--collapsed {
+  width: var(--nh-sidebar-collapsed-width);
+}
+
+/* ── Logo ──────────────────────────────────────────────────────────────────── */
+.nh-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px 16px;
+  border-bottom: 1px solid var(--nh-sidebar-border);
+  min-height: 64px;
+  flex-shrink: 0;
+}
+
+.nh-logo__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.nh-logo__text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.nh-logo__name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: white;
+  white-space: nowrap;
+}
+
+.nh-logo__sub {
+  font-size: 0.55rem;
+  font-weight: 500;
+  color: var(--nh-sidebar-text);
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+/* ── Nav list ──────────────────────────────────────────────────────────────── */
+.nh-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0;
+  scrollbar-width: none;
+}
+.nh-nav::-webkit-scrollbar { display: none; }
+
+.nh-nav__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nh-nav__item--feedback {
+  border-top: 1px solid var(--nh-sidebar-border);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+/* ── Nav link ──────────────────────────────────────────────────────────────── */
+.nh-nav__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--nh-sidebar-text);
+  font-size: 0.83rem;
+  font-weight: 500;
+  transition: background var(--nh-transition), color var(--nh-transition);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.nh-nav__link:hover {
+  background: var(--nh-hover-bg);
+  color: white;
+}
+
+.nh-nav__item--active .nh-nav__link {
+  background: var(--nh-active-bg);
+  color: var(--nh-active-text);
+}
+
+.nh-nav__icon {
+  flex-shrink: 0;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nh-nav__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Collapsed — center icons */
+.nh-sidebar--collapsed .nh-nav__list {
+  padding: 0 6px;
+}
+
+.nh-sidebar--collapsed .nh-nav__link {
+  justify-content: center;
+  padding: 10px;
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────────── */
+.nh-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--nh-sidebar-border);
+  flex-shrink: 0;
+  min-height: 64px;
+}
+
+.nh-sidebar--collapsed .nh-footer {
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 6px;
+}
+
+.nh-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
+}
+
+.nh-footer__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.nh-footer__name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nh-footer__role {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+/* ── Logout button — always visible (Part 1 fix) ───────────────────────────── */
+.nh-logout-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.32);
+  padding: 5px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: color 0.2s;
+}
+.nh-logout-btn:hover { color: #ef4444; }
+
+/* ── Collapse toggle button ──────────────────────────────────────────────────  */
+.nh-collapse-btn {
+  position: absolute;
+  top: 50%;
+  right: -14px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--nh-sidebar-bg);
+  color: rgba(255, 255, 255, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 20;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.25);
+}
+.nh-collapse-btn:hover {
+  color: white;
+  border-color: rgba(255,255,255,0.3);
+  background: #2a3552;
+}
+
+/* ── Fixed-position tooltip (escapes overflow:hidden — v9.7.11 pattern) ─────── */
+.nh-tooltip {
+  position: fixed;
+  background: #1e293b;
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-50%);
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+  transition: opacity 0.15s;
+  border: 1px solid rgba(255,255,255,0.08);
+  font-family: 'Inter', sans-serif;
+}
+
+/* ── Topbar ──────────────────────────────────────────────────────────────────  */
+.nh-topbar {
+  height: var(--nh-topbar-height);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+  z-index: 25;
+  position: sticky;
+  top: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  flex-shrink: 0;
+  /* needed so nh-ai-overlay positions relative to topbar */
+  overflow: visible;
+}
+
+/* ── Search ──────────────────────────────────────────────────────────────────  */
+.nh-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  max-width: 320px;
+}
+
+.nh-search__icon {
+  position: absolute;
+  left: 10px;
+  color: #94a3b8;
+  display: flex;
+  pointer-events: none;
+}
+
+.nh-search__input {
+  width: 100%;
+  padding: 8px 38px 8px 34px;
+  border-radius: 9px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.nh-search__input:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  background: white;
+}
+.nh-search__input::placeholder { color: #94a3b8; }
+
+.nh-search__kbd {
+  position: absolute;
+  right: 8px;
+  background: rgba(0,0,0,0.06);
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-family: inherit;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.1);
+  pointer-events: none;
+  line-height: 1.4;
+}
+
+/* ── Topbar action buttons ───────────────────────────────────────────────────  */
+.nh-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* ── Notification bell ────────────────────────────────────────────────────── */
+.nh-bell { position: relative; }
+
+.nh-bell__btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.nh-bell__btn:hover { background: #f1f5f9; color: #4f46e5; }
+
+.nh-bell__badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: white;
+  font-size: 0.6rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nh-bell__error-dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+  border: 1px solid white;
+}
+
+.nh-bell__panel {
+  position: absolute;
+  right: 0;
+  top: 44px;
+  width: 320px;
+  max-height: 380px;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+  z-index: 60;
+}
+
+.nh-bell__header {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.nh-bell__count {
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: #eef2ff;
+  color: #4f46e5;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.nh-bell__body { overflow-y: auto; }
+
+.nh-bell__empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.nh-bell__item {
+  padding: 10px 14px;
+  border-bottom: 1px solid #f8fafc;
+}
+.nh-bell__item:hover { background: #f8fafc; }
+
+.nh-bell__item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nh-bell__item-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.nh-bell__item-time {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.nh-bell__item-lead {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.nh-bell__item-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.nh-bell__item-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.nh-bell__item-actions button:hover { background: #f1f5f9; }
+
+.nh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.nh-btn--primary {
+  background: #4f46e5;
+  color: white;
+}
+.nh-btn--primary:hover { background: #4338ca; transform: translateY(-1px); }
+
+.nh-btn--ghost {
+  background: transparent;
+  color: #475569;
+  border: 1.5px solid #e2e8f0;
+}
+.nh-btn--ghost:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.nh-btn--ghost:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.nh-btn--ai {
+  background: transparent;
+  color: #4f46e5;
+  border: 1.5px solid #c7d2fe;
+}
+.nh-btn--ai:hover { background: #eef2ff; }
+
+.nh-btn--live {
+  background: #dc2626;
+  color: white;
+  animation: nh-live-pulse 2s ease-in-out infinite;
+}
+
+.nh-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: white;
+  flex-shrink: 0;
+}
+
+/* ── Keyframes ───────────────────────────────────────────────────────────────  */
+@keyframes nh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes nh-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.5); }
+  50%       { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+}
+
+/* ── Search results inline dropdown ─────────────────────────────────────────  */
+.nh-search {
+  position: relative; /* anchor for the absolute dropdown */
+}
+
+.nh-search__results {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 340px;
+  max-width: 480px;
+  max-height: 420px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06);
+  z-index: 9999;
+  animation: nh-fade-in 120ms ease;
+}
+
+@keyframes nh-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.nh-search__group-label {
+  padding: 8px 14px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94A3B8;
+  background: #F8FAFC;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.nh-search__result {
+  padding: 10px 14px;
+  border-bottom: 1px solid #F8FAFC;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.nh-search__result:last-of-type { border-bottom: none; }
+.nh-search__result:hover { background: #F1F5F9; }
+
+.nh-search__result-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0F172A;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.nh-search__result-sub {
+  font-size: 11.5px;
+  color: #64748B;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nh-search__result-badge {
+  font-size: 10px;
+  font-weight: 600;
+  background: #EEF2FF;
+  color: #4F46E5;
+  border-radius: 20px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
+.nh-search__empty {
+  padding: 16px 14px;
+  font-size: 13px;
+  color: #94A3B8;
+  text-align: center;
+}
+
+.nh-search__footer {
+  padding: 9px 14px;
+  font-size: 12px;
+  color: #64748B;
+  background: #F8FAFC;
+  border-top: 1px solid #F1F5F9;
+  cursor: pointer;
+  text-align: center;
+  transition: background 120ms;
+  border-radius: 0 0 12px 12px;
+}
+.nh-search__footer:hover { background: #EEF2FF; color: #4F46E5; }
+.nh-search__footer strong { color: #4F46E5; }
+
+/* Search loading spinner */
+.nh-search__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #E2E8F0;
+  border-top-color: #4F46E5;
+  border-radius: 50%;
+  animation: nh-spin 0.6s linear infinite;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+/* ── Ask AI active button state ──────────────────────────────────────────────  */
+.nh-btn--ai-active {
+  background: #4f46e5;
+  color: white;
+  border-color: #4f46e5;
+}
+.nh-btn--ai-active:hover { background: #4338ca; }
+
+/* ── Ask AI overlay panel ───────────────────────────────────────────────────  */
+.nh-ai-overlay {
+  position: absolute;
+  top: calc(var(--nh-topbar-height) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 32px));
+  background: #ffffff;
+  border: 1px solid #E2E8F0;
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.16), 0 4px 12px rgba(0,0,0,0.08);
+  z-index: 9998;
+  animation: nh-fade-in 150ms ease;
+  overflow: hidden;
+}
+
+/* Shared by any overlay/drawer header — also used by .nh-aircall-drawer__header
+   below, so this pattern only needs defining once. */
+.nh-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #eef2ff 0%, #e0f2fe 100%);
+  border-bottom: 1px solid #c7d2fe;
+}
+.nh-overlay-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.nh-overlay-close:hover { color: #1e293b; background: rgba(0,0,0,0.06); }
+
+.nh-ai-overlay__header { padding: 12px 16px 10px; }
+
+.nh-ai-overlay__title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4f46e5;
+}
+
+.nh-ai-overlay__body {
+  padding: 14px 16px 16px;
+}
+
+.nh-ai-overlay__input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.nh-ai-overlay__input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 9px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #0f172a;
+  background: #f8fafc;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.nh-ai-overlay__input:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+  background: white;
+}
+.nh-ai-overlay__input::placeholder { color: #94a3b8; }
+.nh-ai-overlay__input:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.nh-ai-overlay__submit {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  border: none;
+  background: #4f46e5;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.2s, transform 0.15s;
+}
+.nh-ai-overlay__submit:hover:not(:disabled) { background: #4338ca; transform: translateY(-1px); }
+.nh-ai-overlay__submit:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.nh-ai-overlay__result {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #1e293b;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.nh-ai-overlay__result--error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.nh-ai-overlay__analytics-link {
+  display: block;
+  margin-top: 10px;
+  background: none;
+  border: none;
+  color: #4f46e5;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: right;
+  font-family: inherit;
+  padding: 0;
+}
+.nh-ai-overlay__analytics-link:hover { text-decoration: underline; }
+
+.nh-ai-overlay__hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.nh-ai-overlay__hint {
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #4f46e5;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-family: inherit;
+  padding: 5px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.nh-ai-overlay__hint:hover { background: #e0e7ff; }
+
+/* ── V48 Phase 4: Aircall Everywhere global drawer ──────────────────────────
+   Trigger button lives in NavTopbar's action row (persistent across every
+   view — see nav-entry.jsx, never unmounted on loadView()). The panel itself
+   portals to document.body so it's a true position:fixed sheet independent
+   of the topbar's own stacking context. z-index sits above everything else
+   in this file (ai-overlay tops out at 9999) since this can be forced open
+   during an active call and has to win over any other overlay. */
+
+.nh-aircall-btn--idle    { background: transparent; color: #64748b; border: 1.5px solid #e2e8f0; }
+.nh-aircall-btn--idle:hover    { background: #f1f5f9; }
+.nh-aircall-btn--ready    { background: transparent; color: #16a34a; border: 1.5px solid #bbf7d0; }
+.nh-aircall-btn--ready:hover    { background: #f0fdf4; }
+.nh-aircall-btn--notready { background: transparent; color: #b45309; border: 1.5px solid #fde68a; }
+.nh-aircall-btn--notready:hover { background: #fffbeb; }
+.nh-aircall-btn--oncall {
+  background: #4f46e5;
+  color: white;
+  border: 1.5px solid #4f46e5;
+  animation: nh-live-pulse 2s ease-in-out infinite;
+}
+
+.nh-aircall-optback,
+.nh-aircall-optout {
+  font-size: 12px;
+  color: #94a3b8;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: inherit;
+  padding: 0;
+  text-align: left;
+}
+.nh-aircall-optback { text-decoration: underline; }
+.nh-aircall-optback:hover,
+.nh-aircall-optout:hover { color: #64748b; }
+
+/* Footer strip, not a glued-on afterthought under the embed — separated the
+   same way .nh-bell__item already uses this border color elsewhere. */
+.nh-aircall-optout {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+.nh-aircall-optout:hover { text-decoration: underline; }
+
+.nh-aircall-drawer {
+  position: fixed;
+  top: var(--nh-topbar-height);
+  bottom: 0;
+  right: 0;
+  width: min(440px, 100vw);
+  background: #ffffff;
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.16), -4px 0 12px rgba(0, 0, 0, 0.08);
+  z-index: 10001;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.nh-aircall-drawer--open { transform: translateX(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .nh-aircall-drawer { transition: none; }
+}
+
+.nh-aircall-drawer__header { padding: 16px 20px; flex-shrink: 0; }
+.nh-aircall-drawer__header span { font-size: 14px; font-weight: 700; color: #4f46e5; }
+.nh-aircall-drawer__title { display: flex; align-items: center; gap: 7px; }
+
+.nh-aircall-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+
+.nh-aircall-drawer__hint {
+  font-size: 12.5px;
+  color: #71717a;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* No forced width/height — the SDK's own fixed iframe (376x666 for
+   size:'big') dictates the actual box; this just wraps loosely around it.
+   Centered with a dark background (matches the sidebar token) rather than
+   flush top-left on a light one — Aircall's own splash/login screen is dark,
+   so any slack here blends with it instead of showing as a stray light gutter. */
+.nh-aircall-drawer__mount {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--nh-sidebar-bg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* One-time callout pointing at the trigger — see AircallEverywhereDrawer.jsx.
+   Fixed-positioned (top/left set inline per the trigger's measured rect),
+   above the drawer's own z-index since it explains the trigger itself. */
+.nh-aircall-tour {
+  position: fixed;
+  z-index: 10002;
+  width: 280px;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: nh-fade-in 150ms ease;
+}
+.nh-aircall-tour__body { font-size: 12.5px; line-height: 1.5; margin: 0; }
+.nh-aircall-tour__dismiss { align-self: flex-end; padding: 5px 12px; font-size: 0.75rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nh-aircall-tour { animation: none; }
+}

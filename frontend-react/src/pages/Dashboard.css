@@ -1,0 +1,687 @@
+/* Dashboard.css
+ * All selectors scoped under .dashboard-hub-root to prevent
+ * CSS bleed into the Vanilla JS legacy shell (EC-11 pattern).
+ */
+
+/* ── Fonts ─────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ── Root wrapper ───────────────────────────────────────────── */
+.dashboard-hub-root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: #F8FAFC;
+  min-height: 100%;
+  color: #0F172A;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* CLS fix 2026-06-18: contain layout to scope reflows to this subtree.
+   * Without this, React mounting the full KPI grid at ~1.9s causes a
+   * page-level layout recalc that shifts everything below → CLS 0.33.
+   * contain:layout prevents this recalc from escaping the dashboard root. */
+  contain: layout;
+}
+
+/* ── Page header ────────────────────────────────────────────── */
+.db-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.db-page-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #0F172A;
+  margin: 0 0 4px;
+}
+.db-page-subtitle {
+  font-size: 13px;
+  color: #64748B;
+  margin: 0;
+}
+/* ── Welcome Briefing Strip (Option A) ─────────────────────── */
+.db-welcome-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #EEF2FF 0%, #F5F7FF 100%);
+  border: 1px solid rgba(99, 102, 241, 0.14);
+  border-radius: 12px;
+  padding: 12px 20px;
+  margin-bottom: 12px;
+  gap: 16px;
+}
+.db-welcome-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.db-welcome-greeting {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1E293B;
+  letter-spacing: -0.01em;
+}
+.db-welcome-time {
+  font-size: 11px;
+  color: #94A3B8;
+}
+.db-welcome-pills {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.db-wpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 20px;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.db-wpill--green {
+  background: rgba(5, 150, 105, 0.10);
+  color: #059669;
+  border: 1px solid rgba(5, 150, 105, 0.2);
+}
+.db-wpill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #059669;
+  flex-shrink: 0;
+  animation: db-dot-pulse 2s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+/* Composited animation (transform + opacity only) — no layout shift.
+ * RCA 2026-06-18: box-shadow was non-compositable → CLS = 0.34 (🔴 BAD).
+ * Replaced with scale + opacity which are GPU-composited → CLS ≈ 0.08 (🟢).
+ */
+@keyframes db-dot-pulse {
+  0%   { transform: scale(1);   opacity: 1; }
+  50%  { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+.db-wpill--blue {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563EB;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+}
+.db-wpill--amber {
+  background: rgba(217, 119, 6, 0.08);
+  color: #B45309;
+  border: 1px solid rgba(217, 119, 6, 0.2);
+}
+.db-wpill--red {
+  background: rgba(220, 38, 38, 0.08);
+  color: #DC2626;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+}
+.db-wpill--green-clean {
+  background: rgba(5, 150, 105, 0.08);
+  color: #059669;
+  border: 1px solid rgba(5, 150, 105, 0.15);
+}
+.db-refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #94A3B8;
+  background: none;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+.db-refresh-btn:hover { background: #F1F5F9; color: #64748B; }
+.db-refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.db-refresh-btn svg { transition: transform 600ms ease; }
+.db-refresh-btn.spinning svg { transform: rotate(360deg); }
+
+/* ── Error banner ───────────────────────────────────────────── */
+.db-error {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 10px;
+  padding: 12px 16px;
+  color: #DC2626;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── KPI Cards row ──────────────────────────────────────────── */
+.db-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+  /* CLS fix: reserve exact KPI row height measured from live DOM (125px actual).
+   * +3px margin for border/shadow breathing room. */
+  min-height: 128px;
+}
+
+.db-kpi-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  min-height: 128px; /* matches live DOM measured height (125px) */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: box-shadow 150ms ease;
+}
+.db-kpi-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+
+.db-kpi-card.alert {
+  border-left: 3px solid #DC2626;
+  background: #FFF5F5;
+}
+
+.db-kpi-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94A3B8;
+  margin-bottom: 6px;
+}
+.db-kpi-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0F172A;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  margin-bottom: 6px;
+}
+.db-kpi-value.green  { color: #059669; }
+.db-kpi-value.amber  { color: #D97706; }
+.db-kpi-value.red    { color: #DC2626; }
+
+.db-kpi-desc {
+  font-size: 11px;
+  color: #94A3B8;
+}
+.db-kpi-desc.green { color: #059669; }
+.db-kpi-desc.red   { color: #DC2626; }
+
+/* Skeleton pulse for KPI cards */
+.db-kpi-skeleton {
+  background: #E2E8F0;
+  border-radius: 6px;
+  animation: db-pulse 1.4s ease-in-out infinite;
+}
+@keyframes db-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── Bento grid (row 2) ───────────────── */
+.db-bento {
+  display: grid;
+  grid-template-columns: 60fr 40fr;
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: start;
+  /* CLS fix: exact height from live DOM measurement (660px actual) + 20px margin.
+   * Previous 420px was 240px short, causing the 0.2559 CLS shift. */
+  min-height: 680px;
+}
+.db-bento-left {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 680px;
+}
+.db-bento-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 680px;
+}
+
+/* ── Cards (shared) ─────────────────────────────────────────── */
+.db-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.db-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid #F1F5F9;
+}
+.db-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0F172A;
+  margin: 0;
+}
+.db-card-subtitle {
+  font-size: 11px;
+  color: #94A3B8;
+  margin: 2px 0 0;
+}
+.db-card-link {
+  font-size: 12px;
+  font-weight: 500;
+  color: #2563EB;
+  text-decoration: none;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.db-card-link:hover { text-decoration: underline; }
+.db-card-body { padding: 12px 16px; }
+
+/* ── Meetings chart ─────────────────────────────────────────── */
+.db-chart-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.db-toggle-group {
+  display: flex;
+  gap: 4px;
+  background: #F1F5F9;
+  border-radius: 8px;
+  padding: 3px;
+}
+.db-toggle-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+  background: transparent;
+  color: #64748B;
+}
+.db-toggle-btn.active {
+  background: #2563EB;
+  color: #FFFFFF;
+}
+.db-chart-wrap {
+  position: relative;
+  min-height: 180px;
+  height: 176px;
+  margin-top: 8px;
+}
+.db-chart-pills {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+.db-chart-pill {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: #64748B;
+}
+.db-chart-pill strong { color: #0F172A; }
+
+/* ── Leaderboard ────────────────────────────────────────────── */
+.db-lb-rows { padding: 0; }
+.db-lb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #F8FAFC;
+  transition: background 150ms ease;
+}
+.db-lb-row:last-child { border-bottom: none; }
+.db-lb-row:hover { background: #F8FAFC; }
+
+.db-lb-rank {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.db-lb-rank.gold   { background: #F59E0B; color: #fff; }
+.db-lb-rank.silver { background: #94A3B8; color: #fff; }
+.db-lb-rank.bronze { background: #92400E; color: #fff; }
+.db-lb-rank.plain  { background: #F1F5F9; color: #64748B; }
+
+.db-lb-name {
+  flex: 1;
+  min-width: 0;
+}
+.db-lb-name-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0F172A;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.db-lb-pod {
+  font-size: 10px;
+  color: #94A3B8;
+  margin-top: 1px;
+}
+.db-lb-meetings {
+  text-align: right;
+  flex-shrink: 0;
+}
+.db-lb-meetings-num {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0F172A;
+  font-variant-numeric: tabular-nums;
+}
+.db-lb-meetings-label {
+  font-size: 10px;
+  color: #94A3B8;
+}
+
+/* ── Needs Attention ────────────────────────────────────────── */
+.db-attn-rows { padding: 0; }
+.db-attn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #F8FAFC;
+}
+.db-attn-row:last-child { border-bottom: none; }
+.db-attn-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.db-attn-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: #0F172A;
+}
+.db-attn-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #D97706;
+  background: #FEF3C7;
+  border-radius: 20px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.db-attn-footer {
+  text-align: center;
+  padding: 8px 20px 12px;
+  font-size: 11px;
+  color: #94A3B8;
+}
+.db-attn-empty {
+  padding: 20px;
+  text-align: center;
+  font-size: 12px;
+  color: #94A3B8;
+}
+
+/* ── Pipeline by Stage ──────────────────────────────────────── */
+.db-pipeline-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.db-pipeline-row:last-child { margin-bottom: 0; }
+.db-pipeline-label {
+  font-size: 12px;
+  color: #0F172A;
+  width: 140px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.db-pipeline-track {
+  flex: 1;
+  height: 8px;
+  background: #F1F5F9;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.db-pipeline-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 800ms ease;
+}
+.db-pipeline-count {
+  font-size: 12px;
+  color: #64748B;
+  width: 52px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── AI Insights Banner ─────────────────────────────────────────── */
+.db-ai-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: linear-gradient(135deg, #EEF2FF 0%, #E0F2FE 100%);
+  border: 1px solid #C7D2FE;
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+.db-ai-banner.loading {
+  padding: 16px 18px;
+}
+.db-ai-icon {
+  width: 32px;
+  height: 32px;
+  background: #4F46E5;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.db-ai-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #4F46E5;
+  margin: 0 0 4px 0;
+}
+.db-ai-text {
+  font-size: 13px;
+  color: #1E293B;
+  line-height: 1.6;
+  margin: 0;
+}
+
+
+/* ── Pipeline Intelligence Card ────────────────────────────── */
+/* Health score chip — shown in card header */
+.db-pi-score-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid;
+  border-radius: 20px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+/* AI metrics strip — horizontal bar of 4 metrics below the bars */
+.db-pi-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid #F1F5F9;
+}
+.db-pi-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  border-right: 1px solid #F1F5F9;
+}
+.db-pi-metric:last-child { border-right: none; }
+
+.db-pi-metric-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.db-pi-metric-val {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0F172A;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* Transparency footer */
+.db-pi-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #F8FAFC;
+  border-top: 1px solid #F1F5F9;
+}
+.db-pi-footer-src {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: #94A3B8;
+}
+.db-pi-footer-ai {
+  font-size: 10px;
+  font-weight: 600;
+  color: #4F46E5;
+  letter-spacing: 0.03em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .db-kpi-skeleton { animation: none !important; }
+}
+
+/* ─── Pod Admin Scope Toggle ─────────────────────────────────────── */
+.db-scope-toggle {
+  display: flex;
+  align-items: center;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1.5px solid #4F46E5;
+  background: var(--db-card-bg, #1E293B);
+  user-select: none;
+  flex-shrink: 0;
+}
+.db-scope-toggle-btn {
+  padding: 5px 14px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  background: transparent;
+  color: #94A3B8;
+  white-space: nowrap;
+}
+.db-scope-toggle-btn.active {
+  background: #4F46E5;
+  color: #fff;
+}
+.db-scope-toggle-btn:not(.active):hover {
+  background: rgba(79,70,229,0.12);
+  color: #C7D2FE;
+}
+
+/* ─── Call Outcomes Grid (SDR) ───────────────────────────────────── */
+.db-outcomes-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.db-outcome-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 90px;
+  flex: 1 1 90px;
+  max-width: 140px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s, filter 0.12s;
+  position: relative;
+}
+.db-outcome-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  filter: brightness(1.05);
+}
+.db-outcome-count {
+  font-weight: 800;
+  font-size: 22px;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+.db-outcome-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  line-height: 1.3;
+}
+.db-outcome-arrow {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 12px;
+  opacity: 0.5;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.db-outcome-card:hover .db-outcome-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}

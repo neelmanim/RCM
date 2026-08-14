@@ -1,0 +1,32 @@
+/*
+ * power-dialer-tailwind.css
+ *
+ * Tailwind entry point for the Power Dialer Hub IIFE bundle ONLY. Mirrors
+ * leads-tailwind.css exactly — omits @tailwind base to avoid leaking resets
+ * into the Vanilla JS shell, and reproduces just the border-reset half of
+ * Preflight, scoped to .powerdialerhub.
+ */
+.powerdialerhub, .powerdialerhub *, .powerdialerhub *::before, .powerdialerhub *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+/*
+ * Preflight's <button> normalization is skipped along with @tailwind base
+ * above, so buttons fall back to native OS chrome. Reproduce just that part
+ * of Preflight, at the same low specificity Preflight itself uses (:where()
+ * keeps this at 0,0,1 — any button's own Tailwind utility class still wins),
+ * scoped to .powerdialerhub.
+ */
+:where(.powerdialerhub) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RCM · Powered by RCM</title>
+    <meta name="description" content="RCM — Powered by RCM. SDR-focused CRM with POD teams, enriched leads, and pipeline management.">
+    <!-- RCM Brand Icons -->
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="img/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="img/icons/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="img/icons/apple-touch-icon.png">
+    <!-- Preload Dashboard React bundle so it's ready when user clicks Dashboard -->
+    <link rel="preload" href="js/dashboard-hub.js?v=20260729a" as="script">
+    <link rel="preload" href="js/dashboard-hub.css?v=20260618d" as="style">
+    <link rel="preload" href="js/nav-hub.js?v=20260812a" as="script">
+    <link rel="preload" href="js/nav-hub.css?v=20260812a" as="style">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#5B50E8">
+    <meta property="og:image" content="img/icons/og-image.png">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="RCM · Powered by RCM">
+    <!-- Preconnect for Google Fonts to save ~100ms DNS+TLS (perf audit P6) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=20260811a">
+    <link rel="stylesheet" href="css/digest.css">
+    <link rel="stylesheet" href="css/rcm_widget.css?v=20260729a">
+    <link rel="stylesheet" href="js/nav-hub.css?v=20260812a">
+    <!-- livekit + PapaParse: defer so they don't block first paint (perf audit P3) -->
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.9.1/dist/livekit-client.umd.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js" defer></script>
+    <!-- Microsoft Clarity — deferred 2s post-load to avoid forced reflow during LCP (perf audit P4) -->
+    <script type="text/javascript">
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                (function(c,l,a,r,i,t,y){
+                    c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+                    t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+                    y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+                })(window, document, "clarity", "script", "x7wxwg7a70");
+            }, 2000);
+        });
+    </script>
+    <!-- Mixpanel — analytics & session replay (must load before app.js) -->
+    <script type="text/javascript">
+        (function(f,b){if(!b.__SV){var e,g,i,h;window.mixpanel=b;b._i=[];b.init=function(e,f,c){function g(a,d){var b=d.split(".");2==b.length&&(a=a[b[0]],d=b[1]);a[d]=function(){a.push([d].concat(Array.prototype.slice.call(arguments,0)))}}var a=b;"undefined"!==typeof c?a=b[c]=[]:c="mixpanel";a.people=a.people||[];a.toString=function(a){var d="mixpanel";"mixpanel"!==c&&(d+="."+c);a||(d+=" (stub)");return d};a.people.toString=function(){return a.toString(1)+".people (stub)"};i="disable time_event track track_pageview track_links track_forms track_with_groups add_group set_group remove_group register register_once alias unregister identify name_tag set_config reset opt_in_tracking opt_out_tracking has_opted_in_tracking has_opted_out_tracking clear_opt_in_out_tracking start_batch_senders people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user people.remove".split(" ");for(h=0;h<i.length;h++)g(a,i[h]);var j="set set_once union unset remove delete".split(" ");a.get_group=function(){function b(c){d[c]=function(){call2_args=arguments;call2=[c].concat(Array.prototype.slice.call(call2_args,0));a.push([e].concat(call2))}}for(var d={},e=["get_group"].concat(Array.prototype.slice.call(arguments,0)),c=0;c<j.length;c++)b(j[c]);return d};b._i.push([e,f,c])};b.__SV=1.2;e=f.createElement("script");e.type="text/javascript";e.async=!0;e.src="undefined"!==typeof MIXPANEL_CUSTOM_LIB_URL?MIXPANEL_CUSTOM_LIB_URL:"file:"===f.location.protocol&&"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js".match(/^\/\//)?"https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js":"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js";g=f.getElementsByTagName("script")[0];g.parentNode.insertBefore(e,g)}})(document,window.mixpanel||[]);
+        mixpanel.init('c79ffda06bee797fed9185d27059d45b', {
+            autocapture: true,
+            record_sessions_percent: 100,
+        });
+    </script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- NavHub React bundle — Sidebar + Topbar -->
+        <div id="nav-sidebar-root"></div>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- NavHub React Topbar -->
+        <div id="nav-topbar-root"></div>
+
+            <div id="view-container" class="view-container">
+                <!-- #dashboard-react-root is the React mount point for DashboardHub.
+                     It exists in HTML from parse time so style.css can pre-reserve its
+                     height (min-height: 985px) before any JS runs — eliminating CLS.
+                     The skeleton inside is replaced by React when getDashboardStats resolves. -->
+                <div id="dashboard-react-root">
+                  <div id="dashboard-skeleton" style="padding: 20px 0; font-family: 'Inter', system-ui, sans-serif;">
+
+                    <!-- Welcome strip skeleton -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+                      <div>
+                        <div class="sk-box" style="width:220px; height:22px; border-radius:6px; margin-bottom:8px;"></div>
+                        <div class="sk-box" style="width:340px; height:14px; border-radius:4px;"></div>
+                      </div>
+                      <div style="display:flex; gap:8px;">
+                        <div class="sk-box" style="width:90px; height:34px; border-radius:8px;"></div>
+                        <div class="sk-box" style="width:110px; height:34px; border-radius:8px;"></div>
+                      </div>
+                    </div>
+
+                    <!-- KPI row skeleton — 7 cards at 125px (live DOM measured) -->
+                    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:12px; margin-bottom:14px;">
+                      <div class="sk-box" style="height:125px; border-radius:12px;"></div>
+                      <div class="sk-box" style="height:125px; border-radius:12px;"></div>
+                      <div class="sk-box" style="height:125px; border-radius:12px;"></div>
+                      <div class="sk-box" style="height:125px; border-radius:12px;"></div>
+                      <div class="sk-box" style="height:125px; border-radius:12px;"></div>
+                      <div class="sk-box" style="height:125px; border-radius:12px;"></div>
+                      <div class="sk-box" style="height:125px; border-radius:12px;"></div>
+                    </div>
+
+                    <!-- Bento grid skeleton — 60/40 split, 660px (live DOM measured) -->
+                    <div style="display:grid; grid-template-columns:60fr 40fr; gap:12px; min-height:660px;">
+                      <!-- Left: chart card + activity card -->
+                      <div style="display:flex; flex-direction:column; gap:10px;">
+                        <div class="sk-box" style="height:420px; border-radius:12px;"></div>
+                        <div class="sk-box" style="height:220px; border-radius:12px;"></div>
+                      </div>
+                      <!-- Right: leaderboard card -->
+                      <div style="display:flex; flex-direction:column; gap:12px;">
+                        <div class="sk-box" style="height:660px; border-radius:12px;"></div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                <script>
+                  // This skeleton is Dashboard-shaped and only makes sense as the very
+                  // first paint when the initial route IS the dashboard. Direct loads /
+                  // refreshes of any other route (e.g. #calendar) were showing this same
+                  // KPI-card skeleton before app.js's loadView() replaced #view-container —
+                  // misleading if app.js is slow to bootstrap (e.g. a flaky backend).
+                  (function () {
+                    var initialRoute = (location.hash || '#dashboard').slice(1).split('/')[0];
+                    if (initialRoute && initialRoute !== 'dashboard') {
+                      document.getElementById('dashboard-react-root').style.display = 'none';
+                    }
+                  })();
+                </script>
+
+                <style>
+                  /* GPU-composited shimmer — transform:translateX on ::after.
+                   * background-position is NOT compositor-accelerated → causes CLS.
+                   * translateX on a pseudo-element runs entirely on the GPU thread. */
+                  .sk-box {
+                    background: #e2e8f0;
+                    position: relative;
+                    overflow: hidden;
+                    isolation: isolate;
+                  }
+                  .sk-box::after {
+                    content: '';
+                    position: absolute;
+                    inset: 0;
+                    background: linear-gradient(90deg,
+                      transparent 0%,
+                      rgba(255,255,255,0.55) 50%,
+                      transparent 100%);
+                    transform: translateX(-100%);
+                    animation: sk-shimmer 1.5s ease-in-out infinite;
+                    will-change: transform;
+                  }
+                  @keyframes sk-shimmer {
+                    to { transform: translateX(100%); }
+                  }
+                </style>
+            </div><!-- /#view-container -->
+        </main>
+    </div><!-- /.app-container -->
+
+    <!-- ── New Lead Modal ──────────────────────────────────────────────── -->
+    <div id="new-lead-modal" class="modal">
+        <div class="modal-content" style="max-width:560px;">
+            <div class="modal-header">
+                <h2>Create New Lead</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="new-lead-form">
+                    <div class="new-lead-grid">
+                        <div class="form-group">
+                            <label for="lead-first-name">First Name</label>
+                            <input type="text" id="lead-first-name" placeholder="John">
+                        </div>
+                        <div class="form-group">
+                            <label for="lead-last-name">Last Name <span style="color:#ef4444;">*</span></label>
+                            <input type="text" id="lead-last-name" required placeholder="Doe">
+                        </div>
+                        <div class="form-group">
+                            <label for="lead-company">Company <span style="color:#ef4444;">*</span></label>
+                            <input type="text" id="lead-company" required placeholder="Acme Corp">
+                        </div>
+                        <div class="form-group">
+                            <label for="lead-title">Title / Role</label>
+                            <input type="text" id="lead-title" placeholder="VP of Sales">
+                        </div>
+                        <div class="form-group">
+                            <label for="lead-phone">Phone</label>
+                            <input type="tel" id="lead-phone" placeholder="+1 (555) 123-4567">
+                        </div>
+                        <div class="form-group">
+                            <label for="lead-phone-secondary">Secondary Phone</label>
+                            <input type="tel" id="lead-phone-secondary" placeholder="+1 (555) 987-6543">
+                        </div>
+                        <div class="form-group">
+                            <label for="lead-email">Email</label>
+                            <input type="email" id="lead-email" placeholder="john@acme.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="lead-linkedin">LinkedIn URL</label>
+                            <input type="url" id="lead-linkedin" placeholder="https://linkedin.com/in/johndoe">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top:4px;">
+                        <label for="lead-status">Initial Status</label>
+                        <select id="lead-status">
+                            <option value="Lead Assigned">Lead Assigned</option>
+                            <option value="Research">Research</option>
+                        </select>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-outline close-modal-btn">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Lead</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── No Show Modal ──────────────────────────────────────────────── -->
+    <div id="no-show-modal" class="modal">
+        <div class="modal-content" style="max-width:440px;">
+            <div class="modal-header" style="border-bottom-color:#fde68a;background:#fffbeb;">
+                <h2 style="display:flex;align-items:center;gap:8px;color:#92400e;font-size:1.1rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    Mark No Show
+                </h2>
+                <span class="close-modal close-no-show-modal" style="cursor:pointer;font-size:1.3rem;color:var(--text-muted);">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="no-show-lead-id">
+                <p style="font-size:0.85rem;color:var(--text-main);margin:0 0 4px 0;">
+                    <strong id="no-show-lead-name"></strong> will be moved back to <strong>Calling</strong> status.
+                </p>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 16px 0;">
+                    This action is logged and the Pod Admin will be notified.
+                </p>
+                <div class="form-group">
+                    <label for="no-show-reason" style="font-weight:600;font-size:0.85rem;">
+                        Reason <span style="font-size:0.75rem;color:#ef4444;font-weight:600;">(required — min 10 chars)</span>
+                    </label>
+                    <textarea id="no-show-reason" rows="3" placeholder="Describe why the meeting was missed…" style="width:100%;padding:10px 14px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-family:inherit;font-size:0.9rem;outline:none;resize:vertical;min-height:70px;"></textarea>
+                    <div id="no-show-char-count" style="text-align:right;font-size:0.72rem;color:var(--text-muted);margin-top:4px;">0 / 10 min</div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-outline close-no-show-modal">Cancel</button>
+                    <button class="btn" id="submit-no-show-btn" disabled style="background:#f59e0b;color:#fff;padding:8px 20px;border-radius:8px;font-weight:600;opacity:0.5;cursor:not-allowed;">
+                        Confirm No Show
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Disqualify Account Modal ──────────────────────────────────────── -->
+    <div id="disqualify-modal" class="modal">
+        <div class="modal-content" style="max-width:440px;">
+            <div class="modal-header" style="border-bottom-color:#fecaca;background:#fef2f2;">
+                <h2 style="display:flex;align-items:center;gap:8px;color:#991b1b;font-size:1.1rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                    Request Disqualify
+                </h2>
+                <span class="close-modal close-disqualify-modal" style="cursor:pointer;font-size:1.3rem;color:var(--text-muted);">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="disqualify-company">
+                <input type="hidden" id="disqualify-lead-ids">
+                <p style="font-size:0.85rem;color:var(--text-main);margin:0 0 4px 0;">
+                    <strong id="disqualify-company-name"></strong> — <span id="disqualify-lead-count"></span> will be disqualified if approved.
+                </p>
+                <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 16px 0;">
+                    This does not disqualify anything immediately — a Pod Admin must approve first.
+                </p>
+                <div class="form-group">
+                    <label for="disqualify-reason" style="font-weight:600;font-size:0.85rem;">
+                        Reason <span style="font-size:0.75rem;color:#ef4444;font-weight:600;">(required — min 10 chars)</span>
+                    </label>
+                    <textarea id="disqualify-reason" rows="3" placeholder="Why isn't this the right ICP?…" style="width:100%;padding:10px 14px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-family:inherit;font-size:0.9rem;outline:none;resize:vertical;min-height:70px;"></textarea>
+                    <div id="disqualify-char-count" style="text-align:right;font-size:0.72rem;color:var(--text-muted);margin-top:4px;">0 / 10 min</div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-outline close-disqualify-modal">Cancel</button>
+                    <button class="btn" id="submit-disqualify-btn" disabled style="background:#dc2626;color:#fff;padding:8px 20px;border-radius:8px;font-weight:600;opacity:0.5;cursor:not-allowed;">
+                        Submit Request
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Call Log Modal ──────────────────────────────────────────────── -->
+    <div id="call-log-modal" class="modal">
+        <div class="modal-content clm-content">
+
+            <!-- Lead Context Bar -->
+            <div class="clm-lead-bar">
+                <div class="clm-avatar" id="call-modal-avatar"></div>
+                <div class="clm-lead-info">
+                    <div class="clm-lead-name" id="call-modal-lead-name">—</div>
+                    <div class="clm-lead-phone" id="call-modal-phone">—</div>
+                </div>
+                <button class="clm-close close-call-modal" aria-label="Close">&times;</button>
+            </div>
+
+            <!-- Hidden inputs (preserved) -->
+            <input type="hidden" id="call-modal-lead-id">
+            <input type="hidden" id="call-modal-attempt-count" value="0">
+            <input type="hidden" id="call-modal-min-attempts" value="3">
+            <input type="hidden" id="call-modal-max-attempts" value="5">
+            <input type="hidden" id="call-outcome-select" value="">
+
+            <!-- Warnings -->
+            <div id="call-attempt-warning" class="clm-warning" style="display:none;"></div>
+            <div id="call-company-resolved-warning" class="clm-warning clm-company-warning" style="display:none;"></div>
+
+            <div class="clm-body">
+                <!-- State 1: Binary question -->
+                <div id="outcome-question-section">
+                    <div class="clm-question">Did the call connect?</div>
+                    <div class="clm-branch-row">
+                        <button class="branch-pill branch-no" id="branch-no-btn">&#10007;&nbsp; No / Voicemail</button>
+                        <button class="branch-pill branch-yes" id="branch-yes-btn">&#10003;&nbsp; Yes, Connected</button>
+                    </div>
+                </div>
+
+                <!-- State 2/3: Chips (hidden until branch picked) -->
+                <div id="outcome-chips-section" style="display:none;">
+                    <div id="branch-compact-bar"></div>
+                    <div id="call-outcome-picker"></div>
+                </div>
+
+                <!-- Notes (shown after chip selection) -->
+                <div id="call-notes-section" style="display:none;">
+                    <label for="call-notes" id="call-notes-label" class="clm-notes-label">
+                        Notes <span style="font-size:0.75rem;color:var(--text-muted);">(optional)</span>
+                    </label>
+                    <textarea id="call-notes" class="note-textarea clm-notes-textarea"
+                        placeholder="Add a note..."></textarea>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="clm-footer">
+                <div id="aircall-sync-indicator" class="aircall-sync-indicator" style="display:none;">
+                    <span class="aircall-sync-dot"></span>
+                    <span>Aircall sync active</span>
+                </div>
+                <div class="clm-footer-actions">
+                    <button type="button" class="btn btn-outline close-call-modal" id="clm-cancel-btn">Cancel</button>
+                    <button type="button" class="btn btn-primary clm-log-btn" id="submit-call-btn" disabled>Log Call &#8594;</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ── Add User Modal ──────────────────────────────────────────────────── -->
+    <div id="add-user-modal" class="modal">
+        <div class="modal-content" style="max-width:400px;">
+            <div class="modal-header">
+                <h2>➕ Add New User</h2>
+                <span class="close-add-user-modal" style="cursor:pointer;font-size:1.5rem;">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="add-user-form">
+                    <div class="form-group">
+                        <label for="new-user-name">Full Name</label>
+                        <input type="text" id="new-user-name" placeholder="John Doe" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-user-email">Email Address</label>
+                        <input type="email" id="new-user-email" placeholder="john@company.com" required>
+                        <small style="color:var(--text-muted);font-size:0.75rem;margin-top:4px;">Must match their Google
+                            Sign-in email.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-user-role">Role</label>
+                        <select id="new-user-role">
+                            <option value="SDR">SDR</option>
+                            <option value="AE">AE</option>
+                            <option value="Pod Admin">Pod Admin</option>
+                            <option value="Super Admin">Super Admin</option>
+                        </select>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-outline close-add-user-modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add User</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Bulk Import Modal ──────────────────────────────────────────────────── -->
+    <div id="bulk-import-modal" class="modal">
+        <div class="modal-content" style="max-width:600px;">
+            <div class="modal-header">
+                <h2>📦 Bulk Import Leads</h2>
+                <span class="close-bulk-modal" style="cursor:pointer;font-size:1.5rem;">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom:20px;font-size:0.9rem;color:var(--text-muted);">
+                    Upload a CSV file. Expected columns: <b>firstName, lastName, company, email, phone</b>
+                </div>
+                <div class="form-group">
+                    <input type="file" id="csv-file-input" accept=".csv" style="margin-bottom:16px;">
+                    <button type="button" class="btn btn-outline" id="upload-csv-btn">Preview CSV Data</button>
+                </div>
+
+                <div id="csv-preview"
+                    style="display:none; margin-top:20px; max-height:300px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px; padding:10px;">
+                    <h4 style="font-size:0.85rem; margin-bottom:10px; color:var(--text-muted);">Data Preview (First 5
+                        rows)</h4>
+                    <table class="data-table" style="font-size:0.8rem;">
+                        <thead id="csv-preview-thead"></thead>
+                        <tbody id="csv-preview-tbody"></tbody>
+                    </table>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-outline close-bulk-modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirm-import-btn" style="display:none;">Import &
+                        Sync Salesforce</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload modal removed — now a dedicated Upload Center page -->
+
+    <style>
+        .upload-step { flex:1;text-align:center;padding:10px 0;font-size:0.82rem;font-weight:600;
+            color:var(--text-muted);border-bottom:3px solid var(--border-color);transition:all 0.2s; }
+        .upload-step.active { color:var(--primary-color);border-bottom-color:var(--primary-color); }
+        .upload-step.done { color:#10b981;border-bottom-color:#10b981; }
+        .upload-step .step-num { display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+            border-radius:50%;background:var(--border-color);color:#fff;font-size:0.7rem;margin-right:6px;transition:all 0.2s; }
+        .upload-step.active .step-num { background:var(--primary-color); }
+        .upload-step.done .step-num { background:#10b981; }
+
+        /* Dropzone */
+        .upload-dropzone {
+            border: 2px dashed var(--border-color); border-radius: 14px; padding: 48px 24px;
+            text-align: center; background: var(--bg-color); cursor: pointer;
+            transition: all 0.25s ease; position: relative;
+        }
+        .upload-dropzone:hover, .upload-dropzone.drag-over {
+            border-color: var(--primary-color); background: rgba(99, 102, 241, 0.04);
+        }
+        .upload-dropzone.drag-over { transform: scale(1.01); box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+        .upload-dropzone-icon { color: var(--text-muted); margin-bottom: 14px; }
+        .upload-dropzone:hover .upload-dropzone-icon,
+        .upload-dropzone.drag-over .upload-dropzone-icon { color: var(--primary-color); }
+        .upload-dropzone-title { font-size: 1rem; font-weight: 700; color: var(--text-color); margin-bottom: 4px; }
+        .upload-dropzone-subtitle { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+        .upload-browse-link { color: var(--primary-color); font-weight: 600; cursor: pointer; text-decoration: underline; }
+        .upload-dropzone-formats { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
+
+        /* File card */
+        .upload-file-card {
+            display: flex; align-items: center; gap: 14px;
+            padding: 14px 18px; margin-top: 14px;
+            background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px;
+            animation: slideIn 0.3s ease;
+        }
+        .upload-file-card-icon { font-size: 1.8rem; flex-shrink: 0; }
+        .upload-file-card-info { flex: 1; min-width: 0; }
+        .upload-file-card-name { font-weight: 700; font-size: 0.9rem; color: var(--text-color);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .upload-file-card-size { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+        .upload-file-card-remove { background: none; border: none; font-size: 1.4rem; cursor: pointer;
+            color: #94a3b8; padding: 2px 8px; border-radius: 6px; line-height: 1; transition: all 0.15s; }
+        .upload-file-card-remove:hover { color: #ef4444; background: #fef2f2; }
+
+        .upload-result-banner { padding:20px;border-radius:12px;font-size:0.9rem;animation:slideIn 0.4s ease; }
+        .upload-result-banner.success { background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0; }
+        .upload-result-banner.warning { background:#fffbeb;color:#92400e;border:1px solid #fcd34d; }
+        .upload-result-banner.error { background:#fef2f2;color:#991b1b;border:1px solid #fecaca; }
+        @keyframes slideIn { from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)} }
+
+        /* ── Upload Center Page Styles ─────────────────────── */
+        .upload-page { max-width: 1100px; margin: 0 auto; }
+        .upload-header { margin-bottom: 4px; }
+        .upload-stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;
+        }
+        .upload-stat-card {
+            background: var(--surface-color); border-radius: 12px; padding: 20px;
+            display: flex; flex-direction: column; gap: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid var(--border-color);
+        }
+        .upload-stat-label { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .upload-stat-value { font-size: 1.6rem; font-weight: 700; color: var(--text-color); }
+        .upload-card {
+            background: var(--surface-color); border-radius: 14px; padding: 28px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+        .upload-stepper { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 24px; }
+        .upload-step-item { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; font-weight: 500; color: var(--text-muted); }
+        .upload-step-item.active { color: var(--primary-color); font-weight: 600; }
+        .upload-step-item.done { color: #10b981; }
+        .step-circle {
+            width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; font-weight: 700; color: #fff; background: var(--border-color);
+        }
+        .upload-step-item.active .step-circle { background: var(--primary-color); }
+        .upload-step-item.done .step-circle { background: #10b981; }
+        .step-line { width: 60px; height: 2px; background: var(--border-color); margin: 0 12px; }
+        .upload-toggle-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 0; border-top: 1px solid var(--border-color); margin-top: 20px;
+        }
+        /* Toggle switch */
+        .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute; cursor: pointer; inset: 0; background: #d1d5db; border-radius: 12px; transition: 0.25s;
+        }
+        .toggle-slider::before {
+            content: ""; position: absolute; width: 20px; height: 20px; left: 2px; bottom: 2px;
+            background: #fff; border-radius: 50%; transition: 0.25s; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .toggle-switch input:checked + .toggle-slider { background: var(--primary-color); }
+        .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+        @media (max-width: 768px) {
+            .upload-stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .upload-toggle-row { flex-direction: column; gap: 14px; align-items: flex-start; }
+        }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <!-- Feedback modal is rendered by the React NavHub bundle (nav-hub.js) -->
+
+
+    <script src="config.js?v=20260603"></script>
+    <script>
+        // ── Sidebar fixed-position tooltip (escapes overflow:hidden on .app-container) ──
+        // CSS ::after tooltips are clipped; we drive a fixed <div> instead.
+        (function initSidebarTooltip() {
+            const tip = document.getElementById('sidebar-tooltip');
+            const sidebar = document.getElementById('app-sidebar');
+            if (!tip || !sidebar) return;
+
+            let hideTimer = null;
+
+            sidebar.addEventListener('mouseenter', (e) => {
+                const link = e.target.closest('.sidebar-nav a[data-tooltip]');
+                if (!link) return;
+                // Only show when collapsed
+                if (!sidebar.classList.contains('sidebar-collapsed')) return;
+
+                const label = link.getAttribute('data-tooltip');
+                if (!label) return;
+
+                clearTimeout(hideTimer);
+                const rect = link.getBoundingClientRect();
+                tip.textContent = label;
+                tip.style.left = (rect.right + 12) + 'px';
+                tip.style.top = (rect.top + rect.height / 2) + 'px';
+                tip.style.transform = 'translateY(-50%)';
+                tip.classList.add('visible');
+            }, true);
+
+            sidebar.addEventListener('mouseleave', (e) => {
+                const link = e.target.closest('.sidebar-nav a[data-tooltip]');
+                if (!link) return;
+                hideTimer = setTimeout(() => tip.classList.remove('visible'), 80);
+            }, true);
+
+            // Also hide when clicking a link
+            sidebar.addEventListener('click', () => tip.classList.remove('visible'), true);
+        })();
+    </script>
+    <script src="js/dialer_machine.js?v=20260603"></script><!-- Phase 1: state machine — must load before both widgets -->
+    <script src="js/rcm_widget.js?v=20260615a"></script>
+    <!-- React port of the RCM widget (Call + Message tabs) — gated by
+         localStorage 'rcmWidgetReact'. Off by default: does nothing,
+         the vanilla widget above stays fully in control. Loads after it so
+         its conditional window.RCMWidget takeover (when flag is on)
+         happens last. -->
+    <link rel="stylesheet" href="js/rcm-widget.css?v=20260810a">
+    <script src="js/rcm-widget.js?v=20260810a"></script>
+    <link rel="stylesheet" href="js/analytics-hub.css?v=20260803a">
+    <script src="js/analytics-hub.js?v=20260803a" defer></script>
+    <link rel="stylesheet" href="js/calendar-hub.css?v=20260723a">
+    <script src="js/calendar-hub.js?v=20260723a" defer></script>
+    <!-- Leads Hub React IIFE — redesigned All Leads (Beta), gated by localStorage 'leadsBeta' -->
+    <link rel="stylesheet" href="js/leads-hub.css?v=20260810b">
+    <script src="js/leads-hub.js?v=20260810b" defer></script>
+    <link rel="stylesheet" href="js/email-hub.css?v=20260805d">
+    <script src="js/email-hub.js?v=20260805d" defer></script>
+    <!-- Dashboard Hub React IIFE (v9.7.6) -->
+    <link rel="stylesheet" href="js/dashboard-hub.css?v=20260618d">
+    <script src="js/dashboard-hub.js?v=20260729a" defer fetchpriority="high"></script>
+    <!-- Help Hub React IIFE (v10.6.38) — replaces the classic Help & User Guide view -->
+    <link rel="stylesheet" href="js/help-hub.css?v=20260810b">
+    <script src="js/help-hub.js?v=20260812a" defer></script>
+    <!-- Sales Journey Hub React IIFE — visual workflow builder -->
+    <link rel="stylesheet" href="js/sales-journey-hub.css?v=20260810a">
+    <script src="js/sales-journey-hub.js?v=20260810a" defer></script>
+    <!-- Power Dialer Hub React IIFE — replaces the classic Today's Calls view -->
+    <link rel="stylesheet" href="js/power-dialer-hub.css?v=20260811h">
+    <script src="js/power-dialer-hub.js?v=20260811h" defer></script>
+    <!-- NavHub React IIFE (v9.8.0) — Sidebar + Topbar -->
+    <script src="js/nav-hub.js?v=20260812a" defer></script>
+    <script type="module" src="js/app.js?v=20260811b"></script>
+</body>
+
+</html>

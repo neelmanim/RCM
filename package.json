@@ -1,0 +1,27 @@
+{
+  "name": "crm-alternate",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neelmanimishrasf/crmalternate.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/neelmanimishrasf/crmalternate/issues"
+  },
+  "homepage": "https://github.com/neelmanimishrasf/crmalternate#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "dotenv": "^17.4.2"
+  }
+}

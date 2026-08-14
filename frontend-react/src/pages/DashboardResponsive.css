@@ -1,0 +1,288 @@
+/**
+ * DashboardResponsive.css
+ *
+ * Mobile-first responsive overrides for the React Dashboard (dashboard-hub bundle).
+ * Cascades on top of Dashboard.css base styles.
+ *
+ * Breakpoints:
+ *   1200px — compact desktop / small laptop
+ *    960px — tablet landscape
+ *    768px — tablet portrait
+ *    480px — mobile portrait
+ */
+
+/* ── 1200px: compact desktop ──────────────────────────────────────────────── */
+@media (max-width: 1200px) {
+  .dashboard-hub-root {
+    padding: 14px 18px !important;
+  }
+
+  /* KPI: tighter columns on 7-col grid */
+  .db-kpi-row {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 10px !important;
+  }
+}
+
+/* ── 960px: tablet landscape ──────────────────────────────────────────────── */
+@media (max-width: 960px) {
+  .dashboard-hub-root {
+    padding: 12px 14px !important;
+  }
+
+  /* KPI: 3-col */
+  .db-kpi-row {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* Bento: single column */
+  .db-bento {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Right bento panel: side-by-side on tablet */
+  .db-bento-right {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Pipeline label: shorter */
+  .db-pipeline-label {
+    width: 110px !important;
+  }
+
+  /* Metrics strip: 2 cols */
+  .db-pi-metrics-strip {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .db-pi-metric:nth-child(2) { border-right: none !important; }
+}
+
+/* ── 768px: tablet portrait ───────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .dashboard-hub-root {
+    padding: 10px 10px !important;
+  }
+
+  /* Page header: stack vertically */
+  .db-page-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .db-page-header > div:last-child {
+    display: flex !important;
+    gap: 8px !important;
+    width: 100% !important;
+    justify-content: flex-start !important;
+  }
+
+  .db-page-title {
+    font-size: 18px !important;
+  }
+
+  /* KPI: 3 per row */
+  .db-kpi-row {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .db-kpi-card {
+    padding: 10px 12px !important;
+  }
+
+  .db-kpi-value {
+    font-size: 18px !important;
+  }
+
+  .db-kpi-label {
+    font-size: 9px !important;
+  }
+
+  /* Welcome strip: compress */
+  .db-welcome-strip {
+    padding: 10px 14px !important;
+    gap: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .db-welcome-greeting {
+    font-size: 13px !important;
+  }
+
+  /* Bento: single column */
+  .db-bento {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Right bento: side-by-side on tablet portrait */
+  .db-bento-right {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Pipeline label shorter */
+  .db-pipeline-label {
+    width: 90px !important;
+    font-size: 11px !important;
+  }
+
+  /* Scope toggle full width */
+  .db-scope-toggle {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* Outcomes: flex wrap already works */
+  .db-outcomes-grid {
+    gap: 7px !important;
+  }
+  .db-outcome-card {
+    min-width: 75px !important;
+    max-width: 120px !important;
+    padding: 8px 10px !important;
+  }
+  .db-outcome-count {
+    font-size: 18px !important;
+  }
+  .db-outcome-label {
+    font-size: 9px !important;
+  }
+}
+
+/* ── 480px: mobile portrait ───────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .dashboard-hub-root {
+    padding: 8px 8px !important;
+  }
+
+  .db-page-title {
+    font-size: 16px !important;
+  }
+
+  .db-page-subtitle {
+    font-size: 11px !important;
+  }
+
+  /* KPI: 2 per row on mobile */
+  .db-kpi-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 7px !important;
+  }
+
+  .db-kpi-card {
+    padding: 10px 10px !important;
+    min-height: 60px !important;
+  }
+
+  .db-kpi-value {
+    font-size: 16px !important;
+    margin-bottom: 3px !important;
+  }
+
+  .db-kpi-desc {
+    font-size: 9.5px !important;
+  }
+
+  /* Welcome strip: stack vertically on mobile */
+  .db-welcome-strip {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    padding: 10px 12px !important;
+  }
+
+  .db-welcome-pills {
+    flex-shrink: unset !important;
+  }
+
+  /* Bento right: stack vertically on mobile */
+  .db-bento-right {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Cards */
+  .db-card {
+    border-radius: 10px !important;
+  }
+
+  .db-card-header {
+    padding: 10px 12px 8px !important;
+  }
+
+  .db-card-title {
+    font-size: 12.5px !important;
+  }
+
+  /* Leaderboard rows */
+  .db-lb-row {
+    padding: 7px 12px !important;
+  }
+  .db-lb-name-text {
+    font-size: 12px !important;
+  }
+
+  /* Attention rows */
+  .db-attn-row {
+    padding: 7px 12px !important;
+  }
+  .db-attn-name {
+    font-size: 12px !important;
+  }
+
+  /* Outcomes */
+  .db-outcome-card {
+    min-width: 70px !important;
+    max-width: unset !important;
+    flex: 1 1 70px !important;
+    padding: 8px 8px !important;
+  }
+  .db-outcome-count {
+    font-size: 16px !important;
+  }
+
+  /* Pipeline bars */
+  .db-pipeline-label {
+    width: 70px !important;
+    font-size: 10px !important;
+  }
+  .db-pipeline-count {
+    font-size: 10px !important;
+    width: 36px !important;
+  }
+
+  /* Metrics strip: 2 col */
+  .db-pi-metrics-strip {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .db-pi-metric {
+    padding: 8px 10px !important;
+  }
+  .db-pi-metric-val {
+    font-size: 13px !important;
+  }
+
+  /* Refresh button: icon only on mobile */
+  .db-refresh-btn {
+    padding: 6px 8px !important;
+    font-size: 0 !important;  /* hide text */
+  }
+  .db-refresh-btn svg {
+    margin: 0 !important;
+  }
+}
+
+/* ── Touch targets: NavHub sidebar button ─────────────────────────────────── */
+@media (max-width: 768px) {
+  .nh-toggle-btn {
+    min-width: 36px !important;
+    min-height: 36px !important;
+  }
+}

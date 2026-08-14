@@ -1,0 +1,223 @@
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 🚀 PRODUCTION Backend — branch: main
+  #    rcm-crm-prod (starter, $7/mo)
+  #    Decoupled: SERVE_FRONTEND=false — backend serves JSON only.
+  #    Custom domain: https://api.rcm.txtbox.in (prev: api.rcm.rcm.ai)
+  #    The static site at rcm.txtbox.in
+  #    calls this backend via window.__APP_CONFIG__.API_BASE.
+  # ═══════════════════════════════════════════════════════════════════════════
+  - type: web
+    name: rcm-crm-prod
+    env: docker
+    plan: starter
+    region: ohio
+    branch: main
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rcm-db-prod
+          property: connectionString
+      - key: PORT
+        value: 10000
+      - key: SF_DOMAIN
+        value: login  # Production Salesforce Org
+      - key: SF_USERNAME
+        sync: false
+      - key: SF_PASSWORD
+        sync: false
+      - key: SF_SECURITY_TOKEN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://api.rcm.txtbox.in/api/auth/callback
+      - key: ALLOW_DEMO
+        value: "false"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: APP_ENCRYPTION_KEY
+        sync: false  # Must be set manually — base64-encoded 32-byte key
+      - key: SERVE_FRONTEND
+        value: "false"  # Frontend served by rcm-frontend-prod static site
+      - key: FRONTEND_URL
+        value: https://rcm.txtbox.in
+      - key: FRONTEND_URLS
+        value: https://rcm.txtbox.in,https://rcm.rcm.ai
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 🧪 STAGING — branch: staging
+  #    Backend: rcm-crm-staging (starter, 512MB RAM — verified via live
+  #    Render API 2026-07-14; this file previously said "free/grandfathered, $0",
+  #    which was stale/incorrect)
+  #    Frontend: rcm-frontend-staging (static site, $0)
+  #
+  #    Decoupled: SERVE_FRONTEND=false — backend serves JSON only.
+  #    The static site at rcm-frontend-staging.onrender.com
+  #    calls this backend via window.__APP_CONFIG__.API_BASE.
+  #
+  #    512MB is tight for this app (observed baseline ~200-370MB under normal
+  #    traffic). A rolling deploy briefly runs old+new instances together, so
+  #    back-to-back deploys can push combined memory over the limit and trip
+  #    the health check (observed 2026-07-14: 3 deploys in ~10min caused an
+  #    instance restart). Space out staging deploys when possible.
+  # ═══════════════════════════════════════════════════════════════════════════
+  - type: web
+    name: rcm-crm-staging
+    env: docker
+    plan: starter
+    region: ohio
+    branch: staging
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rcm-db-staging
+          property: connectionString
+      - key: PORT
+        value: 10000
+      - key: SF_DOMAIN
+        value: test   # Salesforce Sandbox
+      - key: SF_USERNAME
+        sync: false
+      - key: SF_PASSWORD
+        sync: false
+      - key: SF_SECURITY_TOKEN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://rcm-crm-staging.onrender.com/api/auth/callback
+      - key: JWT_SECRET
+        generateValue: true
+      - key: APP_ENCRYPTION_KEY
+        sync: false  # Must be set manually — base64-encoded 32-byte key
+      - key: SERVE_FRONTEND
+        value: "false"  # Frontend served by separate static site
+      - key: FRONTEND_URL
+        value: https://rcm-frontend-staging.onrender.com
+      - key: FRONTEND_URLS
+        value: https://rcm-frontend-staging.onrender.com,https://rcm-frontend-develop.onrender.com
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 🌐 STAGING Frontend — Static Site (FREE)
+  #    branch: staging → serves frontend/ directory
+  #    URL: https://rcm-frontend-staging.onrender.com
+  # ═══════════════════════════════════════════════════════════════════════════
+  - type: web
+    name: rcm-frontend-staging
+    env: static
+    branch: staging
+    rootDir: frontend
+    buildCommand: echo "No build step needed"
+    staticPublishPath: .
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 🔧 DEVELOP Frontend — Static Site (FREE)
+  #    branch: develop → serves frontend/ directory
+  #    URL: https://rcm-frontend-develop.onrender.com
+  #    NOTE: No dedicated develop backend. This static site calls the
+  #          staging backend (shared). config.js sets API_BASE accordingly.
+  #          For local backend testing, developers run uvicorn locally.
+  # ═══════════════════════════════════════════════════════════════════════════
+  - type: web
+    name: rcm-frontend-develop
+    env: static
+    branch: develop
+    rootDir: frontend
+    buildCommand: echo "No build step needed"
+    staticPublishPath: .
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 🌐 PRODUCTION Frontend — Static Site (FREE)
+  #    branch: main → serves frontend/ directory
+  #    Custom domain: https://rcm.txtbox.in (prev: rcm.rcm.ai)
+  #    API_BASE is injected at build time via config.js to point to prod API.
+  #    NOTE: rootDir=frontend, so buildCommand cwd is already frontend/
+  #          → write to config.js (not js/config.js)
+  # ═══════════════════════════════════════════════════════════════════════════
+  - type: web
+    name: rcm-frontend-prod
+    env: static
+    branch: main
+    rootDir: frontend
+    buildCommand: |
+      echo "window.__APP_CONFIG__ = { API_BASE: 'https://api.rcm.txtbox.in' };" > config.js
+    staticPublishPath: .
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ⚛️  REACT MIGRATION — branch: reactstaging (grandfathered free, DO NOT DELETE)
+  #    These services are in development and not in active use.
+  # ═══════════════════════════════════════════════════════════════════════════
+  - type: web
+    name: rcm-api-react-staging
+    env: docker
+    plan: free
+    region: ohio
+    branch: reactstaging
+    rootDir: backend-react
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rcm-db-staging
+          property: connectionString
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        value: https://rcm-api-react-staging.onrender.com/api/auth/callback
+      - key: FRONTEND_URL
+        value: https://rcm-react-staging.onrender.com
+      - key: SF_DOMAIN
+        value: test
+      - key: GROQ_API_KEY
+        sync: false
+
+  - type: web
+    name: rcm-react-staging
+    env: static
+    branch: reactstaging
+    rootDir: frontend-react
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE
+        value: https://rcm-api-react-staging.onrender.com
+
+databases:
+  - name: rcm-db-prod
+    plan: Basic-256mb
+    region: ohio
+  - name: rcm-db-staging
+    plan: Basic-256mb
+    region: ohio

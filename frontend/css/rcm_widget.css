@@ -1,0 +1,957 @@
+/**
+ * rcm_widget.css
+ * ─────────────────────
+ * Styles for the RCM Floating Communication Widget (V33).
+ *
+ * Design: dark glassmorphism FAB + expandable panel.
+ * Theme can be switched to "light" via data-widget-theme="light" on the root element.
+ */
+
+/* ── Root variables ─────────────────────────────────────────────────────── */
+:root {
+  --cw-accent:        #4f46e5;          /* RCM indigo — matches --primary-color */
+  --cw-accent-hover:  #4338ca;          /* RCM --primary-hover */
+  --cw-bg-dark:       rgba(30, 41, 59, 0.97); /* RCM sidebar-bg #1e293b */
+  --cw-bg-light:      rgba(255, 255, 255, 0.96);
+  --cw-text-dark:     #f1f5f9;
+  --cw-text-light:    #1e293b;
+  --cw-border-dark:   rgba(255,255,255,0.10);
+  --cw-border-light:  rgba(0,0,0,0.10);
+  --cw-radius:        16px;
+  --cw-fab-size:      56px;
+  --cw-panel-w:       360px;
+  --cw-panel-h:       520px;
+  --cw-z:             99999;
+  --cw-shadow:        0 8px 40px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2);
+  --cw-transition:    0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Wrapper (injected into host page) ─────────────────────────────────── */
+#rcm-widget-root {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: var(--cw-z);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#rcm-widget-root[data-position="bottom-left"] {
+  right: unset;
+  left: 24px;
+  align-items: flex-start;
+}
+
+/* ── FAB button ─────────────────────────────────────────────────────────── */
+.cw-fab {
+  width:  var(--cw-fab-size);
+  height: var(--cw-fab-size);
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); /* RCM sidebar tones */
+  border: 2px solid rgba(255,255,255,0.10);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25);
+  transition: transform var(--cw-transition), box-shadow var(--cw-transition);
+  outline: none;
+  position: relative;
+}
+
+.cw-fab:hover {
+  transform: scale(1.08) translateY(-2px);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.cw-fab:active {
+  transform: scale(0.96);
+}
+
+/* RCM icon mark inside FAB */
+.cw-fab-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  pointer-events: none;
+  display: block;
+}
+
+/* Legacy SVG fallback */
+.cw-fab svg {
+  width: 26px;
+  height: 26px;
+  fill: #fff;
+  transition: opacity var(--cw-transition);
+}
+
+/* Unread badge */
+.cw-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  animation: cw-pulse 2s infinite;
+}
+
+@keyframes cw-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.45); }
+  50%       { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+
+/* ── Panel ─────────────────────────────────────────────────────────────── */
+.cw-panel {
+  width: var(--cw-panel-w);
+  height: var(--cw-panel-h);
+  border-radius: var(--cw-radius);
+  background: var(--cw-bg-dark);
+  border: 1px solid var(--cw-border-dark);
+  box-shadow: var(--cw-shadow);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform-origin: bottom right;
+  transition: opacity var(--cw-transition), transform var(--cw-transition);
+}
+
+#rcm-widget-root[data-position="bottom-left"] .cw-panel {
+  transform-origin: bottom left;
+}
+
+/* Hidden state */
+.cw-panel[hidden],
+.cw-panel.cw-hidden {
+  display: none !important;
+}
+
+.cw-panel.cw-entering {
+  animation: cw-expand 0.22s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.cw-panel.cw-leaving {
+  animation: cw-collapse 0.18s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes cw-expand {
+  from { opacity: 0; transform: scale(0.85) translateY(12px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+@keyframes cw-collapse {
+  from { opacity: 1; transform: scale(1)    translateY(0); }
+  to   { opacity: 0; transform: scale(0.85) translateY(12px); }
+}
+
+/* ── Panel header ─────────────────────────────────────────────────────── */
+.cw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  background: linear-gradient(135deg, rgba(79,70,229,0.18), rgba(99,102,241,0.12)); /* indigo tint */
+  border-bottom: 1px solid var(--cw-border-dark);
+  flex-shrink: 0;
+}
+
+.cw-header-brand {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* RCM logo in the header — white version via brightness filter on dark theme */
+.cw-header-logo {
+  height: 22px;
+  width: auto;
+  max-width: 130px;
+  object-fit: contain;
+  pointer-events: none;
+  display: block;
+  /* SVG has a dark/coloured logo — invert to white for the dark glassmorphism header */
+  filter: brightness(0) invert(1);
+  opacity: 0.92;
+}
+
+[data-widget-theme="light"] .cw-header-logo {
+  filter: none;     /* Keep original colours on light background */
+  opacity: 1;
+}
+
+.cw-header-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--cw-text-dark);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.cw-header-lead-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.cw-header-lead-phone {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.cw-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  color: rgba(255,255,255,0.5);
+  transition: color var(--cw-transition), background var(--cw-transition);
+  line-height: 1;
+}
+
+.cw-close-btn:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.08);
+}
+
+/* ── Tab bar ───────────────────────────────────────────────────────────── */
+.cw-tabs {
+  display: flex;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--cw-border-dark);
+  flex-shrink: 0;
+}
+
+.cw-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.45);
+  cursor: pointer;
+  transition: color var(--cw-transition), border-color var(--cw-transition);
+  margin-bottom: -1px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cw-tab.cw-active {
+  color: #a5b4fc;                   /* indigo-300 */
+  border-bottom-color: #4f46e5;      /* RCM primary */
+}
+
+.cw-tab:hover:not(.cw-active) {
+  color: rgba(255,255,255,0.75);
+}
+
+/* ── Tab panes ─────────────────────────────────────────────────────────── */
+.cw-pane {
+  display: none;
+  flex: 1;
+  overflow: hidden;
+  flex-direction: column;
+}
+
+.cw-pane.cw-active {
+  display: flex;
+}
+
+/* Live call state inside the Call tab */
+.cw-call-live {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  flex: 1;
+  padding: 24px 16px;
+}
+.cw-call-live-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.cw-call-live-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.9);
+}
+.cw-call-live-phone {
+  font-size: 12px;
+  color: rgba(255,255,255,0.45);
+}
+.cw-call-live-timer {
+  font-size: 24px;
+  font-weight: 700;
+  color: #818cf8;                   /* indigo-400 — matches RCM primary family */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 2px;
+  margin-top: 6px;
+}
+.cw-call-live-controls {
+  display: flex;
+  gap: 12px;
+}
+
+
+.cw-msg-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cw-msg-history.cw-hidden { display: none; }
+
+.cw-msg-history::-webkit-scrollbar { width: 4px; }
+.cw-msg-history::-webkit-scrollbar-track { background: transparent; }
+.cw-msg-history::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+
+.cw-bubble {
+  max-width: 80%;
+  padding: 9px 13px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.cw-bubble.cw-outbound {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #4f46e5, #6366f1); /* indigo gradient */
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.cw-bubble.cw-inbound {
+  align-self: flex-start;
+  background: rgba(255,255,255,0.09);
+  color: var(--cw-text-dark);
+  border-bottom-left-radius: 4px;
+}
+
+.cw-bubble-time {
+  font-size: 10.5px;
+  opacity: 0.55;
+  margin-top: 3px;
+  text-align: right;
+}
+
+.cw-msg-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: rgba(255,255,255,0.3);
+  font-size: 13px;
+}
+.cw-msg-empty.cw-hidden { display: none; }
+
+/* Compose bar */
+.cw-compose {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--cw-border-dark);
+  background: rgba(255,255,255,0.03);
+  flex-shrink: 0;
+}
+.cw-compose.cw-hidden { display: none; }
+
+.cw-compose-input {
+  flex: 1;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: var(--cw-text-dark);
+  font-size: 13px;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  min-height: 38px;
+  max-height: 80px;
+  transition: border-color var(--cw-transition);
+}
+
+.cw-compose-input:focus {
+  border-color: rgba(79,70,229,0.6); /* indigo focus ring */
+}
+
+.cw-compose-input::placeholder {
+  color: rgba(255,255,255,0.25);
+}
+
+.cw-send-btn {
+  background: linear-gradient(135deg, var(--cw-accent), #9f5cf7);
+  border: none;
+  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform var(--cw-transition), box-shadow var(--cw-transition);
+}
+
+.cw-send-btn:hover { transform: scale(1.08); box-shadow: 0 4px 14px rgba(79,70,229,0.5); }
+.cw-send-btn:active { transform: scale(0.94); }
+.cw-send-btn svg { width: 18px; height: 18px; fill: #fff; }
+.cw-send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ── Status toast ─────────────────────────────────────────────────────── */
+.cw-toast {
+  position: absolute;
+  bottom: 80px;
+  right: 0;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  background: rgba(15,15,25,0.95);
+  color: #a5b4fc;                    /* indigo-300 */
+  border: 1px solid rgba(79,70,229,0.35);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  animation: cw-toast-in 0.2s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.cw-toast.cw-toast-error { color: #fca5a5; border-color: rgba(239,68,68,0.35); }
+.cw-toast.cw-toast-success { color: #86efac; border-color: rgba(34,197,94,0.35); }
+
+@keyframes cw-toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Light theme override ─────────────────────────────────────────────── */
+#rcm-widget-root[data-widget-theme="light"] .cw-panel {
+  background: var(--cw-bg-light);
+  border-color: var(--cw-border-light);
+}
+
+#rcm-widget-root[data-widget-theme="light"] .cw-header-title,
+#rcm-widget-root[data-widget-theme="light"] .cw-tab,
+#rcm-widget-root[data-widget-theme="light"] .cw-bubble.cw-inbound {
+  color: var(--cw-text-light);
+}
+
+#rcm-widget-root[data-widget-theme="light"] .cw-compose-input {
+  background: rgba(0,0,0,0.05);
+  border-color: rgba(0,0,0,0.12);
+  color: var(--cw-text-light);
+}
+
+#rcm-widget-root[data-widget-theme="light"] .cw-compose-input::placeholder {
+  color: rgba(0,0,0,0.35);
+}
+
+/* .cw-powered-by removed — footer deprecated */
+
+/* ── V34: Channel selector ─────────────────────────────── */
+.cw-channel-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+[data-widget-theme="light"] .cw-channel-bar {
+  border-bottom-color: rgba(0,0,0,0.08);
+}
+.cw-channel-bar.cw-hidden { display: none; }
+.cw-channel-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: transparent;
+  color: rgba(255,255,255,0.55);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cw-channel-btn svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; }
+.cw-channel-btn:hover { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.85); }
+.cw-channel-btn.cw-active {
+  background: rgba(79,70,229,0.25);  /* indigo tint */
+  border-color: #4f46e5;
+  color: #a5b4fc;                    /* indigo-300 */
+}
+[data-widget-theme="light"] .cw-channel-btn {
+  border-color: rgba(0,0,0,0.15);
+  color: rgba(0,0,0,0.5);
+}
+[data-widget-theme="light"] .cw-channel-btn.cw-active {
+  background: rgba(79,70,229,0.1);
+  border-color: #4f46e5;
+  color: #4f46e5;
+}
+
+/* ── Session banner ──────────────────────────────────────── */
+.cw-session-banner {
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cw-session-banner.cw-hidden { display: none; }
+.cw-banner-info  { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+.cw-banner-warn  { background: rgba(245,158,11,0.15); color: #fcd34d; }
+.cw-banner-error { background: rgba(239,68,68,0.15);  color: #fca5a5; }
+[data-widget-theme="light"] .cw-banner-info  { background: rgba(99,102,241,0.08); color: #4f46e5; }
+[data-widget-theme="light"] .cw-banner-warn  { background: rgba(245,158,11,0.1);  color: #b45309; }
+[data-widget-theme="light"] .cw-banner-error { background: rgba(239,68,68,0.08);  color: #dc2626; }
+
+/* ── Template picker ─────────────────────────────────────── */
+.cw-tpl-wrap {
+  padding: 10px 12px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.cw-tpl-wrap.cw-hidden { display: none; }
+.cw-tpl-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+}
+[data-widget-theme="light"] .cw-tpl-label { color: rgba(0,0,0,0.4); }
+.cw-tpl-select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #f3f4f6;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.cw-tpl-select:focus { border-color: #4f46e5; }
+[data-widget-theme="light"] .cw-tpl-select {
+  border-color: rgba(0,0,0,0.15);
+  background: #fff;
+  color: #111827;
+}
+.cw-tpl-preview {
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(79,70,229,0.1);   /* indigo tint preview */
+  border: 1px solid rgba(79,70,229,0.25);
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255,255,255,0.75);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.cw-tpl-preview.cw-hidden { display: none; }
+[data-widget-theme="light"] .cw-tpl-preview {
+  background: rgba(124,58,237,0.05);
+  color: #374151;
+}
+
+/* ── Spinner animation ───────────────────────────────────── */
+@keyframes cw-rotate { to { transform: rotate(360deg); } }
+.cw-spin { animation: cw-rotate 0.8s linear infinite; width: 14px; height: 14px; }
+
+/* ── v6.2.0: Call tab idle sub-states ───────────────────── */
+
+/* Wrapper for the idle Call pane contents */
+.cw-call-idle-lead,
+.cw-call-idle-manual {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 16px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Lead info row shown when call is triggered from a lead card */
+.cw-call-lead-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 0 8px;
+}
+.cw-call-lead-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4f46e5, #6366f1); /* indigo avatar */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+.cw-call-lead-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #f3f4f6;
+  text-align: center;
+}
+.cw-call-lead-phone {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+.cw-call-lead-tz {
+  font-size: 11px;
+  color: rgba(255,255,255,0.38);
+  text-align: center;
+  margin-top: 2px;
+  min-height: 14px;
+}
+
+/* "Choose how to connect" label */
+.cw-call-mode-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.38);
+  text-align: center;
+  margin-top: 4px;
+}
+
+/* Mode buttons: Phone Bridge + Browser Call */
+.cw-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.8);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  text-align: left;
+  font-family: inherit;
+}
+.cw-mode-btn:hover {
+  background: rgba(79,70,229,0.18);  /* indigo hover */
+  border-color: rgba(79,70,229,0.45);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.cw-mode-btn:active { transform: translateY(0); }
+.cw-mode-btn-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+.cw-mode-btn-text strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f3f4f6;
+}
+.cw-mode-btn-text small {
+  font-size: 11px;
+  color: rgba(255,255,255,0.45);
+  font-weight: 400;
+}
+
+/* Cancel link for mode selector */
+.cw-call-cancel {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.35);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+  padding: 4px;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+.cw-call-cancel:hover { color: rgba(255,255,255,0.65); }
+
+/* Manual dial phone input inside Call tab */
+.cw-manual-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cw-manual-input-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.38);
+}
+.cw-manual-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.07);
+  color: #f3f4f6;
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+  letter-spacing: 0.5px;
+}
+.cw-manual-input:focus {
+  border-color: #4f46e5;
+  background: rgba(79,70,229,0.08);
+}
+.cw-manual-input::placeholder { color: rgba(255,255,255,0.28); }
+.cw-manual-input.cw-input-error { border-color: #f87171; }
+.cw-manual-tz {
+  font-size: 11px;
+  color: rgba(255,255,255,0.38);
+  min-height: 14px;
+  padding-left: 2px;
+}
+
+/* "Choose mode" header for manual dial (shown after number typed) */
+.cw-manual-mode-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+[data-widget-theme="light"] .cw-mode-btn {
+  border-color: rgba(0,0,0,0.12);
+  background: rgba(0,0,0,0.03);
+  color: #374151;
+}
+[data-widget-theme="light"] .cw-mode-btn:hover {
+  background: rgba(79,70,229,0.08);
+  border-color: rgba(79,70,229,0.3);
+  color: #111827;
+}
+[data-widget-theme="light"] .cw-mode-btn-text strong { color: #111827; }
+[data-widget-theme="light"] .cw-mode-btn-text small { color: rgba(0,0,0,0.45); }
+[data-widget-theme="light"] .cw-call-lead-name { color: #111827; }
+[data-widget-theme="light"] .cw-call-lead-phone { color: rgba(0,0,0,0.45); }
+[data-widget-theme="light"] .cw-call-mode-label,
+[data-widget-theme="light"] .cw-call-cancel,
+[data-widget-theme="light"] .cw-manual-input-label { color: rgba(0,0,0,0.4); }
+[data-widget-theme="light"] .cw-manual-input {
+  border-color: rgba(0,0,0,0.15);
+  background: #fff;
+  color: #111827;
+}
+[data-widget-theme="light"] .cw-manual-tz { color: rgba(0,0,0,0.35); }
+
+/* ── Light theme: active call info & controls (A6 fix) ─────────────────────── */
+/* Without these, the dark-themed .cw-call-live-* and .dw-btn text is          */
+/* white-on-white — completely invisible.                                       */
+[data-widget-theme="light"] .cw-call-live-name  { color: #111827 !important; }
+[data-widget-theme="light"] .cw-call-live-phone { color: rgba(0,0,0,0.5) !important; }
+[data-widget-theme="light"] .cw-call-ringing    { color: rgba(0,0,0,0.45) !important; }
+
+/* Mute / Hold / End buttons inside the RCM panel (uses .dw-btn from style.css) */
+[data-widget-theme="light"] .dw-btn {
+  background: rgba(0,0,0,0.04);
+  color: #374151;
+  border: 1px solid rgba(0,0,0,0.10);
+}
+[data-widget-theme="light"] .dw-btn:hover {
+  background: rgba(0,0,0,0.08);
+  color: #111827;
+}
+[data-widget-theme="light"] .dw-btn.dw-btn-active {
+  background: rgba(251,191,36,0.12);
+  color: #d97706;
+  box-shadow: inset 0 0 0 1px rgba(251,191,36,0.3);
+}
+[data-widget-theme="light"] .dw-btn-hangup {
+  background: rgba(239,68,68,0.08) !important;
+  color: #dc2626 !important;
+  border-color: rgba(239,68,68,0.2) !important;
+}
+[data-widget-theme="light"] .dw-btn-hangup:hover {
+  background: rgba(239,68,68,0.15) !important;
+  color: #b91c1c !important;
+}
+[data-widget-theme="light"] .dw-recording-badge {
+  color: rgba(0,0,0,0.35);
+  border-top-color: rgba(0,0,0,0.08);
+}
+
+
+/* ── Bridge mode ring hint ─────────────────────────────────────────────────── */
+.cw-call-ring-hint {
+  display: block;
+  font-size: 11.5px;
+  color: rgba(255,255,255,0.55);
+  text-align: center;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+[data-widget-theme="light"] .cw-call-ring-hint { color: rgba(0,0,0,0.4); }
+
+/* ── Animations ────────────────────────────────────────────────────────────── */
+@keyframes cwSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes cwPulse {
+  0%, 100% { transform: scale(1);    opacity: 1;    }
+  50%       { transform: scale(1.25); opacity: 0.65; }
+}
+
+/* ── Phase 1: dialer-call-active body class ──────────────────────────────────
+   Replaces the _dialerHideStyle injected <style> tag.
+   Suppresses the standalone #dialer-widget while the RCM panel's
+   embedded Call tab is showing the active-call UI.
+   Applied by: rcm:call-started listener in rcm_widget.js
+   Removed by: rcm:call-ended listener (1600ms delay) */
+body.dialer-call-active #dialer-widget {
+  display: none !important;
+}
+
+/* ── T4A: FAB active-call pulsing ring ────────────────────────────────────── */
+.cw-fab.cw-call-active {
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5);
+  animation: cwFabPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes cwFabPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  50%       { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+}
+
+/* ── T4A: FAB inline tooltip (soft-close message) ─────────────────────────── */
+.cw-fab-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  background: rgba(15, 15, 25, 0.9);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.cw-fab-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 16px;
+  border: 6px solid transparent;
+  border-top-color: rgba(15, 15, 25, 0.9);
+}
+.cw-fab-tooltip.cw-fab-tooltip-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── T3: Recovery banner ──────────────────────────────────────────────────── */
+.cw-recovery-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 8px;
+  padding: 7px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fbbf24;
+}
+.cw-recovery-note {
+  font-weight: 400;
+  color: rgba(251, 191, 36, 0.7);
+}
+
+/* ── T4C: Navbar active call indicator ───────────────────────────────────── */
+#active-call-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 20px;
+  padding: 4px 10px 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #f87171;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+#active-call-indicator:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+#active-call-indicator .aci-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: cwFabPulse 1.4s ease-in-out infinite;
+}
+

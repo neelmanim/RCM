@@ -1,0 +1,402 @@
+{
+  "info": {
+    "_postman_id": "d6c27a90-fcb0-49c8-921c-081f07e00ce4",
+    "name": "RCM API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "12695602",
+    "_collection_link": "https://go.postman.co/collection/12695602-d6c27a90-fcb0-49c8-921c-081f07e00ce4?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Create RCM Account",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"account_type\": \"email\",\n    \"name\": \"Afta\",\n    \"email\": \"aftab.yaligar+zohoUse@screen-magic.com\",\n    \"consent_status\": true,\n    \"country_code\": \"91\",\n    \"dialcode_country\": \"IN\",\n    \"plan_name\": \"\",\n    \"product_type\": \"rcm\",\n    \"source\": \"Portal - Sign Up\",\n    \"industry_type\": \"Education\",\n    \"number_of_employees\": \"51-200\",\n    \"form_data_id\": \"dcd12093-e1fc-423d-b9ce-488b06f898d6\",\n    \"phone_number\": \"+91 7892449681\",\n    \"company_name\": \"RCM Messaging\",\n    \"website\": \"https://app.rcm-messaging.com\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://app.txtbox.in/api/v2/trial/signup",
+          "protocol": "https",
+          "host": [
+            "app",
+            "txtbox",
+            "in"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "trial",
+            "signup"
+          ]
+        },
+        "description": "``` json\n{\n  \"$schema\": \"http://json-schema.org/draft-07/schema#\",\n  \"type\": \"object\",\n  \"required\": [\n    \"name\",\n    \"email\",\n    \"account_type\",\n    \"consent_status\",\n    \"company_name\",\n    \"phone_number\"\n  ],\n  \"properties\": {\n    \"name\": { \"type\": \"string\", \"minLength\": 1 },\n    \"email\": { \"type\": \"string\", \"format\": \"email\" },\n    \"account_type\": {\n      \"type\": \"string\",\n      \"enum\": [\"email\", \"phone\", \"oauth\", \"sso\"]\n    },\n    \"consent_status\": { \"type\": \"boolean\" },\n    \"company_name\": { \"type\": \"string\", \"minLength\": 1 },\n    \"phone_number\": { \"type\": \"string\", \"minLength\": 5 },\n    \"country_code\": {\n      \"type\": \"string\",\n      \"pattern\": \"^[0-9]{1,4}$\",\n      \"description\": \"Optional; if present must be numeric and ≤ 4 digits\"\n    },\n    \"dialcode_country\": { \"type\": \"string\", \"maxLength\": 10 },\n    \"plan_name\": { \"type\": \"string\" },\n    \"org_type\": { \"type\": \"string\", \"enum\": [\"private\", \"public\", \"ngo\", \"government\", \"other\"] },\n    \"auth_code\": { \"type\": \"string\" },\n    \"source\": { \"type\": \"string\" },\n    \"industry_type\": { \"type\": \"string\" },\n    \"number_of_employees\": { \"type\": \"string\" },\n    \"form_data_id\": { \"type\": \"string\" },\n    \"website\": { \"type\": \"string\", \"format\": \"uri\" },\n    \"product_type\": { \"type\": \"string\", \"default\": \"rcm\" }\n  },\n  \"additionalProperties\": false\n}\n\n ```"
+      },
+      "response": []
+    },
+    {
+      "name": "1 Plain Text Message",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"userPayload\": {\r\n        \"type\": \"api\",\r\n        \"apiKey\": \"93fbe3fc939793c7ea2fe5e170a78b79\"\r\n    },\r\n    \"messageDetails\": [\r\n        {\r\n            \"source\": \"100000\",\r\n            \"sender\": {\r\n                \"phone\": \"1832123323\",\r\n                \"channelType\": \"SMS\"\r\n            },\r\n            \"recipient\": [\r\n                {\r\n                    \"phone\": \"1832123325\",\r\n                    \"channelType\": \"SMS\"\r\n                }\r\n            ],\r\n            \"externalField\": \"SDK-002\",\r\n            \"message\": {\r\n                \"type\": \"text\",\r\n                \"content\": {\r\n                    \"messageText\": \"Hello from RCM\"\r\n                }\r\n            }\r\n        }\r\n    ]\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://staging-api.bercm.com/api/v2/message/send",
+          "protocol": "https",
+          "host": [
+            "staging-api",
+            "bercm",
+            "com"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "message",
+            "send"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "25 Bulk Text Message",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n     \"userPayload\":{\r\n          \"type\": \"api\",\r\n        \"apiKey\": \"93fbe3fc939793c7ea2fe5e170a78b79\"\r\n        },\r\n   \"messageDetails\":[\r\n      {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t  {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      },\r\n\t       {\r\n         \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\": \"text\",\r\n            \"content\": {\r\n                \"messageText\": \"One Test New\"\r\n            }\r\n        }\r\n      }\r\n   ]\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://staging-api.bercm.com/api/v2/message/send",
+          "protocol": "https",
+          "host": [
+            "staging-api",
+            "bercm",
+            "com"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "message",
+            "send"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4.1 MMS Image with Text",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "   {\r\n   \"userPayload\":{\r\n       \"type\": \"api\",\r\n        \"apiKey\": \"93fbe3fc939793c7ea2fe5e170a78b79\"\r\n   },\r\n   \"messageDetails\":[\r\n      {\r\n          \"source\" : \"6005\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\":\"image\",\r\n            \"content\":{\r\n                \"url\":\"https://homepages.cae.wisc.edu/~ece533/images/boat.png\",\r\n                \"caption\": \"MMS12\",\r\n                \"previewUrl\": \"string // (Optional Parameter)\"\r\n            }\r\n        }\r\n      }\r\n   ]\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://staging-api.bercm.com/api/v2/message/send",
+          "protocol": "https",
+          "host": [
+            "staging-api",
+            "bercm",
+            "com"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "message",
+            "send"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4.2 MMS Image without Text",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "   {\r\n   \"userPayload\":{\r\n         \"type\": \"api\",\r\n        \"apiKey\": \"93fbe3fc939793c7ea2fe5e170a78b79\"\r\n   },\r\n   \"messageDetails\":[\r\n      {\r\n          \"source\" : \"100000\",\r\n         \"sender\":{\r\n            \"phone\":\"1832123323\",\r\n            \"channelType\":\"SMS\"\r\n         },\r\n         \"recipient\":[\r\n            {\r\n               \"phone\":\"18486284673\",\r\n               \"channelType\":\"SMS\"\r\n            }\r\n         ],\r\n      \"externalField\":\"0054O000008runkQAA-1810d89af32719e9a91974cd5b831fb9d295fcfecff3972c9d0e3457d48c819d\",\r\n         \"message\":{\r\n            \"type\":\"image\",\r\n            \"content\":{\r\n                \"url\":\"https://homepages.cae.wisc.edu/~ece533/images/boat.png\",\r\n                \"caption\": \"\",\r\n                \"previewUrl\": \"string // (Optional Parameter)\"\r\n            }\r\n        }\r\n      }\r\n   ]\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://staging-api.bercm.com/api/v2/message/send",
+          "protocol": "https",
+          "host": [
+            "staging-api",
+            "bercm",
+            "com"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "message",
+            "send"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Balance",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "content-type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"userPayload\": {\n        \"type\": \"api\",\n        \"apiKey\": \"93fbe3fc939793c7ea2fe5e170a78b79\"\n    }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://api.txtbox.in/api/v2/unified/getCredits",
+          "protocol": "https",
+          "host": [
+            "api",
+            "txtbox",
+            "in"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "unified",
+            "getCredits"
+          ]
+        },
+        "description": "Generated from cURL: curl -X POST \\\nhttps://api.rcm-messaging.com/api/v2/unified/getCredits\\\n-H 'content-type: application/json'\\\n-d '{\n    \"apiKey\": \"2145e837ddee22d58521065f014dxxx\"\n }'"
+      },
+      "response": []
+    },
+    {
+      "name": "Plan Details",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "*/*"
+          },
+          {
+            "key": "Accept-Encoding",
+            "value": "gzip, deflate"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          },
+          {
+            "key": "Connection",
+            "value": "keep-alive"
+          },
+          {
+            "key": "Content-Length",
+            "value": "49"
+          },
+          {
+            "key": "cache-control",
+            "value": "no-cache"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n\t\"apiKey\": \"93fbe3fc939793c7ea2fe5e170a78b79\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://api.txtbox.in/api/v2/salesforce/magento/get_crm_details",
+          "protocol": "https",
+          "host": [
+            "api",
+            "txtbox",
+            "in"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "salesforce",
+            "magento",
+            "get_crm_details"
+          ]
+        },
+        "description": "Generated from cURL: curl -X POST \\\n  http://localhost:5015/api/v2/salesforce/magento/get_crm_details \\\n  -H 'Accept: */*' \\\n  -H 'Accept-Encoding: gzip, deflate' \\\n  -H 'Cache-Control: no-cache' \\\n  -H 'Connection: keep-alive' \\\n  -H 'Content-Length: 49' \\\n  -H 'Content-Type: application/json' \\\n  -H 'Host: localhost:5015' \\\n  -H 'Postman-Token: 6d924115-bdcf-415a-ae55-3420c85e67e6,532a322f-4c01-49a9-839a-d156b728e906' \\\n  -H 'User-Agent: PostmanRuntime/7.15.2' \\\n  -H 'cache-control: no-cache' \\\n  -d '{\n\t\"apiKey\": \"a3a333de6e1783cb714478e79c940044\"\n}'\n"
+      },
+      "response": []
+    },
+    {
+      "name": "Message Status",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "apiKey",
+            "value": "93fbe3fc939793c7ea2fe5e170a78b79"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"sms_id_list\": [\"e6a24f06-d734-11f0-a560-0e7f5bf6396d\"]}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://api.txtbox.in/v1/sms/status",
+          "protocol": "https",
+          "host": [
+            "api",
+            "txtbox",
+            "in"
+          ],
+          "path": [
+            "v1",
+            "sms",
+            "status"
+          ]
+        },
+        "description": "Generated from cURL: curl -X POST -H \"apiKey: sm82cd17ac1bbe43698a75f2fb0697xxxx\" -H \"Content-Type: application/json\" -d '{\"sms_id_list\": [\"bf612db8-91ff-446a-a92f-2238732eb37b\", \"576ca0f9-63dc-4261-863e-bff2a8d0d4ca\", \"aaa3bfd7-caa7-4e17-afdc-eb574a564622\", \"4533ee40-25f2-4d93-aada-f27decbc763f\"]}' \"http://api.rcm-messaging.com/v1/sms/status\"\n"
+      },
+      "response": []
+    }
+  ]
+}

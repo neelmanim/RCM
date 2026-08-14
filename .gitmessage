@@ -1,0 +1,30 @@
+# <type>(<scope>): <short summary — 50 chars max>
+# Types: feat | fix | hotfix | refactor | chore | docs | test | hardening
+# Scopes: migrations | auth | leads | dialer | health | frontend | deploy | api
+#
+# Example: fix(migrations): skip ALTER TABLE if column already VARCHAR
+# ─────────────────────────────────────────────────────────────────────
+
+# WHAT changed and WHY (wrap at 72 chars):
+
+
+# RISKS / MIGRATION NOTES (DB schema changes, new env vars, breaking changes):
+
+
+# TESTING DONE (staging verified? curl tested? unit tests?):
+
+
+# ─────────────────────────────────────────────────────────────────────
+# PRE-DEPLOY CHECKLIST (check before merging to main):
+#
+#   [ ] Code is on `develop` branch (never commit features directly to main)
+#   [ ] All backend tests pass: JWT_SECRET=test_secret python3 -m pytest tests/ -x -q
+#   [ ] Staging verified with authenticated API call (not just /api/health)
+#   [ ] New migrations tracked in _applied_migrations? (no bare UPDATE leads)
+#   [ ] Any DDL has lock_timeout set?
+#   [ ] Release note added to docs/RELEASES.md?
+#   [ ] /api/health/deep returns db_tables_accessible: true on staging?
+#
+# If any box is unchecked → DO NOT merge to main.
+# Run scripts/pre-deploy-check.sh to verify interactively.
+# ─────────────────────────────────────────────────────────────────────

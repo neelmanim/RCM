@@ -1,0 +1,118 @@
+/*
+ * help-tailwind.css
+ *
+ * Tailwind entry point for the Help Hub IIFE bundle. Mirrors
+ * leads-tailwind.css exactly — omits @tailwind base to avoid leaking
+ * resets into the Vanilla JS shell, and reproduces just the border-reset/
+ * button-reset half of Preflight, scoped to .helphub.
+ */
+.helphub, .helphub *, .helphub *::before, .helphub *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+  /*
+   * Compositional utilities (gradients, transforms, rings/shadows) build
+   * their final CSS value out of several --tw-* custom properties, and
+   * assume Preflight has given each one a default — without @tailwind base,
+   * an unset property with no inline fallback makes the WHOLE declaration
+   * invalid, so the utility silently does nothing. Confirmed live: the
+   * header's bg-gradient-to-br box rendered blank, and -translate-y-1/2
+   * failed to center the search icon, both traced to this. Reproduces
+   * just these defaults (not full Preflight) from Tailwind's own
+   * preflight.css, scoped to .helphub.
+   */
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-gradient-from-position: ;
+  --tw-gradient-via-position: ;
+  --tw-gradient-to-position: ;
+  --tw-ring-inset: ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+}
+
+:where(.helphub) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Section content is ported from the classic guide's HTML (verbatim,
+ * via a verified extraction script — see scripts/migrate-guide-sections.mjs)
+ * and rendered via dangerouslySetInnerHTML, so it still carries the
+ * classic view's `guide-table`/`guide-note` class names and raw h4/ul/ol
+ * tags. The classic app's style.css isn't loaded in this bundle, so these
+ * reproduce that CSS's visual intent with this design system's palette —
+ * scoped to .helphub-content so they don't leak into anything else.
+ */
+.helphub-content h4 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  margin: 20px 0 10px 0;
+  color: #1e293b;
+}
+.helphub-content h4:first-child {
+  margin-top: 0;
+}
+.helphub-content ul,
+.helphub-content ol {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.helphub-content li {
+  margin-bottom: 6px;
+}
+.helphub-content p {
+  margin: 8px 0;
+}
+.helphub-content code {
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+.helphub-content .guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.85rem;
+}
+.helphub-content .guide-table th {
+  background: #f1f5f9;
+  font-weight: 700;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid #e2e8f0;
+}
+.helphub-content .guide-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+.helphub-content .guide-table tr:last-child td {
+  border-bottom: none;
+}
+.helphub-content .guide-note {
+  background: #eff6ff;
+  border-left: 4px solid #3b82f6;
+  padding: 12px 16px;
+  border-radius: 0 8px 8px 0;
+  margin: 12px 0;
+}

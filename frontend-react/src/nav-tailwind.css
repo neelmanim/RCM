@@ -1,0 +1,61 @@
+/*
+ * nav-tailwind.css
+ *
+ * Tailwind entry point for the NavHub IIFE bundle. Needed because
+ * FeedbackModal.jsx (rendered into #nh-feedback-portal) now uses
+ * components/ui/Modal.jsx + Button.jsx, which are Tailwind-utility-based —
+ * nav-entry.jsx previously only imported the hand-written NavHub.css, so
+ * none of those utility classes were actually being generated (confirmed:
+ * the built nav-hub.css had zero Tailwind rules before this file existed).
+ *
+ * Mirrors leads-tailwind.css exactly — omits @tailwind base to avoid
+ * leaking Preflight resets into the Vanilla JS shell (NavSidebar/NavTopbar
+ * already have their own hand-written CSS and must not be affected), and
+ * reproduces just the border-reset/button-reset half of Preflight, scoped
+ * to .nh-feedback-portal (the one place in this bundle that actually
+ * consumes Tailwind-based components).
+ */
+.nh-feedback-portal, .nh-feedback-portal *, .nh-feedback-portal *::before, .nh-feedback-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+  /*
+   * Compositional utilities (gradients, transforms, rings/shadows) build
+   * their value from several --tw-* custom properties and assume Preflight
+   * set a default for each — without @tailwind base, an unset property
+   * with no inline fallback invalidates the whole declaration. Button.jsx's
+   * focus-visible:ring-2 relies on this (confirmed broken the same way in
+   * help-tailwind.css — see that file's comment for the live repro).
+   * Reproduces just these defaults, scoped to .nh-feedback-portal.
+   */
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-gradient-from-position: ;
+  --tw-gradient-via-position: ;
+  --tw-gradient-to-position: ;
+  --tw-ring-inset: ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: rgb(59 130 246 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+}
+
+:where(.nh-feedback-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

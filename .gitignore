@@ -1,0 +1,68 @@
+node_modules/
+.env
+.env.test
+scripts/.prod.env
+backend/venv/
+mcp_server/.venv/
+__pycache__/
+scratch/
+*.pyc
+backend/crm.db
+backend/uploads/
+frontend/mock.html
+.DS_Store
+**/.DS_Store
+
+# ─── ALL DATABASE FILES (never commit) ──────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ─── ALL ENV/SECRET FILES (never commit) ────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+secrets/
+credentials/
+
+# ─── RAILWAY / DEPLOYMENT ───────────────────────────────────────────────────
+railway.json
+
+# ─── Playwright / test artifacts ─────────────────────────────────────────────
+playwright-report/
+test-results/
+*.webm
+*.trace.zip
+perf-trace-*.json
+/report.html
+/report.json
+
+# ─── Code Review Graph ────────────────────────────────────────────────────────
+code-review-graph/
+.code-review-graph/
+
+# ─── Secrets — never commit ──────────────────────────────────────────────────
+github-recovery-codes*.txt
+
+# ─── CRM data exports (PII — leads, SDR names/phones/emails) ─────────────────
+meetings_booked_export_*.csv
+missed_meetings_export_*.csv
+sdr_cold_calling_summary_*.csv
+*.csv
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ─── Ad-hoc gzip experiments ─────────────────────────────────────────────────
+*.gz
+
+# ─── Daily session logs (not project docs) ───────────────────────────────────
+docs/analysis/
+docs/daily_logs/
+
+# nothing that would regenerate it at deploy time otherwise.
+frontend-react/src/generated/version.js

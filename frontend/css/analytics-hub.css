@@ -1,0 +1,570 @@
+/*
+ * analytics-hub.css
+ *
+ * Scoped styles for the React Analytics Hub micro-frontend.
+ * ALL rules are namespaced under .analytics-hub-root to prevent
+ * CSS leakage into the Vanilla JS shell (EC-11).
+ *
+ * This file is loaded globally in index.html but only takes effect
+ * inside #analytics-react-root > .analytics-hub-root.
+ */
+
+/* ── Root container ──────────────────────────────────────────────────────── */
+.analytics-hub-root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f8fafc;
+  min-height: 600px;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+/* ── Tab switcher ─────────────────────────────────────────────────────────── */
+.ah-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 28px 0;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.ah-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 18px;
+  border-radius: 8px 8px 0 0;
+  border: none;
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.18s, background 0.18s, border-color 0.18s;
+  font-family: inherit;
+}
+
+.ah-tab:hover {
+  color: #4f46e5;
+  background: #f1f0ff;
+}
+
+.ah-tab.active {
+  color: #4f46e5;
+  font-weight: 600;
+  border-bottom-color: #4f46e5;
+  background: #fff;
+}
+
+.ah-tab-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* ── Dashboard tab wrapper ───────────────────────────────────────────────── */
+.ah-dashboard-tab {
+  padding: 28px;
+  background: #f8fafc;
+}
+
+/* ── Ask AI tab wrapper ──────────────────────────────────────────────────── */
+.ah-ask-ai-tab {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 24px;
+  padding: 28px;
+  background: #f8fafc;
+  min-height: 600px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .ah-ask-ai-tab {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Scoping banner ──────────────────────────────────────────────────────── */
+.ah-scoping-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 9px 14px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #0369a1;
+  margin-bottom: 16px;
+}
+
+.ah-scoping-banner svg {
+  flex-shrink: 0;
+  color: #0284c7;
+}
+
+.ah-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #e0f2fe;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-weight: 600;
+  color: #0369a1;
+}
+
+.ah-scope-chip.global {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+/* ── Query input ─────────────────────────────────────────────────────────── */
+.ah-query-wrap {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.ah-query-textarea {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 56px;
+  max-height: 160px;
+  outline: none;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  color: #1e293b;
+  background: #fff;
+}
+
+.ah-query-textarea:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.ah-run-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 22px;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.18s, transform 0.15s, box-shadow 0.18s;
+  font-family: inherit;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+  flex-shrink: 0;
+  height: 48px;
+}
+
+.ah-run-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
+}
+
+.ah-run-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ah-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px;
+  background: #fff;
+  color: #ef4444;
+  border: 1.5px solid #fca5a5;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  height: 48px;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.ah-stop-btn:hover {
+  background: #fef2f2;
+}
+
+/* ── Suggestion chips ────────────────────────────────────────────────────── */
+.ah-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.ah-suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  color: #475569;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  font-family: inherit;
+}
+
+.ah-suggestion-chip:hover {
+  background: #f1f0ff;
+  border-color: #6366f1;
+  color: #4f46e5;
+}
+
+/* ── Loading / thinking state ────────────────────────────────────────────── */
+.ah-thinking {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 0.9rem;
+  margin-bottom: 20px;
+}
+
+.ah-thinking-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.ah-thinking-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6366f1;
+  animation: ah-dot-bounce 1.2s ease-in-out infinite;
+}
+
+.ah-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.ah-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes ah-dot-bounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Result card ─────────────────────────────────────────────────────────── */
+.ah-result-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  animation: ah-slide-in 0.3s ease;
+}
+
+@keyframes ah-slide-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.ah-result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ah-result-query {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-weight: 500;
+  font-style: italic;
+  flex: 1;
+}
+
+.ah-result-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ah-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.ah-action-btn.primary {
+  background: #4f46e5;
+  color: #fff;
+  border-color: #4f46e5;
+}
+
+.ah-action-btn.primary:hover {
+  background: #4338ca;
+}
+
+.ah-action-btn.outline {
+  background: #fff;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+.ah-action-btn.outline:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.ah-result-summary {
+  padding: 16px 20px;
+  font-size: 0.9rem;
+  color: #1e293b;
+  line-height: 1.65;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ah-result-chart-wrap {
+  padding: 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ah-result-table-wrap {
+  padding: 0 20px 20px;
+  overflow-x: auto;
+}
+
+.ah-result-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+
+.ah-result-table th {
+  text-align: left;
+  padding: 8px 12px;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.ah-result-table td {
+  padding: 9px 12px;
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ah-result-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ah-result-table tr:hover td {
+  background: #fafbfc;
+}
+
+/* ── Saved reports panel ─────────────────────────────────────────────────── */
+.ah-saved-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.ah-saved-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ah-saved-panel-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.ah-saved-count {
+  background: #f1f5f9;
+  color: #64748b;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 0.73rem;
+  font-weight: 600;
+}
+
+.ah-saved-report-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #f8fafc;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ah-saved-report-item:hover {
+  background: #fafbff;
+}
+
+.ah-saved-report-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.ah-saved-report-query {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ah-saved-report-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ah-saved-icon-btn {
+  background: none;
+  border: none;
+  padding: 3px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  transition: background 0.12s, color 0.12s;
+}
+
+.ah-saved-icon-btn:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.ah-saved-icon-btn.delete:hover {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+.ah-saved-empty {
+  padding: 32px 18px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.ah-saved-empty-icon {
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+}
+
+/* ── History section (below query) ───────────────────────────────────────── */
+.ah-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.ah-history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+.ah-history-item:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.ah-history-icon {
+  color: #94a3b8;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}
+
+.ah-history-text {
+  font-size: 0.82rem;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* ── Error state ─────────────────────────────────────────────────────────── */
+.ah-error-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  animation: ah-slide-in 0.25s ease;
+}
+
+.ah-error-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.ah-error-text {
+  font-size: 0.85rem;
+  color: #991b1b;
+  line-height: 1.5;
+}
+
+/* ── Pulse skeleton animation (reused from inline styles) ────────────────── */
+@keyframes ah-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}

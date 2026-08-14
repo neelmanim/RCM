@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — RCM · Powered by RCM</title>
+    <meta name="description" content="RCM — Powered by RCM. Turn raw leads into qualified prospects. SDR lead enrichment tool.">
+    <!-- RCM Brand Icons -->
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="img/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="img/icons/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="img/icons/apple-touch-icon.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#5B50E8">
+    <meta property="og:image" content="img/icons/og-image.png">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="RCM · Powered by RCM">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            background: #0f172a;
+        }
+
+        /* ── Left panel — branding ──────────────────────────────────── */
+        .brand-panel {
+            flex: 1;
+            background: linear-gradient(160deg, #0f172a 0%, #1e1b4b 40%, #1a1647 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 60px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Floating spark particles */
+        .brand-panel .spark {
+            position: absolute;
+            font-size: 14px;
+            opacity: 0;
+            animation: float-spark 6s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        @keyframes float-spark {
+            0%   { opacity: 0; transform: translateY(20px) scale(0.5); }
+            20%  { opacity: 0.7; }
+            50%  { opacity: 0.4; transform: translateY(-40px) scale(1); }
+            80%  { opacity: 0.6; }
+            100% { opacity: 0; transform: translateY(-80px) scale(0.3); }
+        }
+
+        /* Subtle ambient glow */
+        .brand-panel::before {
+            content: '';
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(245, 158, 11, 0.08) 0%, transparent 70%);
+            top: -200px;
+            right: -100px;
+            pointer-events: none;
+        }
+
+        .brand-panel::after {
+            content: '';
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(245, 158, 11, 0.06) 0%, transparent 70%);
+            bottom: -100px;
+            left: -50px;
+            pointer-events: none;
+        }
+
+        .brand-logo {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 64px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .brand-logo .logo-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            box-shadow: 0 4px 16px rgba(245, 158, 11, 0.3);
+        }
+
+        .brand-headline {
+            font-size: 3rem;
+            font-weight: 800;
+            color: white;
+            line-height: 1.12;
+            letter-spacing: -0.03em;
+            margin-bottom: 24px;
+            position: relative;
+            z-index: 1;
+            max-width: 520px;
+        }
+
+        .brand-headline .highlight {
+            background: linear-gradient(135deg, #f59e0b, #fb923c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .brand-desc {
+            font-size: 1.05rem;
+            color: rgba(255, 255, 255, 0.6);
+            line-height: 1.75;
+            max-width: 460px;
+            position: relative;
+            z-index: 1;
+            margin-bottom: 48px;
+        }
+
+        /* Feature cards */
+        .feature-cards {
+            display: flex;
+            gap: 16px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .feature-card {
+            flex: 1;
+            padding: 20px 18px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .feature-card .card-icon {
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .feature-card .card-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 6px;
+        }
+
+        .feature-card .card-desc {
+            font-size: 0.78rem;
+            color: rgba(255, 255, 255, 0.45);
+            line-height: 1.5;
+        }
+
+        /* ── Right panel — login form ──────────────────────────────── */
+        .login-panel {
+            width: 460px;
+            flex-shrink: 0;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 60px 52px;
+        }
+
+        .login-header {
+            margin-bottom: 40px;
+        }
+
+        .login-header h1 {
+            font-size: 1.65rem;
+            font-weight: 700;
+            color: #0f172a;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+        }
+
+        .login-header p {
+            color: #64748b;
+            font-size: 0.92rem;
+            line-height: 1.5;
+        }
+
+        /* Mobile-only logo shown at top of login panel */
+        .mobile-logo {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 32px;
+        }
+
+        .mobile-logo img {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+        }
+
+        .mobile-logo span {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .google-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            width: 100%;
+            padding: 15px 24px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #0f172a;
+            font-family: inherit;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.25s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        }
+
+        .google-btn:hover {
+            border-color: #f59e0b;
+            background: #fffbeb;
+            box-shadow: 0 4px 16px rgba(245, 158, 11, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .google-icon {
+            width: 22px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+
+        .divider {
+            display: none;
+            align-items: center;
+            gap: 16px;
+            margin: 28px 0;
+            color: #94a3b8;
+            font-size: 0.82rem;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #e2e8f0;
+        }
+
+        /* Demo section */
+        .demo-section {
+            display: none;
+            background: #f8fafc;
+            border-radius: 14px;
+            padding: 22px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .demo-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #94a3b8;
+            margin-bottom: 14px;
+        }
+
+        .demo-btn {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            font-family: inherit;
+            font-size: 0.88rem;
+            font-weight: 500;
+            cursor: pointer;
+            background: white;
+            color: #0f172a;
+            transition: all 0.2s ease;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .demo-btn:last-child {
+            margin-bottom: 0;
+        }
+
+        .demo-btn:hover {
+            background: #f1f5f9;
+            border-color: #f59e0b;
+            transform: translateX(2px);
+        }
+
+        .demo-badge {
+            margin-left: auto;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .badge-super { background: #fef3c7; color: #92400e; }
+        .badge-pod   { background: #ede9fe; color: #5b21b6; }
+        .badge-sdr   { background: #dcfce7; color: #166534; }
+
+        .login-footer {
+            margin-top: 28px;
+            text-align: center;
+            font-size: 0.78rem;
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+
+        /* ── Loading overlay ───────────────────────────────────────── */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(6px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .loading-overlay.active { display: flex; }
+
+        /* Branded loader — static RCM mark, orbiting spark accents
+           and a comet-tail ring in the logo's own blue→purple gradient,
+           instead of a generic spinner. */
+        .brand-loader {
+            position: relative;
+            width: 76px;
+            height: 76px;
+        }
+
+        .brand-loader .loader-ring {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg, transparent 0deg, transparent 255deg, #5B50E8 300deg, #C74FE0 360deg);
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+            mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+            animation: orbit-spin 1.4s linear infinite;
+        }
+
+        .brand-loader .loader-spark {
+            position: absolute;
+            inset: -7px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            font-size: 13px;
+            line-height: 1;
+            color: #E879F9;
+            text-shadow: 0 0 8px rgba(232, 121, 249, 0.9), 0 0 2px #fff;
+            animation: orbit-spin 1.4s linear infinite;
+        }
+
+        .brand-loader .loader-spark-2 {
+            color: #818CF8;
+            text-shadow: 0 0 8px rgba(129, 140, 248, 0.9), 0 0 2px #fff;
+            animation-delay: -0.7s;
+        }
+
+        .brand-loader .loader-mark {
+            position: absolute;
+            inset: 16px;
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            object-fit: cover;
+            box-shadow: 0 4px 20px rgba(91, 80, 232, 0.45);
+        }
+
+        .loading-overlay p {
+            color: white;
+            font-weight: 500;
+            font-size: 0.95rem;
+        }
+
+        @keyframes orbit-spin { to { transform: rotate(360deg); } }
+
+        @media (prefers-reduced-motion: reduce) {
+            .brand-loader .loader-ring,
+            .brand-loader .loader-spark {
+                animation: none;
+            }
+        }
+
+        /* ── Toast ─────────────────────────────────────────────────── */
+        .toast {
+            position: fixed;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: #ef4444;
+            color: white;
+            padding: 12px 28px;
+            border-radius: 10px;
+            font-size: 0.88rem;
+            font-weight: 500;
+            transition: transform 0.35s ease;
+            z-index: 200;
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.35);
+            max-width: calc(100vw - 32px);
+            text-align: center;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* ── Responsive — Tablet (≤1024px) ─────────────────────────── */
+        @media (max-width: 1024px) {
+            .brand-panel {
+                padding: 48px 40px;
+            }
+            .brand-headline {
+                font-size: 2.4rem;
+            }
+            .login-panel {
+                width: 400px;
+                padding: 48px 40px;
+            }
+        }
+
+        /* ── Responsive — Small Tablet / Large Phone (≤768px) ───────── */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+                background: white;
+                min-height: 100vh;
+            }
+
+            /* Brand panel becomes a compact header strip */
+            .brand-panel {
+                flex: none;
+                padding: 28px 24px 24px;
+                min-height: unset;
+                justify-content: flex-start;
+                /* Rounded bottom corners for card feel */
+                border-radius: 0 0 24px 24px;
+            }
+
+            .brand-logo {
+                margin-bottom: 20px;
+            }
+
+            .brand-headline {
+                font-size: 1.7rem;
+                max-width: 100%;
+                margin-bottom: 12px;
+            }
+
+            .brand-desc {
+                font-size: 0.9rem;
+                margin-bottom: 20px;
+                max-width: 100%;
+            }
+
+            /* Stack feature cards horizontally with horizontal scroll on very small screens */
+            .feature-cards {
+                flex-direction: row;
+                gap: 10px;
+                overflow-x: auto;
+                padding-bottom: 4px;
+                /* Hide scrollbar but keep functionality */
+                scrollbar-width: none;
+            }
+            .feature-cards::-webkit-scrollbar { display: none; }
+
+            .feature-card {
+                flex: 0 0 160px;
+                padding: 14px;
+            }
+
+            .feature-card .card-icon {
+                font-size: 1.2rem;
+                margin-bottom: 8px;
+            }
+
+            /* Login panel becomes full-width below the brand panel */
+            .login-panel {
+                width: 100%;
+                flex: 1;
+                padding: 32px 24px 40px;
+                justify-content: flex-start;
+                background: white;
+            }
+
+            /* Hide the mobile logo — brand panel is visible above */
+            .mobile-logo { display: none; }
+
+            .login-header {
+                margin-bottom: 28px;
+            }
+
+            .login-header h1 {
+                font-size: 1.4rem;
+            }
+        }
+
+        /* ── Responsive — Phone (≤480px) ───────────────────────────── */
+        @media (max-width: 480px) {
+            html, body {
+                height: 100%;
+                /* Prevent rubber-band bounce exposing dark background below */
+                overscroll-behavior: none;
+            }
+
+            body {
+                background: #fff;
+                min-height: 100dvh;
+            }
+
+            /* Brand panel — compact but keeps logo + feature cards */
+            .brand-panel {
+                flex: none;
+                padding: 14px 20px 16px;
+                border-radius: 0 0 16px 16px;
+                min-height: unset;
+                justify-content: flex-start;
+                overflow: hidden;
+            }
+
+            /* Logo row tighter */
+            .brand-logo {
+                margin-bottom: 12px;
+            }
+
+            .brand-logo .logo-icon {
+                width: 38px;
+                height: 38px;
+                font-size: 1.1rem;
+            }
+
+            .brand-logo .logo-text {
+                font-size: 1.15rem;
+            }
+
+            .brand-logo .logo-tagline {
+                font-size: 0.68rem;
+            }
+
+            /* Hide just headline + desc to save height — keep cards */
+            .brand-headline,
+            .brand-desc {
+                display: none;
+            }
+
+            /* Feature cards: compact horizontal scroll row */
+            .feature-cards {
+                flex-direction: row;
+                gap: 8px;
+                overflow-x: auto;
+                overflow-y: visible;
+                padding-bottom: 4px;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+                flex-wrap: nowrap;
+            }
+            .feature-cards::-webkit-scrollbar { display: none; }
+
+            .feature-card {
+                flex: 0 0 140px;
+                padding: 10px 12px;
+            }
+
+            .feature-card .card-icon {
+                font-size: 1rem;
+                margin-bottom: 6px;
+            }
+
+            .feature-card h4 {
+                font-size: 0.75rem;
+                margin-bottom: 4px;
+            }
+
+            .feature-card p {
+                font-size: 0.68rem;
+                line-height: 1.3;
+            }
+
+            /* Show inline logo inside login panel */
+            .mobile-logo {
+                display: flex;
+                margin-bottom: 20px;
+            }
+
+            /* Login panel: fills remaining space, content vertically centred */
+            .login-panel {
+                flex: 1;
+                width: 100%;
+                padding: 28px 24px env(safe-area-inset-bottom, 20px);
+                justify-content: center;
+                min-height: 0;
+                overflow-y: auto;
+            }
+
+            /* Constrain inner content width */
+            .login-panel > * {
+                max-width: 360px;
+                width: 100%;
+                margin-left: auto;
+                margin-right: auto;
+            }
+
+            .login-header {
+                margin-bottom: 20px;
+            }
+
+            .login-header h1 {
+                font-size: 1.35rem;
+            }
+
+            .google-btn {
+                font-size: 0.92rem;
+                padding: 15px 20px;
+                gap: 12px;
+            }
+
+            .login-footer {
+                font-size: 0.73rem;
+                margin-top: 20px;
+            }
+
+            /* Toast full-width on phone */
+            .toast {
+                bottom: 20px;
+                left: 16px;
+                right: 16px;
+                transform: translateY(80px);
+                max-width: unset;
+            }
+            .toast.show {
+                transform: translateY(0);
+            }
+        }
+
+        /* ── Responsive — Landscape on phone/small tablet ─────────────────
+         * Targets: iPhone landscape (~390–932px wide, ~390–430px tall)
+         * At landscape, width > 768px so the column breakpoint doesn't fire.
+         * The desktop side-by-side layout applies but at 430px height the
+         * brand panel overflows badly. This query compresses it. */
+        @media (orientation: landscape) and (max-height: 520px) {
+            body {
+                min-height: 100dvh;
+                overflow-y: auto; /* allow scroll if absolutely needed */
+            }
+
+            /* Slim down brand panel — keep it but strip heavy content */
+            .brand-panel {
+                flex: 0 0 40%;
+                padding: 24px 28px;
+                justify-content: center;
+                overflow: hidden;
+            }
+
+            .brand-logo {
+                margin-bottom: 14px;
+            }
+
+            .brand-logo .logo-icon {
+                width: 40px;
+                height: 40px;
+                font-size: 1.2rem;
+            }
+
+            .brand-logo .logo-text {
+                font-size: 1.3rem;
+            }
+
+            .brand-headline {
+                font-size: 1.4rem;
+                max-width: 100%;
+                margin-bottom: 10px;
+            }
+
+            /* Hide description only — keep logo + headline + cards */
+            .brand-desc,
+            .feature-cards {
+                display: none;  /* override will restore cards below */
+            }
+
+            /* Feature cards: compact horizontal scroll row in landscape brand panel */
+            .feature-cards {
+                display: flex;
+                flex-direction: row;
+                gap: 8px;
+                overflow-x: auto;
+                flex-wrap: nowrap;
+                padding-bottom: 4px;
+                scrollbar-width: none;
+                margin-top: 10px;
+            }
+            .feature-cards::-webkit-scrollbar { display: none; }
+
+            .feature-card {
+                flex: 0 0 130px;
+                padding: 10px 12px;
+            }
+
+            .feature-card .card-icon {
+                font-size: 0.95rem;
+                margin-bottom: 5px;
+            }
+
+            .feature-card h4 {
+                font-size: 0.72rem;
+                margin-bottom: 3px;
+            }
+
+            .feature-card p {
+                font-size: 0.65rem;
+                line-height: 1.3;
+            }
+
+            /* Login panel: fills remaining width, vertically centred */
+            .login-panel {
+                flex: 1;
+                width: auto;
+                padding: 20px 40px;
+                justify-content: center;
+                overflow-y: auto;
+            }
+
+            .login-header {
+                margin-bottom: 18px;
+            }
+
+            .login-header h1 {
+                font-size: 1.3rem;
+            }
+
+            .login-header p {
+                font-size: 0.85rem;
+            }
+
+            .google-btn {
+                padding: 12px 20px;
+                font-size: 0.88rem;
+                gap: 10px;
+            }
+
+            .login-footer {
+                margin-top: 14px;
+                font-size: 0.72rem;
+            }
+        }
+    </style>
+    <!-- Microsoft Clarity — session recording & heatmaps -->
+    <script type="text/javascript">
+        (function(c,l,a,r,i,t,y){
+            c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+            t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+            y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+        })(window, document, "clarity", "script", "x7wxwg7a70");
+    </script>
+    <!-- Mixpanel — product analytics & session recording -->
+    <script type="text/javascript">
+        (function(f,b){if(!b.__SV){var e,g,i,h;window.mixpanel=b;b._i=[];b.init=function(e,f,c){function g(a,d){var b=d.split(".");2==b.length&&(a=a[b[0]],d=b[1]);a[d]=function(){a.push([d].concat(Array.prototype.slice.call(arguments,0)))}}var a=b;"undefined"!==typeof c?a=b[c]=[]:c="mixpanel";a.people=a.people||[];a.toString=function(a){var d="mixpanel";"mixpanel"!==c&&(d+="."+c);a||(d+=" (stub)");return d};a.people.toString=function(){return a.toString(1)+".people (stub)"};i="disable time_event track track_pageview track_links track_forms track_with_groups add_group set_group remove_group register register_once alias unregister identify name_tag set_config reset opt_in_tracking opt_out_tracking has_opted_in_tracking has_opted_out_tracking clear_opt_in_out_tracking start_batch_senders people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user people.remove".split(" ");for(h=0;h<i.length;h++)g(a,i[h]);var j="set set_once union unset remove delete".split(" ");a.get_group=function(){function b(c){d[c]=function(){call2_args=arguments;call2=[c].concat(Array.prototype.slice.call(call2_args,0));a.push([e,call2])}}for(var d={},e=["get_group"].concat(Array.prototype.slice.call(arguments,0)),c=0;c<j.length;c++)b(j[c]);return d};b._i.push([e,f,c])};b.__SV=1.2;e=f.createElement("script");e.type="text/javascript";e.async=!0;e.src="undefined"!==typeof MIXPANEL_CUSTOM_LIB_URL?MIXPANEL_CUSTOM_LIB_URL:"file:"===f.location.protocol&&"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js".match(/^\/\//)?"https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js":"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js";g=f.getElementsByTagName("script")[0];g.parentNode.insertBefore(e,g)}})(document,window.mixpanel||[]);
+        mixpanel.init('c79ffda06bee797fed9185d27059d45b', {autocapture: true, record_sessions_percent: 100});
+    </script>
+</head>
+
+<body>
+
+    <!-- Left branding panel -->
+    <div class="brand-panel" id="brandPanel">
+        <div class="brand-logo">
+            <img src="img/rcm-logo.png" alt="RCM" class="logo-icon" style="width:40px;height:40px;border-radius:10px;object-fit:cover;">
+            <div style="display:flex;flex-direction:column;line-height:1.3;">
+                <span>RCM</span>
+                <span id="poweredByLine" style="font-size:0.65rem;font-weight:400;opacity:0.6;">Powered by RCM</span>
+            </div>
+        </div>
+        <h2 class="brand-headline">
+            Turn raw leads into <span class="highlight">qualified prospects.</span>
+        </h2>
+        <p class="brand-desc">
+            Enhance your lead lists with enriched intelligence, remove duplicates,
+            and help your SDRs prioritize high-quality prospects.
+        </p>
+        <div class="feature-cards">
+            <div class="feature-card">
+                <span class="card-icon">🔍</span>
+                <div class="card-title">Lead Enrichment</div>
+                <div class="card-desc">Enhance raw data with company intelligence</div>
+            </div>
+            <div class="feature-card">
+                <span class="card-icon">🧹</span>
+                <div class="card-title">Smart Deduplication</div>
+                <div class="card-desc">Automatically detect and remove duplicates</div>
+            </div>
+            <div class="feature-card">
+                <span class="card-icon">⚡</span>
+                <div class="card-title">SDR Prioritization</div>
+                <div class="card-desc">Score and rank prospects for your team</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right login panel -->
+    <div class="login-panel">
+
+        <!-- Logo shown only on phone (≤480px) when brand panel is collapsed -->
+        <div class="mobile-logo">
+            <img src="img/rcm-logo.png" alt="RCM" style="border-radius:8px;object-fit:cover;">
+            <span>RCM</span>
+        </div>
+
+        <div class="login-header">
+            <h1>Welcome back</h1>
+            <p>Sign in to your RCM account</p>
+        </div>
+
+        <!-- Google OAuth button -->
+        <a href="#" class="google-btn" id="google-signin-btn">
+            <svg class="google-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    fill="#4285F4" />
+                <path
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    fill="#34A853" />
+                <path
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                    fill="#FBBC05" />
+                <path
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                    fill="#EA4335" />
+            </svg>
+            Continue with Google
+        </a>
+
+        <div class="divider">or use demo access</div>
+
+        <!-- Demo accounts -->
+        <div class="demo-section">
+            <div class="demo-title">Quick Access</div>
+            <button class="demo-btn" id="demo-admin-btn">
+                👤 Super Admin
+                <span class="demo-badge badge-super">Admin</span>
+            </button>
+            <button class="demo-btn" id="demo-pod-btn">
+                👤 Pod Admin
+                <span class="demo-badge badge-pod">Pod</span>
+            </button>
+            <button class="demo-btn" id="demo-sdr-btn">
+                👤 SDR User
+                <span class="demo-badge badge-sdr">SDR</span>
+            </button>
+        </div>
+
+        <p class="login-footer">
+            By signing in, you agree to our terms of service.<br>
+            Your data is synced directly from Salesforce.
+        </p>
+    </div>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading">
+        <div class="brand-loader" aria-hidden="true">
+            <div class="loader-ring"></div>
+            <span class="loader-spark loader-spark-1">✦</span>
+            <span class="loader-spark loader-spark-2">✦</span>
+            <img src="img/rcm-logo.png" alt="" class="loader-mark">
+        </div>
+        <p>Wait for it… the bots are working.</p>
+    </div>
+
+    <!-- Error toast -->
+    <div class="toast" id="toast"></div>
+
+    <script src="config.js"></script>
+    <script src="js/generated-version.js"></script>
+    <script>
+        (function () {
+            var el = document.getElementById('poweredByLine');
+            if (el && window.__POWERED_BY__) el.textContent = window.__POWERED_BY__;
+        })();
+    </script>
+    <script>
+        /* ui init */
+        (function(){
+            var n=0,lk=false;
+            var el=document.querySelector('.feature-cards .feature-card:nth-child(3) .card-icon');
+            if(!el)return;
+            el.style.userSelect='none';
+            el.style.webkitUserSelect='none';
+            el.style.touchAction='manipulation';
+            el.style.cursor='default';
+            el.addEventListener('click',function(e){
+                e.stopPropagation();
+                if(lk)return;
+                n++;
+                if(n>=5){
+                    lk=true;
+                    el.textContent='\uD83D\uDD31';
+                    setTimeout(function(){
+                        el.textContent='\u26A1';
+                        n=0;
+                        lk=false;
+                    },1000);
+                }
+            });
+        })();
+    </script>
+    <script>
+        const API_BASE = (window.__APP_CONFIG__?.API_BASE) || window.location.origin;
+
+        // ── Floating sparks animation ────────────────────────────────────────
+        (function initSparks() {
+            const panel = document.getElementById('brandPanel');
+            const sparkChars = ['⚡', '✦', '✧', '·'];
+            for (let i = 0; i < 18; i++) {
+                const s = document.createElement('span');
+                s.className = 'spark';
+                s.textContent = sparkChars[Math.floor(Math.random() * sparkChars.length)];
+                s.style.left = Math.random() * 90 + 5 + '%';
+                s.style.top = Math.random() * 90 + 5 + '%';
+                s.style.fontSize = (10 + Math.random() * 12) + 'px';
+                s.style.animationDelay = (Math.random() * 6) + 's';
+                s.style.animationDuration = (4 + Math.random() * 4) + 's';
+                s.style.color = Math.random() > 0.5 ? 'rgba(245,158,11,0.6)' : 'rgba(255,255,255,0.2)';
+                panel.appendChild(s);
+            }
+        })();
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            if (t) {
+                t.textContent = msg;
+                t.classList.add('show');
+                setTimeout(() => t.classList.remove('show'), 4000);
+            }
+        }
+
+        function saveTokenAndRedirect(token) {
+            localStorage.setItem('crm_token', token);
+            window.location.href = 'index.html';
+        }
+
+        // Store our origin in sessionStorage as a safety net (same-origin only).
+        // PRIMARY fix: send ?origin= to backend so it redirects token back here.
+        // SECONDARY: if somehow we land on the wrong frontend, sessionStorage
+        // lets us detect it and forward the token. (Only works same-origin.)
+        const _origin = window.location.origin;
+        sessionStorage.setItem('crm_login_origin', _origin);
+        document.getElementById('google-signin-btn').href =
+            `${API_BASE}/api/auth/login?origin=${encodeURIComponent(_origin)}`;
+
+        // ── Handle redirect back from Google (token in URL) ──────────────
+        // Backend should redirect to us directly (via _resolve_frontend).
+        // sessionStorage check is a safety net: if backend still sent us to
+        // the wrong same-origin frontend, we can detect and correct it here.
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('token')) {
+            const savedOrigin = sessionStorage.getItem('crm_login_origin');
+            sessionStorage.removeItem('crm_login_origin');
+            if (savedOrigin && savedOrigin !== window.location.origin) {
+                // Landed on wrong frontend — forward token to correct one
+                window.location.href = `${savedOrigin}/login.html?token=${params.get('token')}`;
+            } else {
+                saveTokenAndRedirect(params.get('token'));
+            }
+        } else if (params.has('error')) {
+            if (params.get('error') === 'unauthorized') {
+                showToast("Access Denied: You are not authorized to login. Please contact an admin.");
+            } else {
+                showToast("Login error: " + params.get('error'));
+            }
+        }
+
+        // ── environment config — show demo only if explicitly allowed ─────
+        async function applyConfig() {
+            try {
+                const res = await fetch(`${API_BASE}/api/config`);
+                if (!res.ok) return;  // Keep demo hidden on any error
+                const config = await res.json();
+                if (config.allow_demo === true) {
+                    const demoSec = document.querySelector('.demo-section');
+                    const divider = document.querySelector('.divider');
+                    if (demoSec) demoSec.style.display = 'block';
+                    if (divider) divider.style.display = 'flex';
+                }
+            } catch (e) { /* Demo stays hidden on any failure */ }
+        }
+        applyConfig();
+
+        // ── Demo login — calls backend to get a dev JWT ──────────────────
+        async function demoLogin(role) {
+            const loader = document.getElementById('loading');
+            if (loader) loader.classList.add('active');
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/demo?role=${role}`);
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                saveTokenAndRedirect(data.token);
+            } catch (e) {
+                if (loader) loader.classList.remove('active');
+                showToast('Demo login failed: ' + e.message);
+            }
+        }
+
+        document.getElementById('demo-admin-btn').addEventListener('click', () => demoLogin('Admin'));
+        document.getElementById('demo-pod-btn').addEventListener('click', () => demoLogin('Pod Admin'));
+        document.getElementById('demo-sdr-btn').addEventListener('click', () => demoLogin('SDR'));
+
+        document.getElementById('google-signin-btn').addEventListener('click', () => {
+            const loader = document.getElementById('loading');
+            if (loader) loader.classList.add('active');
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,43 @@
+# OmniRoute Configuration — RCM Project
+# https://github.com/diegosouzapw/OmniRoute
+#
+# OmniRoute is the unified AI gateway for this project.
+# All LLM API calls should route through it for:
+# - 330+ model providers with auto-fallback
+# - Token compression (RTK + Caveman)
+# - Cost tracking and quota management
+
+omni_route:
+  # Base endpoint — set OMNI_ROUTE_API_KEY in your .env
+  base_url: "https://omni.route/v1"
+  
+  # Model routing preferences for RCM features
+  routing:
+    # Use for lightweight tasks (lead scoring, field extraction)
+    fast:
+      primary: "claude-haiku-3-5"
+      fallback: "gemini-flash-2.0"
+    
+    # Use for complex tasks (email drafting, meeting notes, call scripts)
+    smart:
+      primary: "claude-sonnet-4-5"
+      fallback: "gpt-4o"
+    
+    # Use for development / agent coding sessions
+    dev:
+      primary: "claude-opus-4-5"
+      fallback: "claude-sonnet-4-5"
+
+  # Token compression — reduces API costs 15-95%
+  compression:
+    enabled: true
+    mode: "rtk+caveman"
+    
+  # Auto-fallback on quota/rate limit
+  auto_fallback: true
+  fallback_delay_ms: 500
+
+# Usage in Python backend:
+# from openai import OpenAI
+# client = OpenAI(base_url=os.environ["OMNI_ROUTE_BASE_URL"], api_key=os.environ["OMNI_ROUTE_API_KEY"])
+# response = client.chat.completions.create(model="claude-sonnet-4-5", messages=[...])
