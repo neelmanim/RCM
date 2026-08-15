@@ -5,7 +5,7 @@ import { API_BASE, authHeaders, isAdmin } from './auth.js';
 function handleUnauthorized(res) {
     if (res.status === 401) {
         localStorage.removeItem('crm_token');
-        window.location.href = 'login.html';
+        window.location.href = 'signup.html';
         throw new Error('Session expired. Redirecting to login...');
     }
 }

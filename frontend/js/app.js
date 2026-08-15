@@ -89,7 +89,7 @@ if (isViewAsSession) {
         sessionStorage.removeItem('crm_view_as_token');
         window.close();  // Close the View-As tab
         // Fallback if window.close() is blocked by browser
-        window.location.href = 'login.html';
+        window.location.href = 'signup.html';
     });
 }
 
@@ -104,7 +104,7 @@ if (isViewAsSession) {
         try { await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', headers: authHeaders() }); } catch {}
         localStorage.removeItem('crm_token');
         sessionStorage.clear();
-        window.location.href = 'login.html';
+        window.location.href = 'signup.html';
     };
 
     const navProps = {

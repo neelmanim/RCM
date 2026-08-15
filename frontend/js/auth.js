@@ -39,7 +39,7 @@ const isTokenExpired = currentUser && currentUser.exp && (currentUser.exp * 1000
 if (!currentUser || isTokenExpired) {
     sessionStorage.removeItem('crm_view_as_token');
     localStorage.removeItem('crm_token');
-    window.location.href = 'login.html';
+    window.location.href = 'signup.html';
     throw new Error('Not authenticated or session expired, redirecting to login...');
 }
 

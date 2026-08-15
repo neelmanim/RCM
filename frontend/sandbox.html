@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entering Sandbox...</title>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0f172a;
+            color: white;
+            margin: 0;
+        }
+        .loader-ring {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg, transparent 0deg, transparent 255deg, #3b82f6 300deg, #a855f7 360deg);
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+            animation: spin 1s linear infinite;
+            margin-bottom: 24px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        h1 { font-size: 1.5rem; margin-bottom: 8px; }
+        p { color: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="loader-ring"></div>
+        <h1>Preparing your sandbox...</h1>
+        <p>Loading demo data, please wait a moment.</p>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        const API_BASE = (window.__APP_CONFIG__?.API_BASE) || window.location.origin;
+
+        async function enterSandbox() {
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/demo?role=Super%20Admin`);
+                if (!res.ok) {
+                    throw new Error("Sandbox is currently disabled or unavailable.");
+                }
+                const data = await res.json();
+                localStorage.setItem('crm_token', data.token);
+                // Tiny delay so the user feels like work is happening
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 1000);
+            } catch (e) {
+                document.querySelector('.container').innerHTML = `
+                    <h1 style="color: #ef4444;">Sandbox Error</h1>
+                    <p>${e.message}</p>
+                    <a href="https://alternatecrm.com" style="color: #3b82f6; text-decoration: none; margin-top: 16px; display: inline-block;">Return Home</a>
+                `;
+            }
+        }
+
+        // Boot
+        enterSandbox();
+    </script>
+</body>
+</html>
