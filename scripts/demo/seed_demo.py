@@ -1,53 +1,75 @@
-"""
-seed_demo.py
-
-This script generates 50 realistic 'Insurance' and 'Real Estate' leads using the Faker library.
-It outputs SQL INSERT statements to stdout, simulating a database seeding process for the RCM CRM.
-"""
-
+import os
+import sys
 import random
+from pathlib import Path
 from faker import Faker
 
-def generate_sql_inserts(num_leads=50):
+# Add backend directory to sys.path so we can import models and database
+backend_dir = Path(__file__).parent.parent.parent / "backend"
+sys.path.append(str(backend_dir.resolve()))
+
+from database import SessionLocal
+from models import Lead
+
+def seed_database(num_leads=50):
     """
-    Generates SQL INSERT statements for leads.
+    Connects to the database and inserts realistic fake leads.
+    Deletes existing fake data (is_test=True) before inserting to avoid duplicates.
     """
+    print(f"-- Seeding database with {num_leads} leads...")
     fake = Faker()
+    db = SessionLocal()
     
-    # Pre-defined options for policy types and lead types
-    lead_types = ['Insurance', 'Real Estate']
-    policy_types = ['Life', 'Health', 'Home', 'Auto', 'Umbrella']
-    
-    # Target table name
-    table_name = "leads"
-    
-    print(f"-- Generating {num_leads} leads for {table_name} table")
-    print("BEGIN TRANSACTION;")
-    
-    for _ in range(num_leads):
-        # Escape single quotes for SQL compatibility
-        name = fake.name().replace("'", "''")
-        email = fake.ascii_safe_email()
-        property_address = fake.address().replace('\n', ', ').replace("'", "''")
+    try:
+        # 1. Clean up existing demo data
+        # Let's delete any lead created with a specific source to make this idempotent
+        deleted = db.query(Lead).filter(Lead.lead_source == 'demo_seed').delete()
+        print(f"-- Deleted {deleted} old demo leads.")
         
-        lead_type = random.choice(lead_types)
+        # 2. Generate new leads
+        lead_types = ['Insurance', 'Real Estate']
+        policy_types = ['Life', 'Health', 'Home', 'Auto', 'Umbrella']
         
-        # If lead is Insurance, assign a policy type, otherwise NULL or None equivalent
-        if lead_type == 'Insurance':
-            policy_type = random.choice(policy_types)
-        else:
-            policy_type = "None"
+        leads_to_insert = []
+        for _ in range(num_leads):
+            lead_type = random.choice(lead_types)
+            is_insurance = lead_type == 'Insurance'
+            
+            lead = Lead(
+                first_name=fake.first_name(),
+                last_name=fake.last_name(),
+                email=fake.ascii_safe_email(),
+                phone=fake.phone_number()[:20],
+                company=fake.company(),
+                title=fake.job()[:50],
+                status="Lead Assigned",
+                lead_source="demo_seed",
+                is_test=True, # Mark as test lead
+                
+                # Enrichment fields for realism
+                city=fake.city(),
+                state=fake.state(),
+                industry=lead_type,
+                employee_count=random.randint(10, 500),
+                annual_revenue=f"${random.randint(1, 100)}M",
+                
+                # Research context
+                research_company=f"Leading {lead_type} firm specializing in targeted growth.",
+                research_contact=f"Key decision maker.",
+                research_geo=fake.state(),
+                research_heat=random.choice(["hot", "warm", "cold"])
+            )
+            leads_to_insert.append(lead)
+            
+        db.add_all(leads_to_insert)
+        db.commit()
+        print(f"-- Successfully inserted {len(leads_to_insert)} new demo leads!")
         
-        # Construct the SQL INSERT statement
-        # Assuming columns: name, email, property_address, lead_type, policy_type
-        sql = (
-            f"INSERT INTO {table_name} (name, email, property_address, lead_type, policy_type) "
-            f"VALUES ('{name}', '{email}', '{property_address}', '{lead_type}', '{policy_type}');"
-        )
-        print(sql)
-        
-    print("COMMIT;")
-    print("-- Seeding complete")
+    except Exception as e:
+        print(f"Error seeding database: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 if __name__ == "__main__":
-    generate_sql_inserts(50)
+    seed_database(50)

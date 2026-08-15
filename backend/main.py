@@ -397,3 +397,16 @@ def root():
     if _fe_url:
         return RedirectResponse(url=_fe_url)
     return RedirectResponse(url="/frontend/index.html")
+
+@app.get("/api/seed_demo_temp")
+def seed_demo_temp():
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).parent.parent / "scripts" / "demo"))
+    try:
+        from seed_demo import seed_database
+        seed_database(50)
+        return {"success": True, "message": "Demo data seeded successfully"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
