@@ -400,13 +400,51 @@ def root():
 
 @app.get("/api/seed_demo_temp")
 def seed_demo_temp():
-    import sys
-    from pathlib import Path
-    sys.path.append(str(Path(__file__).parent.parent / "scripts" / "demo"))
     try:
-        from seed_demo import seed_database
-        seed_database(50)
-        return {"success": True, "message": "Demo data seeded successfully"}
+        from database import SessionLocal
+        from models import Lead
+        from faker import Faker
+        import random
+        
+        db = SessionLocal()
+        fake = Faker()
+        num_leads = 50
+        
+        # 1. Clean up existing demo data
+        deleted = db.query(Lead).filter(Lead.lead_source == 'demo_seed').delete()
+        
+        # 2. Generate new leads
+        lead_types = ['Insurance', 'Real Estate']
+        
+        leads_to_insert = []
+        for _ in range(num_leads):
+            lead_type = random.choice(lead_types)
+            lead = Lead(
+                first_name=fake.first_name(),
+                last_name=fake.last_name(),
+                email=fake.ascii_safe_email(),
+                phone=fake.phone_number()[:20],
+                company=fake.company(),
+                title=fake.job()[:50],
+                status="Lead Assigned",
+                lead_source="demo_seed",
+                is_test=True,
+                city=fake.city(),
+                state=fake.state(),
+                industry=lead_type,
+                employee_count=random.randint(10, 500),
+                annual_revenue=f"${random.randint(1, 100)}M",
+                research_company=f"Leading {lead_type} firm specializing in targeted growth.",
+                research_contact="Key decision maker.",
+                research_geo=fake.state(),
+                research_heat=random.choice(["hot", "warm", "cold"])
+            )
+            leads_to_insert.append(lead)
+            
+        db.add_all(leads_to_insert)
+        db.commit()
+        db.close()
+        return {"success": True, "message": f"Seeded {num_leads} leads! Deleted {deleted} old leads."}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

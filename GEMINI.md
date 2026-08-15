@@ -1,7 +1,9 @@
-# RCM — Claude Code Agent Instructions
+# RCM — Agent Instructions & Development Protocol
 > Product: **RCM (Relationship Customer Management)**
 > Domain: **https://alternatecrm.com/**
 > Stack: Python/FastAPI backend · Vanilla JS frontend · React (frontend-react, deprioritized)
+
+All development in RCM must follow the workspace **Mandatory 5-Stage Development Protocol** (Recall -> Explore -> Impact -> Plan & Code -> Review & Observe) documented in root `GEMINI.md` / `AGENTS.md`.
 
 ---
 
