@@ -8,5 +8,5 @@
 // Developers running a local backend should use localhost:8000 directly.
 //
 window.__APP_CONFIG__ = {
-    API_BASE: "https://api.alternatecrm.com"
+    API_BASE: "https://backend-production-4147.up.railway.app"
 };

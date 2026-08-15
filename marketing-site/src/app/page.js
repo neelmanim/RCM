@@ -14,9 +14,9 @@ export default function Home() {
           <a href="#features" className="hover:text-white transition-colors">Features</a>
           <a href="/blog" className="hover:text-white transition-colors">Blog</a>
           <a href="/status" className="hover:text-white transition-colors">Status</a>
-          <a href="https://app.alternatecrm.com/signup.html" className="hover:text-white transition-colors">Login</a>
+          <a href="https://frontend-beta-two-85.vercel.app/signup.html" className="hover:text-white transition-colors">Login</a>
         </div>
-        <a href="https://app.alternatecrm.com/signup.html" className="px-5 py-2.5 text-sm font-medium rounded-full bg-white/10 border border-white/20 backdrop-blur-md hover:bg-white/20 transition-all">
+        <a href="https://frontend-beta-two-85.vercel.app/signup.html" className="px-5 py-2.5 text-sm font-medium rounded-full bg-white/10 border border-white/20 backdrop-blur-md hover:bg-white/20 transition-all">
           Get Started
         </a>
       </nav>
@@ -40,10 +40,10 @@ export default function Home() {
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4">
-          <a href="https://app.alternatecrm.com/signup.html" className="px-8 py-4 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-all shadow-[0_0_40px_-10px_rgba(37,99,235,0.5)]">
+          <a href="https://frontend-beta-two-85.vercel.app/signup.html" className="px-8 py-4 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-all shadow-[0_0_40px_-10px_rgba(37,99,235,0.5)]">
             Start Free Trial
           </a>
-          <a href="https://app.alternatecrm.com/sandbox.html" className="px-8 py-4 rounded-full bg-white/5 border border-white/10 backdrop-blur-md hover:bg-white/10 text-white font-semibold transition-all">
+          <a href="https://frontend-beta-two-85.vercel.app/sandbox.html" className="px-8 py-4 rounded-full bg-white/5 border border-white/10 backdrop-blur-md hover:bg-white/10 text-white font-semibold transition-all">
             Try Live Sandbox
           </a>
         </div>
