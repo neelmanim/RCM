@@ -47,6 +47,8 @@ class ChannelSendResult:
     # whole enrollment. Playbook rule: "text only once a number exists".
     skip:         bool = False
 
+SendResult = ChannelSendResult
+
 
 def sender_candidates(db, lead, journey) -> list:
     """Who a cadence message goes out as, in order of preference.
