@@ -19,7 +19,7 @@ extra_explanation_dict with the registry's static metadata to build the full
 inspection envelope.
 """
 from dataclasses import dataclass
-import datetime
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import func
