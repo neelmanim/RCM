@@ -20,7 +20,8 @@ import ownership_history as oh
 import models
 from dialer_provider import DialerProvider, NormalizedCallEvent, CallEventType
 from aircall_provider import AircallDialerProvider
-from messaging_provider import AlternateDialerProvider
+from dialer_messaging_provider import AlternateDialerProvider
+from phone_utils import _normalize_digits, _digits_suffix_match
 
 logger = logging.getLogger(__name__)
 

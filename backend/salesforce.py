@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from datetime import datetime, timezone
 from sf_logger import log_sf_operation
-from dialer_service import _normalize_digits  # same helper conversations_service.py already imports from here
+from phone_utils import _normalize_digits
 
 
 def _sanitize_email(email: str) -> str:

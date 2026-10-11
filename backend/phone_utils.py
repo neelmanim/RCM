@@ -137,3 +137,16 @@ def validate_phone_dialable(e164: str, original: str = "") -> Optional[str]:
             )
 
     return None  # all checks passed
+
+
+def _normalize_digits(phone: Optional[str]) -> str:
+    """Strip all non-digit characters from a phone number for comparison."""
+    if not phone:
+        return ""
+    return re.sub(r"\D", "", phone)
+
+
+def _digits_suffix_match(a: str, b: str) -> bool:
+    """True if one digit string ends with the other. Handles a leading country
+    code present on only one side."""
+    return bool(a) and bool(b) and (a.endswith(b) or b.endswith(a))

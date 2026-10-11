@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import List, Optional, Union
 
-from dialer_service import _normalize_digits, _digits_suffix_match
+from phone_utils import _normalize_digits, _digits_suffix_match
 
 logger = logging.getLogger(__name__)
 
