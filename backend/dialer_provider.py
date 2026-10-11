@@ -37,6 +37,8 @@ class CallEvent:
     raw_payload:      Optional[dict] = field(default_factory=dict)
     tags:            Optional[list] = None         # V39: Aircall tag names from call.tagged event
 
+NormalizedCallEvent = CallEvent
+
 
 @dataclass
 class CallInitiateResult:
@@ -51,6 +53,8 @@ class CallInitiateResult:
     livekit_url:      Optional[str] = None
     room_name:        Optional[str] = None
     agent_join_via_phone: Optional[bool] = None
+
+InitiateCallResult = CallInitiateResult
 
 
 class DialerProvider(ABC):
