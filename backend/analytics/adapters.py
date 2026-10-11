@@ -51,6 +51,8 @@ class AdapterContext:
     upload_log_id: Optional[str]
     conversation_min_seconds: int
 
+MetricContext = AdapterContext
+
 
 def _connect_rate(ctx: MetricContext):
     calls = _compute_calls_and_connect_rate(
