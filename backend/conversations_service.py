@@ -142,6 +142,9 @@ class ConversationStatus:
     last_direction: str             # "IN" | "OUT" | ""
     sender_id: str                  # active sender number
 
+WhatsAppTemplate = MessageTemplate
+SessionState = ConversationStatus
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Service
@@ -697,6 +700,8 @@ class AlternateMessengerService:
 # ──────────────────────────────────────────────────────────────────────────────
 # Singleton factory — reuse session across the app (preserves cookie jar)
 # ──────────────────────────────────────────────────────────────────────────────
+
+AlternateMessenger = AlternateMessengerService
 
 _instance: Optional[AlternateMessenger] = None
 _instance_key: tuple = ()
