@@ -25,7 +25,7 @@ class TestGetQueueStatus:
         assert resp.json() == {}  # absence == Pending, no row needed for that
 
     def test_returns_only_current_user_status(self, client_as_sdr, db):
-        """RCA-class bug this must not have: one rep's skip must never leak
+        """RCA-class  must not have: one rep's skip must never leak
         into another rep's view of the same lead (e.g. after reassignment)."""
         lead = create_test_lead(db, email="shared@test.com")
         other_user = create_test_user(db, id="other-sdr", email="other@test.com", role="SDR")
@@ -77,7 +77,7 @@ class TestSetQueueStatus:
         rows = db.query(models.DialerQueueStatus).filter(models.DialerQueueStatus.lead_id == lead.id).all()
         assert len(rows) == 1
         assert rows[0].status == "called"
-        # RCA-class bug this must not have: a stale skip_reason surviving
+        # RCA-class  must not have: a stale skip_reason surviving
         # onto a later "called" status, misrepresenting why it was skipped.
         assert rows[0].skip_reason is None
 

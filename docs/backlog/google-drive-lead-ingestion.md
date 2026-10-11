@@ -4,7 +4,7 @@
 
 ## Objective
 
-Automate lead ingestion by monitoring a Google Drive folder for new Excel/CSV files, processing valid leads into RCM, and moving files to appropriate folders based on outcome.
+Automate lead ingestion by monitoring a Google Drive folder for new Excel/CSV files, processing valid leads into Alternate CRM, and moving files to appropriate folders based on outcome.
 
 ---
 

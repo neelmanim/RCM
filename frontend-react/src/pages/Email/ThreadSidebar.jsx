@@ -8,6 +8,9 @@
  */
 import React, { useState, useMemo } from 'react';
 import { ThreadItem } from './ThreadItem';
+import { Button } from '../../components/ui/Button';
+import { SearchInput } from '../../components/ui/SearchInput';
+import { EmptyState } from '../../components/ui/EmptyState';
 
 export function ThreadSidebar({
   threads,
@@ -46,39 +49,31 @@ export function ThreadSidebar({
 
       {/* Controls */}
       <div className="eh-sidebar-controls">
-        <button
-          id="eh-compose-btn"
-          className="eh-btn-compose"
-          onClick={onCompose}
-        >
-          ✏ Compose Email
-        </button>
-        <button
-          className="eh-btn-icon"
+        <Button id="eh-compose-btn" onClick={onCompose}>✏ Compose Email</Button>
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={onRefresh}
           title="Refresh emails"
           aria-label="Refresh emails"
         >
           ↻
-        </button>
+        </Button>
       </div>
 
       {/* Search */}
-      <input
-        type="text"
-        className="eh-search"
+      <SearchInput
         placeholder="Search emails..."
         value={query}
         onChange={e => setQuery(e.target.value)}
         aria-label="Search emails"
+        className="eh-search"
       />
 
       {/* Thread list */}
       <div className="eh-thread-list">
         {filtered.length === 0 ? (
-          <div className="eh-empty-list">
-            {query ? 'No emails match your search.' : 'No emails yet.'}
-          </div>
+          <EmptyState message={query ? 'No emails match your search.' : 'No emails yet.'} />
         ) : (
           filtered.map(({ thread, origIdx }) => (
             <ThreadItem

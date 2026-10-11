@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ReplyComposer } from '../../pages/Email/ReplyComposer';
 
@@ -31,7 +31,9 @@ describe('ReplyComposer', () => {
 
     await user.click(screen.getByText('↩ Reply'));
     await user.click(screen.getByText('Cc/Bcc'));
-    await user.type(screen.getByPlaceholderText('Cc (optional)'), 'manager@co.com');
+    // fireEvent (not user.type) — a real per-keystroke typing simulation was flaky
+    // under full-suite CPU load, occasionally dropping the last character.
+    fireEvent.change(screen.getByPlaceholderText('Cc (optional)'), { target: { value: 'manager@co.com' } });
     typeIntoEditable('.eh-reply-textarea', 'Sounds good, thanks!');
 
     await user.click(screen.getByText('✉ Send Reply'));

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+import access_db
 import models
 from database import get_db, SessionLocal
 from auth import require_admin
@@ -93,18 +94,13 @@ def _build_activity_feed(db, user, page, per_page, type, sdr, pod_id, outcome, d
     # ── Pod scoping for Pod Admin ────────────────────────────────────────
     user_role = user.get("role", "")
     pod_scope_ids = None  # None = no pod filter (Super Admin)
-    if user_role == "Pod Admin" and not global_view:
-        # Pod Admin scoped to their pod unless global_view bypasses it
-        db_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
-        if db_user and db_user.pod_id:
-            pod_scope_ids = [db_user.pod_id]
-        else:
-            pod_scope_ids = []  # no pod = no access
-    # global_view=True for Pod Admin → pod_scope_ids stays None (all events)
-
-    # pod_id URL param takes priority over global_view (edge case A-2)
-    if pod_id:
-        pod_scope_ids = [pod_id]
+    if user_role == "Pod Admin":
+        # Always their own pod: global_view and pod_id are Super Admin options and are ignored here
+        # (v13.12.1 — a Pod Admin could pass either and read every pod's calls, emails and recordings).
+        pod = user.get("pod_id")
+        pod_scope_ids = [pod] if pod and pod != access_db.NO_POD else []     # no pod = no access
+    elif pod_id:
+        pod_scope_ids = [pod_id]          # Super Admin picks a pod explicitly
 
     # Get SDR user IDs in the scoped pod(s)
     pod_sdr_ids = None  # None = all SDRs
@@ -226,8 +222,8 @@ def _build_activity_feed(db, user, page, per_page, type, sdr, pod_id, outcome, d
             def _bg_refresh_urls(calls, provider):
                 # RCA 2026-07-27: this used to hold one DB session (a pooled
                 # connection) for the whole batch while calling the provider API
-                # for each call — RCM's 502-retry backoff can take several
-                # seconds per call, so during a RCM brownout this tied up
+                # for each call — Alternate Messenger's 502-retry backoff can take several
+                # seconds per call, so during a Alternate Messenger brownout this tied up
                 # a connection for the entire batch and starved the pool enough
                 # to make unrelated requests (e.g. dashboard-stats) time out.
                 # Fetch everything first with no DB session open, then write

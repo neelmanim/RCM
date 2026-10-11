@@ -16,6 +16,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { BarChart2, RefreshCw, X, Pin, AlertTriangle, Loader2 } from 'lucide-react';
 import { SmartAnalyticsService } from '../../services/api';
 import { AiResultChart } from './AiResultChart';
+import { IconButton } from '../../components/ui/IconButton';
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 const fmt = (ts) => {
@@ -104,22 +105,12 @@ const PinnedReportCard = ({ report, onUnpin }) => {
           <span className="pinned-card-title">{report.name}</span>
         </div>
         <div className="pinned-card-actions">
-          <button
-            onClick={load}
-            disabled={loading}
-            className="pinned-card-btn pinned-card-btn--refresh"
-            title="Refresh data"
-          >
+          <IconButton onClick={load} disabled={loading} title="Refresh data">
             <RefreshCw size={13} className={loading ? 'spin' : ''} />
-          </button>
-          <button
-            onClick={handleUnpin}
-            disabled={unpinning}
-            className="pinned-card-btn pinned-card-btn--unpin"
-            title="Unpin from Dashboard"
-          >
+          </IconButton>
+          <IconButton onClick={handleUnpin} disabled={unpinning} variant="danger" title="Unpin from Dashboard">
             <X size={13} />
-          </button>
+          </IconButton>
         </div>
       </div>
 

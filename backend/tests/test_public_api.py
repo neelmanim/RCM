@@ -39,7 +39,7 @@ class TestPublicHealth:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert "RCM" in data["api"]
+        assert "Alternate CRM" in data["api"]
 
     def test_health_requires_no_auth(self, client):
         """Health check must be reachable with no auth headers at all."""
@@ -61,7 +61,7 @@ class TestAdminApiKeyManagement:
         assert data["configured"] is False
 
     def test_generate_key_returns_plaintext(self, client, db):
-        """Generate returns a plaintext key (shown once) prefixed with 'rcm_'."""
+        """Generate returns a plaintext key (shown once) prefixed with 'alternatecrm_'."""
         resp = client.post("/api/admin/public-api-key/generate")
         assert resp.status_code == 200
         data = resp.json()
@@ -158,6 +158,28 @@ class TestPublicApiSfAccount:
         )
         assert resp.status_code == 401
 
+    def test_successful_call_increments_usage_and_stamps_last_used(self, client, db):
+        """require_api_key must track usage on the SyncSettings row so the
+        Control Center card can show it's actually being used."""
+        headers = _generate_key_and_headers(client, db)
+        sf = _make_sf_mock(account_records=[{"Id": "0011x00001AbCdE", "Name": "Acme Corp"}])
+        with patch("routes.public_api_routes.get_sf_client", return_value=sf):
+            client.get("/api/public/sf/account", headers=headers, params={"company_name": "Acme"})
+            client.get("/api/public/sf/account", headers=headers, params={"company_name": "Acme"})
+        status = client.get("/api/admin/public-api-key/status").json()
+        assert status["call_count"] == 2
+        assert status["last_used_at"] is not None
+
+    def test_wrong_key_does_not_increment_usage(self, client, db):
+        _generate_key_and_headers(client, db)
+        client.get(
+            "/api/public/sf/account",
+            headers={"X-API-Key": "wrong-key"},
+            params={"company_name": "Acme"},
+        )
+        status = client.get("/api/admin/public-api-key/status").json()
+        assert status["call_count"] == 0
+
     def test_sf_not_connected_returns_503(self, client, db):
         headers = _generate_key_and_headers(client, db)
         with patch("routes.public_api_routes.get_sf_client", return_value=None):
@@ -187,19 +209,19 @@ class TestPublicApiSfAccount:
         assert data["confidence"] == "exact"
         assert data["matched_by"] == "company_name"
 
-    def test_account_found_by_rcm_messaging_id(self, client, db):
+    def test_account_found_by_messaging_provider_id(self, client, db):
         headers = _generate_key_and_headers(client, db)
         sf = _make_sf_mock(account_records=[{"Id": "0011x00001AbCdF", "Name": "Test Hospital"}])
         with patch("routes.public_api_routes.get_sf_client", return_value=sf):
             resp = client.get(
                 "/api/public/sf/account",
                 headers=headers,
-                params={"rcm_messaging_id": "SMS-001"},
+                params={"messaging_provider_id": "SMS-001"},
             )
         assert resp.status_code == 200
         data = resp.json()
         assert data["found"] is True
-        assert data["matched_by"] == "rcm_messaging_id"
+        assert data["matched_by"] == "messaging_provider_id"
 
     def test_lead_fallback_when_no_account(self, client, db):
         """When no Account is found, the endpoint falls back to Salesforce Lead."""
@@ -443,7 +465,7 @@ class TestEscapeSoql:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SECTION 6 — /leads/search and /leads/{id}/calls (RCM MCP data-access tools)
+# SECTION 6 — /leads/search and /leads/{id}/calls (Alternate CRM MCP data-access tools)
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestPublicLeadsSearch:

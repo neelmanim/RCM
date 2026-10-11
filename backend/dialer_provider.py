@@ -19,10 +19,10 @@ class CallEventType:
 
 
 @dataclass
-class NormalizedCallEvent:
+class CallEvent:
     """Provider-agnostic call event produced by webhook normalization."""
     event_type:       str                      # CallEventType constant
-    provider:         str                      # "aircall" | "rcm"
+    provider:         str                      # "aircall" | "messenger"
     provider_call_id: str                      # External call ID from provider
     phone_number:     Optional[str] = None
     user_email:       Optional[str] = None     # For auto-matching CRM user
@@ -39,14 +39,14 @@ class NormalizedCallEvent:
 
 
 @dataclass
-class InitiateCallResult:
+class CallInitiateResult:
     """Result returned when a call is initiated via a provider."""
     success:          bool
     provider:         str
     provider_call_id: Optional[str] = None
     phone_number:     Optional[str] = None
     error:            Optional[str] = None
-    # RCM browser calling fields (LiveKit WebRTC)
+    # Alternate Messenger browser calling fields (LiveKit WebRTC)
     livekit_token:    Optional[str] = None
     livekit_url:      Optional[str] = None
     room_name:        Optional[str] = None
@@ -55,14 +55,14 @@ class InitiateCallResult:
 
 class DialerProvider(ABC):
     """
-    Abstract base class for dialer providers.
-    Each provider (Aircall, RCM, etc.) implements these methods.
+    Abstract base class  providers.
+    Each provider (Aircall, Alternate Messenger, etc.) implements these methods.
     """
 
     @property
     @abstractmethod
     def provider_name(self) -> str:
-        """Unique provider identifier (e.g., 'aircall', 'rcm')."""
+        """Unique provider identifier (e.g., 'aircall', 'messenger')."""
         ...
 
     @abstractmethod
@@ -72,7 +72,7 @@ class DialerProvider(ABC):
         Args:
             phone_number: The number to dial
             user_email: CRM user's email (used to find the provider user)
-            lead_id: RCM lead ID for tracking
+            lead_id: Alternate CRM lead ID for tracking
         Returns: InitiateCallResult
         """
         ...

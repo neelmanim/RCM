@@ -1,0 +1,40 @@
+/*
+ * my-tasks-tailwind.css
+ *
+ * Tailwind entry point for the My Tasks IIFE bundle ONLY. Mirrors
+ * sdr-performance-tailwind.css exactly — omits @tailwind base to avoid
+ * leaking resets into the Vanilla JS shell, and reproduces just the
+ * border-reset half of Preflight, scoped to .my-tasks-hub.
+ */
+/*
+ * Radix (DropdownMenu/Popover) portals its content to document.body, so it
+ * renders as a sibling of .my-tasks-hub rather than a descendant — the
+ * shared Select/Popover components portal through this same literal class
+ * regardless of which bundle hosts it (see sales-tools-tailwind.css for the
+ * fuller explanation of why this exact class name is shared).
+ */
+.my-tasks-hub, .my-tasks-hub *, .my-tasks-hub *::before, .my-tasks-hub *::after,
+.activitymonitor-portal, .activitymonitor-portal *, .activitymonitor-portal *::before, .activitymonitor-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.my-tasks-hub, .activitymonitor-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+/* No Preflight here, so form fields kept the browser default (monospace
+   textareas in the cadence approval editor). Same half-reset as buttons. */
+:where(.my-tasks-hub, .activitymonitor-portal) :is(input, textarea, select) {
+  font: inherit;
+  color: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

@@ -106,6 +106,47 @@ class TestResearchGateOff:
         assert resp.status_code == 200
 
 
+class TestResearchGateAppliesToDirectUpdateToo:
+    """RCA 2026-09-28: the gate above only ever guarded PATCH
+    /leads/kanban/move (the legacy kanban-drag path). PATCH /leads/{id} —
+    what the React Lead Detail Hub's Change Stage control actually calls —
+    routes through services.lead_service.update_lead_fields, which never
+    checked the gate at all. A Super Admin could turn "require research
+    before calling" on and an SDR could still skip straight to Calling from
+    the React page with zero research filled in. Both endpoints now share
+    lead_service.check_research_gate()."""
+
+    def test_gate_on_blocks_direct_update_to_calling_without_research(self, client, db):
+        _set_gate(db, True)
+        lead = create_test_lead(db, email="rg13@t.com")
+        lead.status = "Lead Assigned"
+        db.commit()
+
+        resp = client.patch(f"/api/leads/{lead.id}", json={"status": "Calling"})
+        assert resp.status_code == 422
+        assert "required" in resp.json()["detail"].lower()
+        db.refresh(lead)
+        assert lead.status == "Lead Assigned"
+
+    def test_gate_on_allows_direct_update_to_calling_when_fully_researched(self, client, db):
+        _set_gate(db, True)
+        lead = create_test_lead(db, email="rg14@t.com")
+        lead.status = "Lead Assigned"
+        _fully_research(lead, db)
+
+        resp = client.patch(f"/api/leads/{lead.id}", json={"status": "Calling"})
+        assert resp.status_code == 200, resp.text
+
+    def test_gate_off_direct_update_to_calling_is_unaffected(self, client, db):
+        _set_gate(db, False)
+        lead = create_test_lead(db, email="rg15@t.com")
+        lead.status = "Lead Assigned"
+        db.commit()
+
+        resp = client.patch(f"/api/leads/{lead.id}", json={"status": "Calling"})
+        assert resp.status_code == 200, resp.text
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Gate ON — unresearched leads blocked
 # ─────────────────────────────────────────────────────────────────────────────

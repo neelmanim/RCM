@@ -5,33 +5,23 @@ import hashlib
 import base64
 from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
+from fastapi.responses import JSONResponse
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload, subqueryload, selectinload, lazyload
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, case
 from typing import Optional, List
 
+import ownership_history as oh
 import models
 from models import log_status_change, TERMINAL_STATUSES, ACTIVE_STATUSES, COMPANY_RESOLVED_OUTCOMES, PARKED_STATUSES
+from services import lead_service
 from database import get_db
 from auth import get_current_user
-from salesforce import get_sf_client, push_lead_to_salesforce, create_new_lead_in_salesforce, lead_push_info
+from salesforce import get_sf_client, push_lead_to_salesforce, create_new_lead_in_salesforce, lead_push_info, find_sf_match_by_phone, sdr_only_names, ae_owner_email
 import logging
 
 logger = logging.getLogger(__name__)
 
-
-def _logged_call_count(db: Session, lead_id: str) -> int:
-    """Calls logged for a lead — manual CallLog rows plus dialer calls that
-    got an outcome attached directly to DialerCall (no separate CallLog is
-    created for those, see call_routes.py's dialer-attach path). Counting
-    CallLog alone undercounts any lead whose calls were all made via the
-    in-app dialer."""
-    manual = db.query(models.CallLog).filter(models.CallLog.lead_id == lead_id).count()
-    dialer = db.query(models.DialerCall).filter(
-        models.DialerCall.lead_id == lead_id,
-        models.DialerCall.outcome.isnot(None),
-    ).count()
-    return manual + dialer
 
 router = APIRouter(prefix="/api", tags=["Leads"])
 
@@ -53,9 +43,10 @@ PER_PAGE_MAX = 100
 
 
 from routes.lead_helpers import (
-    _is_backward_move, _get_company_resolution, _batch_company_resolutions,
-    _batch_latest_activity, _batch_last_outbound_email, _lead_to_summary, _get_cached_settings, _lead_to_dict,
-    _build_lead_query, _can_modify_lead, _apply_filters, SUMMARY_COLUMNS,
+    apply_lead_scope_filters, apply_smart_view, summary_dialer_calls,
+    _is_backward_move, _skips_stage, STAGE_SKIP_MSG, _get_company_resolution, _batch_company_resolutions,
+    _batch_latest_activity, _batch_last_outbound_email, _batch_open_call_scripts, _lead_to_summary, _get_cached_settings, _lead_to_dict,
+    _build_lead_query, _can_modify_lead, _apply_filters, SUMMARY_COLUMNS, load_lead, authorize_lead,
 )
 
 
@@ -93,7 +84,7 @@ def list_meetings(
         except ValueError:
             pass
 
-    leads = q.order_by(models.Lead.meeting_scheduled_at.asc()).all()
+    leads = q.order_by(models.Lead.meeting_scheduled_at.asc(), models.Lead.id).all()
     return {
         "meetings": [
             {
@@ -127,11 +118,16 @@ def get_leads(
     assigned_to: Optional[str] = None,
     tag: Optional[List[str]] = Query(None),
     upload_log_id: Optional[str] = None,
+    journey_id: Optional[str] = Query(None, description="Power Dialer: only leads currently actively enrolled in this cadence"),
+    call_list_id: Optional[str] = Query(None, description="Power Dialer: only leads in this Call List"),
     ids_only: bool = Query(False),
     global_view: bool = Query(False, description="Pod Admin only: bypass pod scoping to see all leads"),
-    sort_by: Optional[str] = Query(None, description="name | status | source | time_in_status | phone | priority"),
+    sort_by: Optional[str] = Query(None, description="name | status | source | time_in_status | phone | priority | account"),
     sort_dir: str = Query("asc", description="asc | desc"),
     exclude_dialer_done: bool = Query(False, description="Power Dialer: drop leads the caller has already marked 'called' in their queue"),
+    smart: Optional[str] = Query(None, description="Dashboard click-through: given_today (needs smart_from/smart_to, UTC ISO) | not_yet_called"),
+    smart_from: Optional[str] = None,
+    smart_to: Optional[str] = None,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -146,6 +142,16 @@ def get_leads(
     _batch_latest_activity below) are intentionally NOT sortable server-side —
     faking single-page sort for either would be misleading across pagination.
     """
+    # RCA 2026-08-21 (reported live): company-less leads sorted to the TOP of
+    # every account/company-grouped view, in both classic and React — coalesce
+    # to '' for a NULL/blank company, then plain ASC, puts an empty string
+    # before every real company name. Looked like grouping was broken; it was
+    # sort order. This expression is 0 for a real company, 1 for NULL/blank,
+    # so putting it first in ORDER BY always pushes "No Company" leads last.
+    _no_company_last = case(
+        (or_(models.Lead.company.is_(None), func.trim(models.Lead.company) == ''), 1),
+        else_=0,
+    )
     _SORT_COLUMNS = {
         "name": (func.lower(func.coalesce(models.Lead.first_name, '')), func.lower(func.coalesce(models.Lead.last_name, ''))),
         "status": (models.Lead.status,),
@@ -156,6 +162,13 @@ def get_leads(
         "time_in_status": (models.Lead.status_changed_at,),
         "phone": (models.Lead.phone,),
         "priority": (models.Lead.priority_score,),
+        # Power Dialer "account-wise" sequencing (RCA 2026-08-17: Himanshu
+        # asked whether the dialer sequence is contact-wise or account-wise —
+        # it was neither, pure priority_score with no company tiebreak at
+        # all). Groups all contacts at the same company consecutively,
+        # highest-priority contact first within each group. Direction is
+        # fixed both ways regardless of sort_dir — see the special case below.
+        "account": (_no_company_last, func.lower(func.coalesce(models.Lead.company, '')).asc(), models.Lead.priority_score.desc()),
     }
     # _build_lead_query already scopes every role correctly (SDR/AE get only
     # their own assigned leads via the else branch there) — this endpoint was
@@ -184,25 +197,22 @@ def get_leads(
         )
         base = base.filter(~models.Lead.id.in_(done_ids))
 
-    if tag:
-        base = base.filter(models.Lead.tags.any(models.Tag.name.in_(tag)))
-    if upload_log_id:
-        base = base.filter(models.Lead.upload_log_id == upload_log_id)
-
-    # Filter by assigned SDR (or unassigned)
-    if assigned_to == 'unassigned':
-        assigned_ids = db.query(models.lead_assignments.c.lead_id).distinct()
-        base = base.filter(~models.Lead.id.in_(assigned_ids))
-    elif assigned_to:
-        base = base.filter(models.Lead.assigned_users.any(models.User.id == assigned_to))
+    base = apply_lead_scope_filters(base, db, tag, upload_log_id, journey_id, assigned_to)
+    if smart:
+        base = apply_smart_view(base, db, user, smart, smart_from, smart_to)
+    if call_list_id:
+        # ANDs with the callable-status filter above like journey_id does —
+        # a Call List is a source of candidates, not an override of what's
+        # safe to dial.
+        base = base.filter(models.Lead.call_lists.any(models.CallList.id == call_list_id))
 
     # Cache total count (30s TTL) — COUNT(*) over 10k+ rows is 100-200ms alone.
     # Keyed by user scope + all active filters so each distinct view gets its own entry.
     from cache import get_cached, set_cached, _is_test_db
     _status_key = ",".join(sorted(status)) if status else None
     _tag_key = ",".join(sorted(tag)) if tag else None
-    _count_key = f"count:{user.get('sub')}:{user.get('role')}:{user.get('pod_id')}:{global_view}:{search}:{_status_key}:{source}:{assigned_to}:{date_from}:{date_to}:{company}:{outcome}:{_tag_key}:{upload_log_id}:{exclude_dialer_done}"
-    _use_count_cache = not _is_test_db(db) and not search  # don't cache search results
+    _count_key = f"count:{user.get('sub')}:{user.get('role')}:{user.get('pod_id')}:{global_view}:{search}:{_status_key}:{source}:{assigned_to}:{date_from}:{date_to}:{company}:{outcome}:{_tag_key}:{upload_log_id}:{journey_id}:{call_list_id}:{exclude_dialer_done}"
+    _use_count_cache = not _is_test_db(db) and not search and not smart  # don't cache search / smart-view results
     total = None
     if _use_count_cache:
         total = get_cached('leads_count', _count_key)
@@ -214,7 +224,7 @@ def get_leads(
     # Full-page result cache check (before heavy DB fetch + batch queries).
     # Keyed by: user scope + page + every active filter. TTL 15s.
     # Skipped when search is active (search results are unique per keystroke).
-    _leads_page_key = f"leads:{user.get('sub')}:{user.get('role')}:{user.get('pod_id')}:{page}:{per_page}:{_status_key}:{source}:{assigned_to}:{company}:{date_from}:{date_to}:{outcome}:{_tag_key}:{upload_log_id}:{sort_by}:{sort_dir}:{exclude_dialer_done}"
+    _leads_page_key = f"leads:{user.get('sub')}:{user.get('role')}:{user.get('pod_id')}:{page}:{per_page}:{_status_key}:{source}:{assigned_to}:{company}:{date_from}:{date_to}:{outcome}:{_tag_key}:{upload_log_id}:{journey_id}:{call_list_id}:{sort_by}:{sort_dir}:{exclude_dialer_done}"
     if _use_count_cache and not ids_only:
         _cached_page = get_cached('leads_page', _leads_page_key)
         if _cached_page is not None:
@@ -222,12 +232,17 @@ def get_leads(
 
     _sort_cols = _SORT_COLUMNS.get(sort_by)
     if _sort_cols:
-        _desc = (sort_dir == "desc")
-        if sort_by == "time_in_status":
-            _desc = not _desc  # inverted: oldest status_changed_at = longest time in status
-        _order_by = tuple(c.desc() if _desc else c.asc() for c in _sort_cols)
+        if sort_by == "account":
+            # Company grouping needs its two columns pinned to opposite
+            # directions (company asc, priority desc) — sort_dir doesn't apply.
+            _order_by = _sort_cols
+        else:
+            _desc = (sort_dir == "desc")
+            if sort_by == "time_in_status":
+                _desc = not _desc  # inverted: oldest status_changed_at = longest time in status
+            _order_by = tuple(c.desc() if _desc else c.asc() for c in _sort_cols)
     else:
-        _order_by = (func.lower(func.coalesce(models.Lead.company, '')).asc(), models.Lead.created_at.desc())
+        _order_by = (_no_company_last, func.lower(func.coalesce(models.Lead.company, '')).asc(), models.Lead.created_at.desc())
 
     if ids_only:
         leads = (
@@ -236,7 +251,7 @@ def get_leads(
                 selectinload(models.Lead.assigned_users),
                 lazyload("*"),
             )
-            .order_by(func.lower(func.coalesce(models.Lead.company, '')).asc(), models.Lead.created_at.desc())
+            .order_by(_no_company_last, func.lower(func.coalesce(models.Lead.company, '')).asc(), models.Lead.created_at.desc(), models.Lead.id)
             .all()
         )
         return {
@@ -267,11 +282,11 @@ def get_leads(
             # per lead. 50 leads = 50 extra queries, the dominant cost behind
             # Power Dialer's ~3s load. Same fix the kanban endpoint below
             # already uses for this exact relationship.
-            selectinload(models.Lead.dialer_calls),
+            summary_dialer_calls(),
             lazyload(models.Lead.notes),
             lazyload(models.Lead.call_logs),
         )
-        .order_by(*_order_by)
+        .order_by(*_order_by, models.Lead.id)  # RCA 2026-08-20: stable tiebreaker — ties on the sort column could reorder between requests
         .offset((page - 1) * per_page)
         .limit(per_page)
         .all()
@@ -282,6 +297,10 @@ def get_leads(
     # Batch compute company resolutions for this page of leads
     resolutions = _batch_company_resolutions(db, leads)
     last_emails = _batch_last_outbound_email(db, leads)
+    # Power Dialer's cadence-default script — only this endpoint needs it
+    # (see _batch_open_call_scripts' own docstring), so it's the one call
+    # site that pays for the extra query.
+    call_scripts = _batch_open_call_scripts(db, leads)
     data = []
     for l in leads:
         summary = _lead_to_summary(
@@ -289,6 +308,7 @@ def get_leads(
             prefetched_note=latest_notes.get(l.id),
             prefetched_call=latest_calls.get(l.id),
             last_email_sent_at=last_emails.get(l.id),
+            active_call_script=call_scripts.get(l.id),
         )
         summary["company_resolved"] = resolutions.get(l.id)
         data.append(summary)
@@ -311,7 +331,20 @@ def get_lead_companies(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Return distinct company names visible to the current user."""
+    """Return distinct company names visible to the current user.
+
+    Backlog fix: unlike GET /leads, this had no cache and no LIMIT — a full
+    DISTINCT scan of the entire visible table on every call, every time
+    FilterBar mounts, for every admin session. Companies change rarely, so a
+    5-minute TTL is safe; reuses the exact get_cached/set_cached pattern
+    GET /leads already uses for its own count/page caches."""
+    from cache import get_cached, set_cached, _is_test_db
+    _cache_key = f"{user.get('sub')}:{user.get('role')}:{user.get('pod_id')}"
+    if not _is_test_db(db):
+        cached = get_cached('lead_companies', _cache_key)
+        if cached is not None:
+            return cached
+
     base = _build_lead_query(db, user)
     rows = (
         base
@@ -321,7 +354,10 @@ def get_lead_companies(
         .all()
     )
     companies = sorted(set(r[0].strip() for r in rows if r[0] and r[0].strip()), key=str.lower)
-    return {"companies": companies}
+    result = {"companies": companies}
+    if not _is_test_db(db):
+        set_cached('lead_companies', _cache_key, result, ttl=300)
+    return result
 
 
 @router.get("/leads/my")
@@ -377,7 +413,8 @@ def get_my_leads(
             .order_by(
                 models.Lead.priority_score.desc(),
                 func.lower(func.coalesce(models.Lead.company, '')).asc(),
-                models.Lead.created_at.desc()
+                models.Lead.created_at.desc(),
+                models.Lead.id,
             )
             .all()
         )
@@ -402,14 +439,15 @@ def get_my_leads(
             SUMMARY_COLUMNS,
             selectinload(models.Lead.assigned_users),
             selectinload(models.Lead.tags),
-            selectinload(models.Lead.dialer_calls),  # same N+1 fix as get_leads above
+            summary_dialer_calls(),  # same N+1 fix as get_leads above
             lazyload(models.Lead.notes),
             lazyload(models.Lead.call_logs),
         )
         .order_by(
             models.Lead.priority_score.desc(),
             func.lower(func.coalesce(models.Lead.company, '')).asc(),
-            models.Lead.created_at.desc()
+            models.Lead.created_at.desc(),
+            models.Lead.id,
         )
         .offset((page - 1) * per_page)
         .limit(per_page)
@@ -499,7 +537,7 @@ def get_dashboard_stats(
         base_active
         .options(
             joinedload(models.Lead.assigned_users),
-            selectinload(models.Lead.dialer_calls),  # same N+1 fix as get_leads — _lead_to_summary always checks this
+            summary_dialer_calls(),  # same N+1 fix as get_leads — _lead_to_summary always checks this
         )
         .order_by(models.Lead.created_at.desc())
         .limit(8)
@@ -539,11 +577,18 @@ def get_dashboard_stats(
     dc_by_outcome = {row.outcome or "No Outcome": row.cnt for row in dc_q.group_by(models.DialerCall.outcome).all()}
 
     # B) Manual call_logs today (exclude those already in dialer_calls)
+    # RCA 2026-08-20: the comment above was aspirational — dialer_call_id
+    # (set by dialer_service._auto_log_outcome for every auto-tagged Aircall
+    # call) was never actually filtered out here, so every auto-logged call
+    # counted twice (once via dc_q, once via cl_q). Confirmed live: Aug 19
+    # had 945 real dials but 355 of 382 CallLog rows that day were auto-logged
+    # duplicates of an already-counted DialerCall.
     cl_q = db.query(
         models.CallLog.outcome,
         func.count(models.CallLog.id).label("cnt"),
     ).filter(
         models.CallLog.called_at >= today_start,
+        models.CallLog.dialer_call_id.is_(None),
     )
     if role in ("SDR", "AE"):
         cl_q = cl_q.filter(models.CallLog.user_id == user_id)
@@ -598,18 +643,54 @@ def get_kanban_leads(
 
 # ── Single lead detail ────────────────────────────────────────────────────────
 
+def _duplicate_lead_response(dup, user, lead_data):
+    """409 for POST /leads. `detail` stays a plain string (every client shows it);
+    `existing_lead` lets the Add Lead modal offer "Request reassignment"."""
+    from routes._admin_helpers import duplicate_match_field
+    from config import LEAD_OWNERSHIP_CONTACT
+    name = f"{dup.first_name or ''} {dup.last_name or ''}".strip() or "this lead"
+    field = duplicate_match_field(dup, lead_data.get("email"), lead_data.get("linkedin_url"),
+                                  lead_data.get("person_linkedin"), lead_data.get("phone"))
+    owners = [u.name or u.email for u in dup.assigned_users]
+    mine = any(u.id == user["sub"] for u in dup.assigned_users)
+    is_admin = user.get("role") in ("Super Admin", "Admin", "Pod Admin")
+    head = f"A lead with this {field} already exists: {name} @ {dup.company or 'Unknown'} (status: {dup.status})."
+    if mine:
+        tail = " It is already assigned to you — find it in your Leads."
+    elif owners:
+        tail = f" It is already assigned to {', '.join(owners)}, so it can't be added again."
+        if not is_admin:
+            tail += " Request a reassignment and an admin will review it."
+    else:
+        tail = " It has no owner yet — ask an admin to assign it to you."
+    if LEAD_OWNERSHIP_CONTACT and not mine:
+        tail += f" Contact: {LEAD_OWNERSHIP_CONTACT}."
+    return JSONResponse(status_code=409, content={
+        "detail": head + tail,
+        "existing_lead": {
+            "id": dup.id, "name": name, "company": dup.company, "status": dup.status,
+            "owners": owners, "owned_by_you": mine, "matched_on": field,
+            "can_request_reassignment": (not mine) and (not is_admin),
+        },
+    })
+
+
 @router.post("/leads")
 def create_lead(lead_data: dict, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     from cache import invalidate
     # Invalidate all list/page caches when a new lead is created
     invalidate('dashboard'); invalidate('leads_page')
-    invalidate('my_leads'); invalidate('leads_count')
+    invalidate('my_leads'); invalidate('leads_count'); invalidate('lead_companies')
     """Creates a new lead in local DB only. Lead will be pushed to SF when it reaches Meeting Scheduled.
     Auto-assigns the lead to the creating user so it appears in their My Leads immediately.
     """
     try:
         import uuid as _uuid
-        from routes._admin_helpers import _find_duplicate_lead
+        from routes._admin_helpers import _find_duplicate_lead, _is_placeholder_lead
+
+        # See models.py::_record_lead_field_history — attributes this creation's
+        # LeadFieldHistory rows to the creating user.
+        db.info["change_actor"] = user.get("name") or user.get("email") or "system"
 
         # RCA-2026-07-20: block obvious duplicates the same way CSV/Sheet imports
         # already do — an unchecked duplicate here is what let the same contact
@@ -624,12 +705,38 @@ def create_lead(lead_data: dict, user: dict = Depends(get_current_user), db: Ses
             last_name=lead_data.get("last_name"),
             company=lead_data.get("company"),
         )
+        if dup and _is_placeholder_lead(dup):
+            # RCA 2026-08-14 (LIVE): dialer syncs (Aircall webhook, Aircall/
+            # Klenty nightly sync) auto-create a nameless Lead the moment a
+            # call touches an unmatched number. Blocking here would silently
+            # discard the SDR's real contact info and leave the placeholder
+            # nameless forever — enrich it in place instead.
+            dup.first_name = lead_data.get("first_name", "") or dup.first_name
+            dup.last_name = lead_data.get("last_name") or dup.last_name
+            dup.email = lead_data.get("email") or dup.email
+            dup.company = lead_data.get("company") or dup.company
+            dup.title = lead_data.get("title") or dup.title
+            dup.phone_secondary = lead_data.get("phone_secondary") or dup.phone_secondary
+            dup.linkedin_url = lead_data.get("linkedin_url") or dup.linkedin_url
+            dup.person_linkedin = lead_data.get("person_linkedin") or dup.person_linkedin
+            db_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
+            if db_user:
+                models.assign_lead(db_user, dup, reason=oh.R_DUPLICATE, actor_id=user["sub"])
+            db.commit()
+            db.refresh(dup)
+            try:
+                from activity_logger import log_activity
+                lead_name = f"{dup.first_name or ''} {dup.last_name or ''}".strip()
+                log_activity(user["sub"], "CREATE_LEAD",
+                             user_email=user.get("email"), user_name=user.get("name"),
+                             object_type="lead", object_id=dup.id,
+                             metadata={"lead_name": lead_name, "company": dup.company, "status": dup.status,
+                                       "enriched_placeholder": True})
+            except Exception:
+                pass
+            return _lead_to_dict(dup)
         if dup:
-            dup_name = f"{dup.first_name or ''} {dup.last_name or ''}".strip() or "this lead"
-            raise HTTPException(
-                status_code=409,
-                detail=f"A matching lead already exists: {dup_name} @ {dup.company or 'Unknown'} (id {dup.id}). Use that lead instead of creating a new one.",
-            )
+            return _duplicate_lead_response(dup, user, lead_data)
 
         # Restrict initial status to safe values only
         requested_status = lead_data.get("status", "Lead Assigned")
@@ -665,11 +772,12 @@ def create_lead(lead_data: dict, user: dict = Depends(get_current_user), db: Ses
 
         # Auto-assign to the creating user
         if db_user:
+            oh.set_assignment_context(db, oh.R_LEAD_CREATE, user["sub"])
             new_lead.assigned_users.append(db_user)
 
         # Log initial status for audit trail
         log_status_change(db, new_lead.id, None, requested_status,
-                          user.get("name") or user.get("email", "unknown"))
+                          user.get("name") or user.get("email", "unknown"), changed_by_user_id=user["sub"])
 
         db.commit()
         db.refresh(new_lead)
@@ -752,6 +860,16 @@ def get_activity_feed(
             )
         )
 
+    # RCA 2026-09-29: SDR/AE/CSM got every lead's status changes, names and
+    # companies — same rule as visible_leads: only leads assigned to them.
+    elif user.get("role") not in ("Super Admin", "Admin", "Pod Admin"):
+        q = q.filter(
+            exists().where(
+                (models.lead_assignments.c.lead_id == models.LeadStatusLog.lead_id) &
+                (models.lead_assignments.c.user_id == user.get("sub"))
+            )
+        )
+
     rows = q.order_by(models.LeadStatusLog.changed_at.desc()).limit(limit).all()
     result = []
     for row in rows:
@@ -771,13 +889,14 @@ def get_activity_feed(
 
 @router.get("/leads/{lead_id}")
 def get_lead(lead_id: str, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    lead = db.query(models.Lead).options(
+    lead = models.exclude_deleted_leads(db.query(models.Lead).options(
         selectinload(models.Lead.assigned_users),
         selectinload(models.Lead.call_logs),
         selectinload(models.Lead.dialer_calls)
-    ).filter(models.Lead.id == lead_id).first()
+    )).filter(models.Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(user, lead)
     # Activity log: VIEW_LEAD
     try:
         from activity_logger import log_activity
@@ -795,52 +914,14 @@ def get_lead(lead_id: str, user: dict = Depends(get_current_user), db: Session =
 
 @router.patch("/leads/{lead_id}")
 def update_lead(lead_id: str, updates: dict, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Update editable fields on a lead and write-back to Salesforce."""
+    """Update editable fields on a lead and write-back to Salesforce.
+
+    Business rules (status-transition validation, "auto-revert from parked")
+    live in services/lead_service.py — this route is just auth + orchestration.
+    """
     lead = _can_modify_lead(db, user, lead_id)
 
-    allowed = {"first_name", "last_name", "email", "phone", "phone_secondary", "company", "title", "status"}
-    filtered = {k: v for k, v in updates.items() if k in allowed}
-    # Track status change time + audit log
-    if "status" in filtered and filtered["status"] != lead.status:
-        # SDRs cannot move leads backward via direct update.
-        # Exception: "Pending Review" is always a forward move from Demo stages
-        # and is treated as a parked holding state, not a backward regression.
-        if (_is_backward_move(lead.status, filtered["status"])
-                and filtered["status"] != "Pending Review"
-                and user.get("role") not in ("Super Admin", "Admin", "Pod Admin")):
-            raise HTTPException(
-                status_code=403,
-                detail="SDRs cannot move leads to a previous status. Contact your Pod Admin."
-            )
-        # Validate: Meeting Scheduled requires at least 1 call
-        if filtered["status"] == "Meeting Scheduled":
-            if _logged_call_count(db, lead_id) == 0:
-                raise HTTPException(status_code=422, detail="At least 1 call must be logged before moving to Meeting Scheduled.")
-        old_status = lead.status
-        lead.status_changed_at = datetime.now(timezone.utc)
-        log_status_change(db, lead.id, old_status, filtered["status"], user.get("name") or user.get("email", "unknown"))
-    status_changed = "status" in filtered and filtered["status"] != lead.status
-    for key, val in filtered.items():
-        setattr(lead, key, val)
-
-    # Auto-revert: if a phone was just added to a parked lead, unpark it
-    phone_fields_in_update = {"phone", "phone_secondary"} & filtered.keys()
-    if phone_fields_in_update and lead.status in PARKED_STATUSES:
-        phone_val = lead.phone or lead.phone_secondary or ""
-        phone_digits = ''.join(c for c in str(phone_val) if c.isdigit())
-        if len(phone_digits) >= 7:
-            old_status = lead.status
-            lead.status = "Lead Assigned"
-            lead.status_changed_at = datetime.now(timezone.utc)
-            log_status_change(db, lead.id, old_status, "Lead Assigned",
-                              user.get("name") or user.get("email", "unknown"))
-            status_changed = True
-            # If SDR added the phone, assign lead to them
-            if user.get("role") == "SDR":
-                sdr_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
-                if sdr_user:
-                    models.assign_lead(sdr_user, lead)
-            # Pod Admin / Admin / Super Admin → keep unassigned
+    status_changed = lead_service.update_lead_fields(db, lead, updates, user)
 
     db.commit()
     db.refresh(lead)
@@ -848,8 +929,20 @@ def update_lead(lead_id: str, updates: dict, user: dict = Depends(get_current_us
     # If lead reached the SF push stage, create in Salesforce (one-way: CRM → SF)
     if status_changed:
         _check_sf_push(lead, db)
+        _push_am_update(lead)
 
     return _lead_to_dict(lead)
+
+
+@router.post("/leads/{lead_id}/phone/invalid")
+def mark_lead_phone_invalid(lead_id: str, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The rep found this number doesn't reach the lead. Cadence call/text steps
+    skip until the phone is edited; the lead's status and email steps are
+    untouched (that's what separates this from Disqualify)."""
+    lead = load_lead(db, user, lead_id, edit=True)
+    lead_service.mark_phone_invalid(db, lead, user.get("name") or user.get("email") or "a teammate")
+    db.commit()
+    return {"ok": True, "phone_invalid_at": str(lead.phone_invalid_at)}
 
 
 # ── Manual re-prioritization (V22) ───────────────────────────────────────────
@@ -890,6 +983,14 @@ def update_research(lead_id: str, body: dict, user: dict = Depends(get_current_u
     return _lead_to_dict(lead)
 
 
+def _push_am_update(lead):
+    """Fire-and-forget push of a lead's current fields to Audience Manager
+    (no-op if never synced there or Alternate Messenger disabled — see
+    audience_manager.sync_lead_update_to_am)."""
+    from audience_manager import sync_lead_update_to_am
+    threading.Thread(target=sync_lead_update_to_am, args=(lead.id,), daemon=True).start()
+
+
 def _check_sf_push(lead, db):
     """If lead reached the SF push stage and doesn't exist in SF yet, create it there.
     One-way sync: CRM → SF. Push status updates for existing leads, create new leads.
@@ -928,7 +1029,8 @@ def _check_sf_push(lead, db):
             "company_street": lead.company_street,
             "company_postal_code": lead.company_postal_code,
             "linkedin_url": lead.linkedin_url or lead.person_linkedin,
-            "sdr_name": ", ".join(u.name for u in lead.assigned_users if u.name) or None,
+            "sdr_name": sdr_only_names(lead),
+            "owner_email": ae_owner_email(lead),
             "description": enriched_description or None,
         }
 
@@ -988,6 +1090,32 @@ def _check_sf_push(lead, db):
                         )
                         return
 
+                # Duplicate check by phone — catches an SF record with no
+                # email, or a different email than ours, that the check
+                # above would otherwise miss (same root cause as the
+                # Aircall direct-dial dedup fix, applied to this push path).
+                with SessionLocal() as thread_db:
+                    phone_match = find_sf_match_by_phone(thread_db, sf, lead_data["phone"], exclude_lead_id=lead_data["id"])
+                    if phone_match:
+                        db_lead = thread_db.query(models.Lead).filter(models.Lead.id == lead_data["id"]).first()
+                        if db_lead:
+                            if phone_match["type"] == "Lead":
+                                db_lead.sf_lead_id = phone_match["id"]
+                            else:
+                                db_lead.sf_opportunity_id = phone_match["id"]
+                            db_lead.last_synced_at = datetime.now(timezone.utc)
+                            thread_db.commit()
+                if phone_match:
+                    log_sf_operation(
+                        operation_type="upsert", sf_object=phone_match["type"],
+                        record_identifier=phone_match["id"],
+                        first_name=lead_data["first_name"], last_name=lead_data["last_name"], email=lead_data["email"],
+                        fields_updated=["sf_lead_id" if phone_match["type"] == "Lead" else "sf_opportunity_id"],
+                        status="success", source_system="background_push",
+                        response_payload={"action": "linked_to_existing_by_phone", "sf_id": phone_match["id"]},
+                    )
+                    return
+
                 sf_id = create_new_lead_in_salesforce(sf, lead_data, source="background_push")
                 with SessionLocal() as thread_db:
                     db_lead = thread_db.query(models.Lead).filter(models.Lead.id == lead_data["id"]).first()
@@ -1010,6 +1138,9 @@ def _check_sf_push(lead, db):
 def move_lead_kanban(lead_id: str, new_status: str, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     lead = _can_modify_lead(db, user, lead_id)
 
+    if new_status not in models.KNOWN_STATUSES:
+        raise HTTPException(status_code=422, detail=f'"{new_status}" is not a lead status.')
+
     # Disqualified leads must be closed via the /close endpoint
     if new_status == "Disqualified":
         raise HTTPException(status_code=422, detail="Use the 'Close Lead' action to disqualify a lead.")
@@ -1028,45 +1159,29 @@ def move_lead_kanban(lead_id: str, new_status: str, user: dict = Depends(get_cur
             status_code=403,
             detail="SDRs cannot move leads to a previous status. Contact your Pod Admin."
         )
+    if (_skips_stage(lead.status, new_status)
+            and user.get("role") not in ("Super Admin", "Admin", "Pod Admin")):
+        raise HTTPException(status_code=403, detail=STAGE_SKIP_MSG)
 
-    # Validation: research gate — admin-controlled toggle (v8 Research v2)
-    # Default: False (gate OFF) — SDRs can move to Calling without research.
-    # When True: 4 core research fields are required (India SDR discovery flow).
-    # Read per-request so admin changes take effect immediately (EC-14).
-    try:
-        _ss = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
-        _require_research = bool(getattr(_ss, "require_research_before_calling", False)) if _ss else False
-    except Exception:
-        _require_research = False
-
-    if _require_research and new_status in ("Calling", "Meeting Scheduled"):
-        CORE_RESEARCH = ["research_company", "research_contact", "research_hypothesis", "research_personalization"]
-        missing = [f for f in CORE_RESEARCH if not getattr(lead, f, None)]
-        if missing:
-            field_labels = {
-                "research_company": "What does this company do?",
-                "research_contact": "Contact Context",
-                "research_hypothesis": "Pitch Angle / Hypothesis",
-                "research_personalization": "Personalization Note"
-            }
-            missing_labels = [field_labels.get(f, f) for f in missing]
-            raise HTTPException(
-                status_code=422,
-                detail=f"Complete these required fields: {', '.join(missing_labels)}"
-            )
+    # Research gate — shared with update_lead_fields (services/lead_service.py)
+    # so the React Lead Detail Hub's Change Stage can't drift out of sync
+    # with this legacy kanban-drag path again (RCA 2026-09-28: it used to,
+    # silently — see check_research_gate's docstring).
+    lead_service.check_research_gate(db, lead, new_status)
 
     # Validation: Meeting Scheduled requires at least 1 call logged
     if new_status == "Meeting Scheduled":
-        if _logged_call_count(db, lead_id) == 0:
+        if lead_service.logged_call_count(db, lead_id) == 0:
             raise HTTPException(
                 status_code=422,
-                detail="At least 1 call must be logged before moving to Meeting Scheduled."
+                detail=lead_service.MEETING_NEEDS_CALL_MSG
             )
 
     old_status = lead.status
     lead.status = new_status
     lead.status_changed_at = datetime.now(timezone.utc)
-    log_status_change(db, lead.id, old_status, new_status, user.get("name") or user.get("email", "unknown"))
+    log_status_change(db, lead.id, old_status, new_status, user.get("name") or user.get("email", "unknown"),
+                      changed_by_user_id=user["sub"])
 
     # Set closed timestamp for meeting-reached AND terminal statuses.
     # The analytics trend endpoint queries lead_closed_at to bucket meetings
@@ -1075,6 +1190,12 @@ def move_lead_kanban(lead_id: str, new_status: str, user: dict = Depends(get_cur
     if new_status in TERMINAL_STATUSES or new_status in MEETING_REACHED_STATUSES_LOCAL:
         if lead.lead_closed_at is None:  # don't overwrite existing close date
             lead.lead_closed_at = datetime.now(timezone.utc)
+    # Analytics Hub's meetings_scheduled metric keys off meeting_scheduled_at,
+    # not current status (the Leaderboard's metric) — kanban-driven meeting
+    # transitions never stamped it, so those meetings were invisible to
+    # Analytics Hub despite counting correctly on the Leaderboard.
+    if new_status in MEETING_REACHED_STATUSES_LOCAL and lead.meeting_scheduled_at is None:
+        lead.meeting_scheduled_at = lead.status_changed_at
     if new_status in TERMINAL_STATUSES:
         lead.closed_reason = new_status
 
@@ -1084,10 +1205,11 @@ def move_lead_kanban(lead_id: str, new_status: str, user: dict = Depends(get_cur
     # Bust page caches so the kanban board reflects the new status immediately
     from cache import invalidate
     invalidate('dashboard'); invalidate('leads_page')
-    invalidate('my_leads'); invalidate('leads_count')
+    invalidate('my_leads'); invalidate('leads_count'); invalidate('lead_companies')
 
     # Check if this stage triggers SF lead creation (one-way: CRM → SF)
     _check_sf_push(lead, db)
+    _push_am_update(lead)
 
     # Push status update to SF for existing leads (one-way: CRM → SF)
     sf_lead_id = lead.sf_lead_id
@@ -1131,6 +1253,10 @@ def move_lead_kanban(lead_id: str, new_status: str, user: dict = Depends(get_cur
 @router.get("/leads/{lead_id}/status-history")
 def get_lead_status_history(lead_id: str, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """Return chronological status change log for a single lead."""
+    lead = models.exclude_deleted_leads(db.query(models.Lead)).filter(models.Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(user, lead)
     logs = db.query(models.LeadStatusLog).filter(
         models.LeadStatusLog.lead_id == lead_id
     ).order_by(models.LeadStatusLog.changed_at.desc()).all()
@@ -1138,6 +1264,27 @@ def get_lead_status_history(lead_id: str, user: dict = Depends(get_current_user)
         "id": l.id,
         "from_status": l.from_status,
         "to_status": l.to_status,
+        "changed_by": l.changed_by,
+        "changed_at": str(l.changed_at) if l.changed_at else None,
+    } for l in logs]
+
+
+@router.get("/leads/{lead_id}/field-history")
+def get_lead_field_history(lead_id: str, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Return chronological field-change log (name/phone/email/company/etc.)
+    for a single lead. See models.py::LeadFieldHistory."""
+    lead = models.exclude_deleted_leads(db.query(models.Lead)).filter(models.Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(user, lead)
+    logs = db.query(models.LeadFieldHistory).filter(
+        models.LeadFieldHistory.lead_id == lead_id
+    ).order_by(models.LeadFieldHistory.changed_at.desc()).all()
+    return [{
+        "id": l.id,
+        "field_name": l.field_name,
+        "old_value": l.old_value,
+        "new_value": l.new_value,
         "changed_by": l.changed_by,
         "changed_at": str(l.changed_at) if l.changed_at else None,
     } for l in logs]
@@ -1151,13 +1298,16 @@ def update_lead_outcome(lead_id: str, body: dict, user: dict = Depends(get_curre
     if role not in ("Super Admin", "Admin", "Pod Admin"):
         raise HTTPException(status_code=403, detail="Only Pod Admins and Super Admins can update lead outcomes.")
 
-    lead = db.query(models.Lead).options(
+    lead = models.exclude_deleted_leads(db.query(models.Lead).options(
         joinedload(models.Lead.assigned_users)
-    ).filter(models.Lead.id == lead_id).first()
+    )).filter(models.Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(user, lead)
 
-    # Pod Admin: only their pod's leads
+    # Pod Admin: their pod's leads — deliberately also the lead's originating
+    # pod (lead.pod_id), so an SDR pod's admin can close out a lead handed to
+    # an AE in another pod. Wider than domain can_edit_lead on purpose.
     if role == "Pod Admin":
         pod_id = user.get("pod_id")
         lead_pod_ids = [u.pod_id for u in lead.assigned_users if u.pod_id]
@@ -1247,8 +1397,10 @@ def mark_no_show(lead_id: str, body: dict, user: dict = Depends(get_current_user
     # Log status change
     log_status_change(
         db, lead.id, old_status, "Calling",
-        changed_by=f"{user.get('name', 'SDR')} (No Show: {reason[:50]})"
+        changed_by=f"{user.get('name', 'SDR')} (No Show: {reason[:50]})", changed_by_user_id=user["sub"]
     )
+    import meeting_log
+    meeting_log.mark_no_show(db, lead)
     
     db.commit()
     db.refresh(lead)
@@ -1332,7 +1484,7 @@ def mark_no_show(lead_id: str, body: dict, user: dict = Depends(get_current_user
     }
 
 
-# ── RCM / RCM Messaging Messaging ─────────────────────────────────────────
+# ── Alternate Messenger / Messaging Provider Messaging ─────────────────────────────────────────
 
 @router.get("/leads/{lead_id}/messaging/config")
 def get_messaging_config(
@@ -1340,31 +1492,32 @@ def get_messaging_config(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Return the RCM iframe URL for a lead.
+    """Return the Alternate Messenger iframe URL for a lead.
     Uses Audience Manager record_id (search/create on demand)."""
-    lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
+    lead = models.exclude_deleted_leads(db.query(models.Lead)).filter(models.Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(user, lead)  # sending itself is gated by conversations_routes' edit check
 
     settings = db.query(models.SyncSettings).first()
-    if not settings or not settings.rcm_enabled:
+    if not settings or not settings.messenger_enabled:
         return {"enabled": False, "reason": "Conversations not enabled. Configure in Settings → Conversations."}
 
-    if not settings.rcm_api_key:
+    if not settings.messenger_api_key:
         return {"enabled": False, "reason": "Conversations API key not configured. Contact your admin."}
 
     phone = (lead.phone or "").strip() or (lead.phone_secondary or "").strip()
     if not phone:
         return {"enabled": True, "has_phone": False, "reason": "No phone number on this lead."}
 
-    base_url = (settings.rcm_base_url or "https://app.bercm.com").rstrip("/")
-    api_key = settings.rcm_api_key
+    base_url = (settings.messenger_base_url or "https://app.alternatecrm.com").rstrip("/")
+    api_key = settings.messenger_api_key
 
-    # Per-SDR RCM user ID: check the current user first, then fall back to global
+    # Per-SDR Alternate Messenger user ID: check the current user first, then fall back to global
     current_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
     user_id = (
-        (getattr(current_user, 'rcm_user_id', None) or "").strip()
-        or (settings.rcm_user_id or "")
+        (getattr(current_user, 'messenger_user_id', None) or "").strip()
+        or (settings.messenger_user_id or "")
     )
 
     # If we already have the AM record_id, use it directly
@@ -1372,7 +1525,7 @@ def get_messaging_config(
 
     # If not, try to search/create in Audience Manager on-demand
     if not record_id:
-        from audience_manager import ensure_contact
+        from audience_manager import ensure_contact, lead_extra_fields
         record_id = ensure_contact(
             base_url=base_url,
             api_key=api_key,
@@ -1381,6 +1534,7 @@ def get_messaging_config(
             last_name=lead.last_name or "",
             phone=phone,
             email=lead.email or "",
+            extra_fields=lead_extra_fields(lead, db=db),
         )
         # Persist the record_id for future use
         if record_id:
@@ -1397,12 +1551,12 @@ def get_messaging_config(
 
     iframe_url = f"{base_url}/fastapp/desk/#/inbox?crm=audience_manager&record_id={record_id}&record_type=contacts"
 
-    # Server-side auth: use shared RCMAuthManager for cached HMAC-based JWT
+    # Server-side auth: use shared AlternateMessengerAuthManager for cached HMAC-based JWT
     auth_ok = False
     auth_error = None
     try:
-        from rcm_auth import RCMAuthManager
-        access_token = RCMAuthManager.get_token(base_url, api_key, user_id)
+        from messaging_auth import AlternateMessengerAuthManager
+        access_token = AlternateMessengerAuthManager.get_token(base_url, api_key, user_id)
         if access_token:
             iframe_url += f"&session_id={access_token}"
             auth_ok = True
@@ -1430,28 +1584,30 @@ def sync_messaging_contact(
     user: dict = Depends(get_current_user),
 ):
     """Manually trigger Audience Manager contact sync for a lead."""
-    lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
+    lead = models.exclude_deleted_leads(db.query(models.Lead)).filter(models.Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(user, lead, edit=True)
 
     settings = db.query(models.SyncSettings).first()
-    if not settings or not settings.rcm_enabled or not settings.rcm_api_key:
+    if not settings or not settings.messenger_enabled or not settings.messenger_api_key:
         raise HTTPException(status_code=400, detail="Conversations not configured")
 
     phone = (lead.phone or "").strip()
     if not phone:
         raise HTTPException(status_code=400, detail="Lead has no phone number")
 
-    from audience_manager import ensure_contact
-    base_url = (settings.rcm_base_url or "https://app.bercm.com").rstrip("/")
+    from audience_manager import ensure_contact, lead_extra_fields
+    base_url = (settings.messenger_base_url or "https://app.alternatecrm.com").rstrip("/")
     record_id = ensure_contact(
         base_url=base_url,
-        api_key=settings.rcm_api_key,
-        user_id=settings.rcm_user_id or "",
+        api_key=settings.messenger_api_key,
+        user_id=settings.messenger_user_id or "",
         first_name=lead.first_name or "",
         last_name=lead.last_name or "",
         phone=phone,
         email=lead.email or "",
+        extra_fields=lead_extra_fields(lead, db=db),
     )
     if record_id:
         lead.am_record_id = record_id

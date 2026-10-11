@@ -10,6 +10,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Bug, Lightbulb, MessageSquare, Send, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
+import { Spinner } from '../components/ui/Spinner';
 
 const TYPES = [
   { value: 'bug',     label: 'Bug Report',      Icon: Bug },
@@ -73,7 +74,7 @@ export function FeedbackModal({ open, onClose }) {
       ) : (
         <>
           <p className="text-sm text-slate-500 mb-5">
-            Report a bug, suggest a feature, or share your thoughts — we improve RCM based on your input.
+            Report a bug, suggest a feature, or share your thoughts — we improve Alternate CRM based on your input.
           </p>
 
           <div className="mb-4">
@@ -133,7 +134,7 @@ export function FeedbackModal({ open, onClose }) {
             >
               {status === 'loading' ? (
                 <>
-                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <Spinner size={14} tone="light" />
                   Submitting...
                 </>
               ) : (

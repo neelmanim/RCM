@@ -13,4 +13,3 @@
 
 export { renderLeads, setNavLeadsFromRaw } from './lead_list.js';
 export { renderLeadDetail } from './lead_detail.js';
-export { renderKanban } from './lead_kanban.js';

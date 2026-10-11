@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
+import { Spinner } from './Spinner';
 
 /**
  * Reusable Modal shell — handles backdrop click, escape key, and focus trap.
@@ -9,15 +10,19 @@ import { X } from 'lucide-react';
  *   onClose    – callback to close the modal
  *   title      – header text (optional)
  *   children   – modal body
- *   maxWidth   – Tailwind max-w class (default 'max-w-lg')
+ *   maxWidth   – Tailwind max-w class (default 'max-w-lg'), ignored when position='right'
+ *   position   – 'center' (default) or 'right' (full-height slide-over drawer)
  */
-export const Modal = ({ open, onClose, title, children, maxWidth = 'max-w-lg' }) => {
+export const Modal = ({ open, onClose, title, children, maxWidth = 'max-w-lg', position = 'center' }) => {
   const overlayRef = useRef(null);
 
-  // Close on Escape
+  // Close on Escape — skip if a nested Radix layer (Popover/DropdownMenu/
+  // Select) already handled it: those call preventDefault() on Escape
+  // during the capture phase before this bubble-phase listener runs, so a
+  // picker open inside the modal closes itself without also closing us.
   useEffect(() => {
     if (!open) return;
-    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const handleKey = (e) => { if (e.key === 'Escape' && !e.defaultPrevented) onClose(); };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [open, onClose]);
@@ -31,22 +36,33 @@ export const Modal = ({ open, onClose, title, children, maxWidth = 'max-w-lg' })
 
   if (!open) return null;
 
+  const isDrawer = position === 'right';
+
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      className={`fixed inset-0 z-[100] flex p-4 ${isDrawer ? 'justify-end' : 'items-center justify-center'}`}
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
     >
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200" />
 
       {/* Content */}
-      <div className={`relative ${maxWidth} w-full bg-white rounded-2xl shadow-2xl
-        animate-in fade-in slide-in-from-bottom-4 duration-300 overflow-hidden`}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title || 'Dialog'}
+        className={
+          isDrawer
+            ? `relative w-full max-w-sm h-full bg-white rounded-2xl shadow-2xl
+              animate-in fade-in slide-in-from-right duration-300 overflow-hidden flex flex-col`
+            : `relative ${maxWidth} w-full bg-white rounded-2xl shadow-2xl
+              animate-in fade-in slide-in-from-bottom-4 duration-300 overflow-hidden`
+        }
       >
         {/* Header */}
         {title && (
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
             <h2 className="text-lg font-bold text-slate-800 m-0">{title}</h2>
             <button
               onClick={onClose}
@@ -58,7 +74,7 @@ export const Modal = ({ open, onClose, title, children, maxWidth = 'max-w-lg' })
           </div>
         )}
         {/* Body */}
-        <div className="px-6 py-5 max-h-[75vh] overflow-y-auto">
+        <div className={`px-6 py-5 overflow-y-auto ${isDrawer ? 'flex-1' : 'max-h-[75vh]'}`}>
           {children}
         </div>
       </div>
@@ -106,7 +122,7 @@ export const ConfirmDialog = ({
         >
           {loading ? (
             <span className="flex items-center gap-2">
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <Spinner size={16} tone="light" />
               Processing...
             </span>
           ) : confirmLabel}

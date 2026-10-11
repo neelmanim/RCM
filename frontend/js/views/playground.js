@@ -1,21 +1,21 @@
 /**
  * playground.js — Dialer Playground v2 (Admin only)
  * ===================================================
- * A self-contained onboarding wizard. The admin enters RCM
+ * A self-contained onboarding wizard. The admin enters Alternate Messenger
  * credentials, picks a call mode, and tests the widget — simulating
  * exactly what a customer goes through during SDK onboarding.
  *
  * Steps:
- *   1. RCM credentials  (API Key, User ID, From Number)
+ *   1. Alternate Messenger credentials  (API Key, User ID, From Number)
  *   2. Call settings           (mode, test phone)
- *   3. Live test               (RCMDialer SDK mounts + call fires)
+ *   3. Live test               (AlternateMessenger SDK mounts + call fires)
  */
 
 import { authHeaders, API_BASE } from '../auth.js';
 
 // ── Module state ──────────────────────────────────────────────────────────────
 let _config = {};          // credentials the admin entered
-let _mounted = false;      // has RCMDialer been mounted?
+let _mounted = false;      // has AlternateMessenger been mounted?
 
 export async function renderPlayground(vc) {
     vc.innerHTML = `<div style="padding:60px;text-align:center;color:#64748b;">
@@ -125,9 +125,9 @@ function _renderStep1(saved) {
         <div class="pgv2-card-header">
             <div class="pgv2-card-icon">🔑</div>
             <div>
-                <div class="pgv2-card-title">RCM Credentials</div>
+                <div class="pgv2-card-title">Alternate Messenger Credentials</div>
                 <div class="pgv2-card-desc">
-                    Enter your RCM API details. These are the same values a
+                    Enter your Alternate Messenger API details. These are the same values a
                     customer would supply during SDK onboarding.
                     ${saved.has_credentials
                         ? '<span class="pgv2-prefill-tag">✅ Pre-filled from your Settings</span>'
@@ -140,7 +140,7 @@ function _renderStep1(saved) {
             <div class="pgv2-field">
                 <label class="pgv2-label" for="pg-api-key">
                     API Key
-                    <span class="pgv2-tooltip" title="Found in RCM Dashboard → Developer → API Keys">ⓘ</span>
+                    <span class="pgv2-tooltip" title="Found in Alternate Messenger Dashboard → Developer → API Keys">ⓘ</span>
                 </label>
                 <input id="pg-api-key" class="pgv2-input pgv2-mono"
                        type="password"
@@ -151,7 +151,7 @@ function _renderStep1(saved) {
             <div class="pgv2-field">
                 <label class="pgv2-label" for="pg-user-id">
                     User ID
-                    <span class="pgv2-tooltip" title="Your RCM user ID — a numeric or UUID string">ⓘ</span>
+                    <span class="pgv2-tooltip" title="Your Alternate Messenger user ID — a numeric or UUID string">ⓘ</span>
                 </label>
                 <input id="pg-user-id" class="pgv2-input pgv2-mono"
                        type="text"
@@ -171,12 +171,12 @@ function _renderStep1(saved) {
             <div class="pgv2-field">
                 <label class="pgv2-label" for="pg-api-base">
                     API Base URL
-                    <span class="pgv2-tooltip" title="RCM API endpoint. Leave as default unless using a custom environment.">ⓘ</span>
+                    <span class="pgv2-tooltip" title="Alternate Messenger API endpoint. Leave as default unless using a custom environment.">ⓘ</span>
                 </label>
                 <input id="pg-api-base" class="pgv2-input pgv2-mono"
                        type="url"
-                       placeholder="https://api.bercm.com"
-                       value="${_esc(saved.api_base || 'https://api.bercm.com')}"/>
+                       placeholder="https://api.alternatecrm.com"
+                       value="${_esc(saved.api_base || 'https://api.alternatecrm.com')}"/>
             </div>
         </div>
 
@@ -208,7 +208,7 @@ function _bindStep1() {
         const userId  = document.getElementById('pg-user-id')?.value.trim();
         const fromNum = document.getElementById('pg-from-number')?.value.trim();
         const apiBase = document.getElementById('pg-api-base')?.value.trim()
-                        || 'https://api.bercm.com';
+                        || 'https://api.alternatecrm.com';
 
         const err = document.getElementById('pg-cred-error');
         if (!apiKey) { _showError(err, 'API Key is required.'); return; }
@@ -255,7 +255,7 @@ function _renderStep2() {
                     <input type="radio" name="pg-call-mode" value="bridge" hidden/>
                     <div class="pgv2-mode-icon">📱</div>
                     <div class="pgv2-mode-title">Phone Bridge</div>
-                    <div class="pgv2-mode-desc">RCM calls your phone first, then bridges to the contact.</div>
+                    <div class="pgv2-mode-desc">Alternate Messenger calls your phone first, then bridges to the contact.</div>
                     <div class="pgv2-mode-check">✓</div>
                 </label>
             </div>
@@ -366,7 +366,7 @@ async function _initStep3() {
     // ── Ready state ───────────────────────────────────────────────────────────
     // The Playground calls the CRM's own /api/calls/start endpoint directly —
     // no third-party SDK needed. This is identical to a real SDR placing a call.
-    _log('✅ Ready — click Make Call to place a test call via RCM', 'success');
+    _log('✅ Ready — click Make Call to place a test call via Alternate Messenger', 'success');
     _setWidgetStatus('ready');
     _mounted = true;
 
@@ -423,7 +423,7 @@ async function _initStep3() {
                     api_key:     _config.apiKey,
                     user_id:     _config.userId,
                     from_number: _config.fromNum || '',
-                    api_base:    _config.apiBase  || 'https://api.bercm.com',
+                    api_base:    _config.apiBase  || 'https://api.alternatecrm.com',
                     call_mode:   _config.callMode,
                 }),
             });
@@ -532,7 +532,7 @@ async function _initCadenceTab() {
 
         ${sandboxPhone
             ? `<div class="pgv2-cadence-banner pgv2-cadence-banner-ok">🔒 TEST MODE — every send in this tab goes to <strong>${_esc(sandboxPhone)}</strong> only, never a real lead.</div>`
-            : `<div class="pgv2-cadence-banner pgv2-cadence-banner-warn">⚠️ Set a Sandbox Test Phone Number in Settings → RCM Conversations before running a test.</div>`}
+            : `<div class="pgv2-cadence-banner pgv2-cadence-banner-warn">⚠️ Set a Sandbox Test Phone Number in Settings → Alternate Messenger Conversations before running a test.</div>`}
 
         <div class="pgv2-field" style="max-width:420px;margin-top:16px;">
             <label class="pgv2-label" for="pg-cadence-journey">Journey</label>

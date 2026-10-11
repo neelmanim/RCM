@@ -12,7 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
-from auth import require_admin
+from auth import require_admin, authenticates_itself
 import models
 
 router = APIRouter(prefix="/api/admin/metrics", tags=["SDR Metrics"])
@@ -445,7 +445,7 @@ def get_sdr_table(
     return sorted(user_data.values(), key=lambda x: x["total_actions"], reverse=True)
 
 
-@router.get("/export")
+@router.get("/export", dependencies=[Depends(authenticates_itself)])
 def export_metrics(
     range: int = Query(30, ge=1, le=365),
     format: str = Query("csv"),
@@ -460,10 +460,12 @@ def export_metrics(
     """
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    from auth import decode_jwt
-    user = decode_jwt(token)
+    from auth import authenticate
+    user = authenticate(token, db)
     if user.get("role") not in ("Super Admin", "Admin", "Pod Admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
+    from auth import check_export_access
+    check_export_access(db, user, "/api/metrics/export")      # token comes in the query string, so the guard runs here
     sdr_data = get_sdr_table(range=range, start_date=start_date, end_date=end_date, db=db, admin=user)
 
     if format == "csv":

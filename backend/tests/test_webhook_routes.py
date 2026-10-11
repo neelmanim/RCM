@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import json
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import models
 from conftest import (
@@ -146,6 +146,8 @@ class TestMessageLinkClicked:
         activity = create_email_activity(
             db, lead_id=lead.id, direction="outbound", nylas_message_id="msg-click-1",
         )
+        activity.timestamp = datetime.now(timezone.utc) - timedelta(minutes=5)   # a click seconds after send is a scanner
+        db.commit()
         assert activity.clicked_at is None
 
         resp = self._fire_clicked(client, "msg-click-1")

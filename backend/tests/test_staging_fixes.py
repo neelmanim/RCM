@@ -2,7 +2,7 @@
 Tests for the staging/production bug fixes applied in v5.8.x:
 
   PROD BUG  — _sanitize_email() in salesforce.py strips dirty email addresses
-  BUG-2     — list_call_logs scoped to known RCM users (not all Aircall data)
+  BUG-2     — list_call_logs scoped to known Alternate CRM users (not all Aircall data)
   BUG-4     — GET /api/admin/sf-connection-info returns DB connection first
   BUG-4b    — GET /api/admin/sf/status returns correct fields (last_sync_at, etc.)
 """
@@ -95,13 +95,13 @@ class TestSanitizeEmail:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BUG-2 — list_call_logs scoped to known RCM users
+# BUG-2 — list_call_logs scoped to known Alternate CRM users
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TestCallLogsScoping:
     """
     GET /api/admin/call-logs must only return DialerCall rows whose user_id
-    exists in the RCM users table.
+    exists in the Alternate CRM users table.
 
     Aircall webhooks can write DialerCall rows with user_ids that belong to
     other orgs (Australian SDRs, demo accounts, etc.). These must be invisible.
@@ -122,7 +122,7 @@ class TestCallLogsScoping:
 
     def test_own_user_calls_visible(self, client, db):
         """Calls from users registered in this instance appear in the response."""
-        user = create_test_user(db, email="sdr1@rcm.com")
+        user = create_test_user(db, email="sdr1@alternatecrm.com")
         self._make_dialer_call(db, user_id=user.id)
 
         resp = client.get("/api/admin/call-logs")
@@ -160,7 +160,7 @@ class TestCallLogsScoping:
 
     def test_mixed_only_local_users_returned(self, client, db):
         """With both local and foreign calls, only local-user calls appear."""
-        local_user = create_test_user(db, email="local@rcm.com")
+        local_user = create_test_user(db, email="local@alternatecrm.com")
         local_call = self._make_dialer_call(db, user_id=local_user.id, phone="+919999900000")
 
         # Foreign call — user_id not in users table
@@ -191,7 +191,7 @@ class TestCallLogsScoping:
         """DialerCall rows with user_id=None are also excluded by the IN subquery."""
         null_call = models.DialerCall(
             user_id=None,
-            provider="rcm",
+            provider="messenger",
             phone_number="+910000000000",
             status="CALL_STARTED",
             direction="outbound",
@@ -327,7 +327,7 @@ class TestSfStatusFieldNames:
         conn = models.SalesforceConnection(
             username="admin@test.com",
             environment="production",
-            instance_url="https://rcm.my.salesforce.com",
+            instance_url="https://alternatecrm.my.salesforce.com",
             password_encrypted="enc-pass",
             security_token_encrypted="enc-token",
             connection_status="connected",
@@ -414,7 +414,7 @@ class TestSfStatusFieldNames:
 # ═══════════════════════════════════════════════════════════════════════════════
 # RCA-2026-05-28 — Sentinel sf_lead_id values must never be pushed to Salesforce
 #
-# Root cause: anonymous RCM calls create leads with MIG-/MANUAL- prefixed
+# Root cause: anonymous Alternate Messenger calls create leads with MIG-/MANUAL- prefixed
 # sf_lead_id values. The SF push guard in push_pending_leads_to_salesforce only
 # checked lowercase "manual-" (missed uppercase "MANUAL-") and had no MIG- guard.
 # push_lead_to_salesforce itself had zero guard, so direct callers (call outcome

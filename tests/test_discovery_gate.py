@@ -22,7 +22,7 @@ import os
 import sys
 import requests
 
-BASE    = os.environ.get("TEST_BASE", "https://rcm-crm-staging.onrender.com")
+BASE    = os.environ.get("TEST_BASE", "https://messenger-crm-staging.onrender.com")
 JWT     = os.environ.get("TEST_JWT", "")
 HEADERS = {"Authorization": f"Bearer {JWT}", "Content-Type": "application/json"}
 
@@ -71,7 +71,7 @@ def api_patch(path, data=None):
 # ═══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
  print("\n" + "═" * 65)
- print("  RCM — DISCOVERY GATE TEST SUITE")
+ print("  ALTERNATE_CRM — DISCOVERY GATE TEST SUITE")
  print(f"  Target: {BASE}")
  print("═" * 65)
 

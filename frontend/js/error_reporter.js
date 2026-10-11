@@ -1,5 +1,5 @@
 /**
- * error_reporter.js — RCM Global Frontend Error Reporter
+ * error_reporter.js — Alternate CRM Global Frontend Error Reporter
  *
  * Captures all JS errors and failed API calls, translates them into plain English,
  * and sends them to the backend Error Logs endpoint.

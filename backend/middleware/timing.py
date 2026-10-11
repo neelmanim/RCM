@@ -6,6 +6,7 @@ import statistics
 import threading
 import uuid
 from collections import deque, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from typing import Callable, Optional
 
@@ -46,13 +47,15 @@ def _endpoint_key(method: str, path: str) -> str:
     so per-endpoint stats don't fragment across thousands of lead IDs.
     e.g.  GET /api/leads/12345  →  'GET /api/leads/{id}'
     """
-    normalised = re.sub(r"/\d+", "/{id}", path)
+    # UUIDs first: a UUID that starts with digits ("16676b8b-…") was cut by
+    # the numeric rule into "/{id}b8b-…", so every lead got its own key here.
     normalised = re.sub(
         r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
         "/{id}",
-        normalised,
+        path,
         flags=re.IGNORECASE,
     )
+    normalised = re.sub(r"/\d+", "/{id}", normalised)
     return f"{method} {normalised}"
 
 
@@ -105,8 +108,32 @@ def get_all_stats() -> list[dict]:
     return results
 
 
+# RCA 2026-08-26 (staging OOM): every non-excluded request spawns a thread
+# here with no concurrency cap — same shape as the Nylas full-mailbox-sync
+# leak (56ce657), but this one fires on ALL traffic, not one endpoint. A
+# request burst (E2E suite, real traffic spike) can spawn dozens of
+# concurrent threads, each holding a thread stack + a pooled DB connection.
+# Bounded here the same way: skip (best-effort, already non-blocking) rather
+# than queue over the cap.
+#
+# RCA 2026-10-06 (staging OOM again): the cap bounded concurrency but every
+# request still started a brand-new OS thread — with Aircall webhooks every
+# few seconds that is thousands of short-lived threads an hour, each one a
+# fresh malloc arena glibc keeps. Two long-lived pool threads now do the
+# writes; the semaphore caps queued + running writes, skipping beyond it.
+_perf_write_semaphore = threading.Semaphore(8)
+_perf_writer = ThreadPoolExecutor(max_workers=2, thread_name_prefix="perf_writer")
+
+
+def _submit_perf_metric(*args) -> None:
+    """Queue one perf_metrics write; best-effort, never blocks the request."""
+    if not _perf_write_semaphore.acquire(blocking=False):
+        return  # skip under heavy load rather than pile up work
+    _perf_writer.submit(_write_perf_metric, *args)
+
+
 def _write_perf_metric(endpoint: str, method: str, duration_ms: int, rail_tier: str, status_code: int) -> None:
-    """Write a single perf_metrics row in a background thread. Non-blocking."""
+    """Write a single perf_metrics row on the perf writer pool."""
     try:
         from database import SessionLocal
         db = SessionLocal()
@@ -128,6 +155,8 @@ def _write_perf_metric(endpoint: str, method: str, duration_ms: int, rail_tier: 
             db.close()
     except Exception:
         pass  # perf write is best-effort — never crash the request
+    finally:
+        _perf_write_semaphore.release()
 
 
 # ── TimingMiddleware ───────────────────────────────────────────────────────────
@@ -141,6 +170,20 @@ class TimingMiddleware(BaseHTTPMiddleware):
     - Records sample in the rolling window for Phase 4 perf summary
     - Writes to perf_metrics DB table (background thread, non-blocking)
     """
+
+    async def __call__(self, scope, receive, send):
+        # RCA 2026-08-19: BaseHTTPMiddleware.call_next buffers the downstream
+        # ASGI messages through an in-memory stream. For a long-lived
+        # StreamingResponse (the SSE endpoint), a client disconnect mid-stream
+        # leaves that buffer empty, and Starlette raises "RuntimeError: No
+        # response returned." on every disconnect (dialer widget reload/nav/
+        # close reopens this constantly). _should_skip's dispatch-level check
+        # doesn't prevent it — call_next itself is what's unsafe. Bypass
+        # BaseHTTPMiddleware entirely for this path instead of going through
+        # dispatch()/call_next() at all.
+        if scope.get("type") == "http" and _should_skip(scope.get("path", "")):
+            return await self.app(scope, receive, send)
+        return await super().__call__(scope, receive, send)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = request.url.path
@@ -193,7 +236,14 @@ class TimingMiddleware(BaseHTTPMiddleware):
             )
         else:
             rail_tier = "CRITICAL"
-            logger.error(
+            # The tier still records CRITICAL in perf_metrics / the rolling
+            # window — but the LOG LEVEL follows the response, not the clock.
+            # A 200 that took 3s is a performance datum (the Perf Health tab
+            # is where it belongs); logging it at ERROR filled Render's error
+            # view with successful requests and helped hide 17 real
+            # /api/calls/start 500s for four days. ERROR is for things that
+            # broke.
+            (logger.error if status >= 500 else logger.warning)(
                 f"[PERF] {method} {path} {status} {duration_ms:.1f}ms P=CRITICAL{user_hint}"
             )
 
@@ -202,10 +252,6 @@ class TimingMiddleware(BaseHTTPMiddleware):
 
         # Persist to perf_metrics DB table (background thread — non-blocking)
         endpoint_key = _endpoint_key(method, path)
-        threading.Thread(
-            target=_write_perf_metric,
-            args=(endpoint_key, method, int(duration_ms), rail_tier, status),
-            daemon=True,
-        ).start()
+        _submit_perf_metric(endpoint_key, method, int(duration_ms), rail_tier, status)
 
         return response

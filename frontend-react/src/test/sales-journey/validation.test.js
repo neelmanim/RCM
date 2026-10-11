@@ -4,6 +4,15 @@ import { validateGraph, errorsByNode } from '../../features/sales-journey/valida
 const trigger = { id: 'n1', type: 'trigger', data: { event: 'status_changed', to_status: 'New' } };
 
 describe('validateGraph', () => {
+  it('rejects a status trigger with no status — a blank one would match every status change', () => {
+    const blank = { id: 'n1', type: 'trigger', data: { event: 'status_changed', to_status: undefined } };
+    const errors = validateGraph([blank], []);
+    expect(errors.some((e) => e.nodeId === 'n1' && e.message.includes('needs a status'))).toBe(true);
+    // other trigger kinds have no status to pick
+    expect(validateGraph([{ id: 'n1', type: 'trigger', data: { event: 'manual' } }], [])
+      .some((e) => e.message.includes('needs a status'))).toBe(false);
+  });
+
   it('requires at least one trigger node', () => {
     const errors = validateGraph([], []);
     expect(errors.some((e) => e.message.includes('no trigger node'))).toBe(true);

@@ -1,5 +1,5 @@
 // ── views/dialer_widget.js — Floating Dialer SDK ─────────────────────────────
-// Standalone SDK-style floating dialer widget for RCM/RCM CRM.
+// Standalone SDK-style floating dialer widget for Alternate Messenger/Alternate CRM CRM.
 // Provides: call lifecycle management, status polling, mute/hold/hangup controls,
 //           live call timer, draggable positioning, postMessage bridge support,
 //           LiveKit WebRTC audio for browser-mode calling.
@@ -8,10 +8,11 @@
 //   showDialerWidget(callResult, leadName, phone, options?)
 //   hideDialerWidget()
 //   isWidgetActive() → boolean
-//   window.rcmDialer — global SDK handle (exposed for postMessage bridge)
+//   window.alternatecrmDialer — global SDK handle (exposed for postMessage bridge)
 // ──────────────────────────────────────────────────────────────────────────────
 import * as api from '../api.js';
 import { showToast } from '../utils.js';
+import { API_BASE, getAuthToken } from '../auth.js';
 
 // Phase 1 — state machine integration
 // All call state is now owned by window.DialerMachine.
@@ -100,7 +101,7 @@ export function showDialerWidget(callResult, leadName, phone, options = {}) {
         leadName:     leadName || 'Unknown',
         leadId:       options.leadId || null,
         callMode,
-        provider:     callResult.provider || 'rcm',
+        provider:     callResult.provider || 'messenger',
         livekitToken: callResult.livekit_token || null,
         livekitUrl:   callResult.livekit_url   || null,
     });
@@ -134,9 +135,9 @@ export function showDialerWidget(callResult, leadName, phone, options = {}) {
     }
 
     // BUGFIX: 'context' was also undefined here (same as line 132).
-    // Re-read from machine state so the rcm:call-started event
+    // Re-read from machine state so the alternate:call-started event
     // always dispatches with correct fields — this drives _renderCallActive
-    // in rcm_widget.js which populates the Call tab during a live call.
+    // in messenger_widget.js which populates the Call tab during a live call.
     const _startCtx = _machine.getState().context;
     _emitEvent('call-started', {
         callId:    _startCtx.callId,
@@ -154,10 +155,18 @@ export function hideDialerWidget() {
     _machine.stopPolling();
     _disconnectLiveKit();
     if (_widgetEl) {
-        _widgetEl.classList.remove('dialer-widget-visible');
+        // RCA 2026-08-20: this setTimeout used to close over the module-level
+        // _widgetEl directly. Clicking a second lead's Call button while the
+        // 300ms fade-out was still pending created a NEW _widgetEl before the
+        // timeout fired — the stale timeout then removed and nulled the NEW
+        // widget instead of the old one ("dialer disappears on click").
+        // Snapshot the element being hidden and only touch _widgetEl if it
+        // still points at that same element by the time the timeout fires.
+        const _elToRemove = _widgetEl;
+        _elToRemove.classList.remove('dialer-widget-visible');
         setTimeout(() => {
-            _widgetEl?.remove();
-            _widgetEl = null;
+            _elToRemove.remove();
+            if (_widgetEl === _elToRemove) _widgetEl = null;
         }, 300);
     }
     // Only reset the machine if it's not already managing the IDLE→close sequence
@@ -239,7 +248,7 @@ async function _connectLiveKit(url, token) {
         console.log('[DialerSDK] Room connected, enabling microphone...');
         await room.localParticipant.setMicrophoneEnabled(true);
         console.log('[DialerSDK] ✅ Microphone enabled');
-        // Note: 'Browser audio connected' toast suppressed — RCM panel shows unified status
+        // Note: 'Browser audio connected' toast suppressed — Alternate Messenger panel shows unified status
         console.log('[DialerSDK] ✅ Browser audio connected');
 
     } catch (err) {
@@ -279,11 +288,20 @@ function _openSSE() {
     if (_sseSource) return;  // already connected
     try {
         // Pass JWT via query-string since EventSource doesn't support headers.
-        // api._token() reads the in-memory JWT (same as all other API calls).
-        const token = api._token?.() || '';
+        // getAuthToken() is the same view-as-aware lookup authHeaders() uses
+        // for every other API call (RCA 2026-08-19: this previously called
+        // api._token?.(), which was never defined anywhere — SSE always
+        // connected token-less, always 401'd, and silently fell back to the
+        // 2s polling loop below, masking the bug in production).
+        // RCA 2026-08-18 (LIVE, prod): this was a bare relative path. Prod serves
+        // the frontend and API on separate domains — a relative path resolves
+        // against the FRONTEND's own origin, hitting its SPA catch-all route
+        // (returns index.html, text/html) instead of the API. Every other call
+        // in this file already prefixes API_BASE; this one didn't.
+        const token = getAuthToken() || '';
         const url = token
-            ? `/api/calls/events?token=${encodeURIComponent(token)}`
-            : '/api/calls/events';
+            ? `${API_BASE}/api/calls/events?token=${encodeURIComponent(token)}`
+            : `${API_BASE}/api/calls/events`;
 
         _sseSource = new EventSource(url);
 
@@ -295,6 +313,20 @@ function _openSSE() {
             try {
                 const event = JSON.parse(e.data);
                 if (event.type === 'KEEPALIVE') return;
+
+                // Caller-ID (v11.3.0): an inbound call the SDR didn't place has
+                // nothing in the local state machine to update yet, so this
+                // branches before the isActive() gate below (that gate is for
+                // calls Alternate CRM is already tracking — outbound dials). A
+                // toast, not the full widget — no mute/hold/hangup control
+                // exists here for a call this device didn't originate.
+                if (event.status === 'CALL_STARTED' && event.direction === 'inbound' && !_machine.isActive()) {
+                    const who = event.lead_name
+                        ? `${event.lead_name}${event.lead_company ? ' · ' + event.lead_company : ''}`
+                        : 'Unknown caller';
+                    showToast(`📞 Incoming call: ${who}`, 'info', 8000);
+                }
+
                 if (!_machine.isActive()) return;
 
                 _machine.send('POLL_UPDATE', {
@@ -324,12 +356,27 @@ function _openSSE() {
     }
 }
 
+// v11.3.0: set true once initIncomingCallWatcher() opens the connection at
+// app boot — keeps it alive across every showDialerWidget()/hideDialerWidget()
+// cycle so an inbound call can still be caught between two outbound ones,
+// instead of only while an unrelated call happens to already be displayed.
+let _persistentSSE = false;
+
 function _closeSSE() {
+    if (_persistentSSE) return;
     if (_sseSource) {
         _sseSource.close();
         _sseSource = null;
         console.log('[DialerSDK] SSE stream closed');
     }
+}
+
+/** Open the SSE stream at app boot (independent of any widget being shown)
+ * so an inbound call the SDR didn't place can still be surfaced — see the
+ * CALL_STARTED/direction==='inbound' branch in _openSSE's onmessage above. */
+export function initIncomingCallWatcher() {
+    _persistentSSE = true;
+    _openSSE();
 }
 
 async function _pollStatus() {
@@ -687,19 +734,19 @@ function _makeDraggable() {
 
 function _emitEvent(type, payload) {
     // 1. Dispatch CustomEvent for same-page listeners
-    window.dispatchEvent(new CustomEvent(`rcm:${type}`, { detail: payload }));
+    window.dispatchEvent(new CustomEvent(`alternatecrm:${type}`, { detail: payload }));
 
     // 2. postMessage for cross-origin iframe consumers
     try {
         if (window.parent !== window) {
-            window.parent.postMessage({ source: 'rcm-dialer', type, payload }, '*');
+            window.parent.postMessage({ source: 'alternatecrm-dialer', type, payload }, '*');
         }
     } catch { /* ignore cross-origin errors */ }
 }
 
 // Listen for incoming postMessage commands (bridge mode)
 window.addEventListener('message', (event) => {
-    if (!event.data || event.data.source !== 'rcm-dialer-command') return;
+    if (!event.data || event.data.source !== 'alternatecrm-dialer-command') return;
     const { command, args } = event.data;
 
     switch (command) {
@@ -725,29 +772,29 @@ window.addEventListener('message', (event) => {
 
 
 // ── Global SDK Handle ───────────────────────────────────────────────────────
-// RCM-specific methods (isActive, getState, hangup, mute, hold) proxy
-// to window.RCMDialer so rcm_widget.js needs zero changes.
+// Alternate Messenger-specific methods (isActive, getState, hangup, mute, hold) proxy
+// to window.AlternateMessengerDialer so messenger_widget.js needs zero changes.
 // Aircall-specific methods (show, hide, dial) stay here.
-// window.RCMDialer is set by rcm_dialer.js which loads before app.js.
+// window.AlternateMessengerDialer is set by messenger_dialer.js which loads before app.js.
 
-window.rcmDialer = {
+window.alternatecrmDialer = {
     show:     showDialerWidget,
     hide:     hideDialerWidget,
     dial:     showManualDialWidget,
 
-    // RCM path: delegate to RCMDialer; fall back to machine for Aircall
-    hangup:   () => window.RCMDialer?.isActive()
-                        ? window.RCMDialer.hangup()
+    // Alternate Messenger path: delegate to AlternateMessenger; fall back to machine for Aircall
+    hangup:   () => window.AlternateMessengerDialer?.isActive()
+                        ? window.AlternateMessengerDialer.hangup()
                         : _handleHangup(),
-    mute:     () => window.RCMDialer?.isActive()
-                        ? window.RCMDialer.mute()
+    mute:     () => window.AlternateMessengerDialer?.isActive()
+                        ? window.AlternateMessengerDialer.mute()
                         : _handleMute(),
-    hold:     () => window.RCMDialer?.isActive()
-                        ? window.RCMDialer.hold()
+    hold:     () => window.AlternateMessengerDialer?.isActive()
+                        ? window.AlternateMessengerDialer.hold()
                         : _handleHold(),
-    isActive: ()  => (window.RCMDialer?.isActive() || isWidgetActive()),
-    getState: ()  => window.RCMDialer?.isActive()
-                        ? window.RCMDialer.getState()
+    isActive: ()  => (window.AlternateMessengerDialer?.isActive() || isWidgetActive()),
+    getState: ()  => window.AlternateMessengerDialer?.isActive()
+                        ? window.AlternateMessengerDialer.getState()
                         : getCallState(),
 };
 
@@ -768,25 +815,25 @@ function _esc(str) {
 // The backend auto-matches or creates a lead for the number.
 
 export function showManualDialWidget(options = {}) {
-    // Same per-provider guard as handleCallAction() in app.js: RCM calls
-    // are owned by RCMDialer, not the Aircall-only DialerMachine behind
-    // isWidgetActive() — checking the wrong one lets a real RCM call go
+    // Same per-provider guard as handleCallAction() in app.js: Alternate Messenger calls
+    // are owned by AlternateMessenger, not the Aircall-only DialerMachine behind
+    // isWidgetActive() — checking the wrong one lets a real Alternate Messenger call go
     // undetected (or blocks dialling on stale DialerMachine state that was never
-    // actually touched by a RCM call).
+    // actually touched by a Alternate Messenger call).
     const provider = (window._dialerConfig?.provider || '').toLowerCase();
-    const _isActive = provider === 'rcm'
-        ? window.RCMDialer?.isActive()
+    const _isActive = provider === 'messenger'
+        ? window.AlternateMessengerDialer?.isActive()
         : isWidgetActive();
     if (_isActive) {
         showToast('⚠️ A call is already active. End it first before dialling.', 'warning', 3000);
         return;
     }
 
-    // v6.2.0: RCM SDRs → delegate to RCMWidget which renders
+    // v6.2.0: Alternate Messenger SDRs → delegate to MessengerWidget which renders
     // the manual dial input inside its own Call tab pane.
     // The widget returns a Promise resolving to { phone, callMode } | null.
-    if (provider === 'rcm' && window._rcmWidgetReady && typeof RCMWidget !== 'undefined') {
-        RCMWidget.openForManualDial().then(async (result) => {
+    if (provider === 'messenger' && window._messengerWidgetReady && typeof MessengerWidget !== 'undefined') {
+        MessengerWidget.openForManualDial().then(async (result) => {
             if (!result) return;  // user cancelled
             const { phone, callMode } = result;
             try {
@@ -799,17 +846,17 @@ export function showManualDialWidget(options = {}) {
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || 'Call failed');
 
-                // Use RCMDialer (same manager as lead-button calls), not
+                // Use AlternateMessenger (same manager as lead-button calls), not
                 // showDialerWidget — that drives the Aircall-only DialerMachine and
                 // renders its own #dialer-widget DOM, causing a second, desynced UI
-                // alongside RCMWidget's Call tab pane for RCM calls.
+                // alongside MessengerWidget's Call tab pane for Alternate Messenger calls.
                 // activate() already calls window._setPendingOutcome internally.
-                await window.RCMDialer.activate(data, data.lead_name || 'Ad-hoc Call', phone, callMode);
+                await window.AlternateMessengerDialer.activate(data, data.lead_name || 'Ad-hoc Call', phone, callMode);
             } catch (err) {
-                // API failed — tell RCMWidget to revert to idle so user can retry
+                // API failed — tell MessengerWidget to revert to idle so user can retry
                 console.error('[DialerSDK] Manual dial API error:', err);
-                if (typeof RCMWidget?.notifyCallFailed === 'function') {
-                    RCMWidget.notifyCallFailed(err.message);
+                if (typeof MessengerWidget?.notifyCallFailed === 'function') {
+                    MessengerWidget.notifyCallFailed(err.message);
                 }
                 showToast(`❌ Dial failed: ${err.message}`, 'error', 5000);
             }
@@ -817,7 +864,7 @@ export function showManualDialWidget(options = {}) {
         return;
     }
 
-    // ── Standalone manual dial widget (Aircall / non-RCM) ─────────────
+    // ── Standalone manual dial widget (Aircall / non-Alternate Messenger) ─────────────
     // Remove any existing manual dial widget
     document.getElementById('dw-manual-dial')?.remove();
 
@@ -827,7 +874,7 @@ export function showManualDialWidget(options = {}) {
     // Detect provider from global config (standalone Aircall widget path)
     const cfg = window._dialerConfig || {};
     const _legacyProvider = (cfg.provider || 'aircall').toLowerCase();
-    const providerLabel = _legacyProvider === 'aircall' ? 'Aircall' : _legacyProvider === 'rcm' ? 'RCM' : 'Provider';
+    const providerLabel = _legacyProvider === 'aircall' ? 'Aircall' : _legacyProvider === 'messenger' ? 'Alternate Messenger' : 'Provider';
     const accentColor = _legacyProvider === 'aircall' ? '#00b388' : '#7c3aed';
 
     el.innerHTML = `
@@ -915,7 +962,7 @@ export function showManualDialWidget(options = {}) {
         } catch { tzLabel.textContent = ''; }
     });
 
-    // Mode selection styling (RCM only)
+    // Mode selection styling (Alternate Messenger only)
     el.querySelectorAll('.dw-md-mode-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             el.querySelectorAll('.dw-md-mode-btn').forEach(b => {
@@ -952,11 +999,11 @@ export function showManualDialWidget(options = {}) {
         const phone = input.value.trim();
         if (!phone) { input.style.borderColor = '#f87171'; setTimeout(() => input.style.borderColor = '', 1500); return; }
 
-        // BUG-3 FIX: Route RCM manual dials through the unified mode selector modal
+        // BUG-3 FIX: Route Alternate Messenger manual dials through the unified mode selector modal
         // (same "Phone Bridge / Browser Call" modal used by lead 📞 buttons).
         // Aircall always uses 'bridge' mode (no browser calls).
         let callMode = 'bridge';
-        if (provider === 'rcm' && typeof window._showCallModeSelector === 'function') {
+        if (provider === 'messenger' && typeof window._showCallModeSelector === 'function') {
             // Close the manual dial widget first so the modal isn't obscured
             inner.style.opacity = '0';
             inner.style.transform = 'translateY(10px) scale(0.95)';

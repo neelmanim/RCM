@@ -40,4 +40,18 @@ describe('ReleaseNotesSection', () => {
     expect(screen.getByText('Small follow-up fix')).toBeInTheDocument(); // minor one-liner
     expect(screen.getByText('Another small fix')).toBeInTheDocument();
   });
+
+  it('renders a summary-only entry as a one-liner regardless of its `kind` label, not just kind==="minor" (RCA 2026-08-19: v11.5.1 shipped with kind:"patch" + summary/no-items, which the old kind==="minor" check missed, falling through to FullEntry and crashing on entry.items.map)', () => {
+    render(<ReleaseNotesSection releases={[
+      { version: 'v11.5.1', date: '19 Aug 2026', family: '11.5', kind: 'patch', tags: [{ label: '🐛 FIX', variant: 'danger' }], summary: 'Some patch summary' },
+    ]} />);
+    expect(screen.getByText('Some patch summary')).toBeInTheDocument();
+  });
+
+  it('renders a family-less, summary-only entry as a one-liner instead of crashing the whole Help Hub (RCA 2026-09-28 live: v12.7.11 shipped with no `family` and only `summary`/no `items` — the ungrouped branch called FullEntry unconditionally, threw on entry.items.map(undefined), and blanked the entire page for every user, not just that one entry)', () => {
+    render(<ReleaseNotesSection releases={[
+      { version: 'v12.7.11', date: '28 Sep 2026', kind: 'patch', tags: [{ label: '🐛 FIX', variant: 'danger' }], summary: 'A family-less patch summary' },
+    ]} />);
+    expect(screen.getByText('A family-less patch summary')).toBeInTheDocument();
+  });
 });

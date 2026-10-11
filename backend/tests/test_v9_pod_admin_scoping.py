@@ -7,7 +7,7 @@ daily digest, and metrics — verifying pod scoping and global_view toggle.
 import pytest
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
-from tests.conftest import create_test_user, create_test_lead, create_test_pod, create_test_call, create_test_status_log, create_test_upload_log
+from tests.conftest import create_test_user, create_test_lead, create_test_pod, create_test_call, create_test_status_log, create_test_upload_log, create_test_booking
 import models
 
 
@@ -320,8 +320,10 @@ class TestDailyDigestPodScoping:
         date = datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
         lead_in  = create_test_lead(db, email="dd5lead_in@test.com",  pod_id="test-pod-id")
         lead_out = create_test_lead(db, email="dd5lead_out@test.com", pod_id="other-pod-id")
-        create_test_status_log(db, lead_in.id,  "Calling", "Meeting Scheduled", changed_at=date)
-        create_test_status_log(db, lead_out.id, "Calling", "Meeting Scheduled", changed_at=date)
+        in_rep  = create_test_user(db, email="dd5in@test.com",  role="SDR", id="dd5-in",  pod_id="test-pod-id")
+        out_rep = create_test_user(db, email="dd5out@test.com", role="SDR", id="dd5-out", pod_id="other-pod-id")
+        create_test_booking(db, lead_in,  in_rep.id,  booked_at=date)     # meetings = bookings by the pod's own reps
+        create_test_booking(db, lead_out, out_rep.id, booked_at=date)
 
         res = client_as_pod_admin.get("/api/admin/analytics/daily-digest?date=2026-01-15")
         assert res.status_code == 200

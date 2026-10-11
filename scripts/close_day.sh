@@ -1,17 +1,20 @@
 #!/bin/bash
 # ============================================================================
-# 📓 Daily Context Capture Script — RCM
+# 📓 Daily Context Capture Script — Alternate CRM
 # ============================================================================
 #
 # Run this at the end of each working day to capture context and state.
 # Usage: ./scripts/close_day.sh [optional summary message]
+#        LOG_DATE=2026-10-06 ./scripts/close_day.sh "summary"   # retroactive close of a missed day
 #
 # What it captures:
 #   1. Date and time
 #   2. Git status (uncommitted changes, branch, recent commits)
-#   3. Test suite status (backend)
-#   4. Open TODOs/FIXMEs in changed files
-#   5. Your manual summary (interactive prompt or CLI argument)
+#   3. Open TODOs/FIXMEs in changed files
+#   4. Your manual summary (interactive prompt or CLI argument)
+#
+# This is a context snapshot, not a CI gate — it does not run the test
+# suite. Use scripts/pre-deploy-check.sh when you need test results.
 #
 # Output: Appends an entry to docs/PROJECT_JOURNAL.md
 # ============================================================================
@@ -37,13 +40,19 @@ DAILY_LOG_DIR="$PROJECT_ROOT/docs/daily_logs"
 mkdir -p "$DAILY_LOG_DIR"
 
 # Today's date
-TODAY=$(date "+%Y-%m-%d")
+# LOG_DATE=YYYY-MM-DD closes a day you forgot (the git status/commit sections still reflect NOW).
+if [ -n "${LOG_DATE:-}" ]; then
+    TODAY="$LOG_DATE"
+    DAY_OF_WEEK=$(date -j -f "%Y-%m-%d" "$LOG_DATE" "+%A" 2>/dev/null || date -d "$LOG_DATE" "+%A")
+else
+    TODAY=$(date "+%Y-%m-%d")
+    DAY_OF_WEEK=$(date "+%A")
+fi
 NOW=$(date "+%Y-%m-%d %H:%M:%S %Z")
-DAY_OF_WEEK=$(date "+%A")
 
 echo ""
 echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}║     📓 RCM — End of Day Capture        ║${NC}"
+echo -e "${BOLD}${CYAN}║     📓 Alternate CRM — End of Day Capture        ║${NC}"
 echo -e "${BOLD}${CYAN}║     $DAY_OF_WEEK, $TODAY                     ║${NC}"
 echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════╝${NC}"
 echo ""
@@ -61,22 +70,10 @@ GIT_CHANGED_FILES=$(git diff --name-only HEAD 2>/dev/null || echo "")
 GIT_STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || echo "")
 
 # ──────────────────────────────────────────────
-# 2. Backend Test Status — kick off now, collect after the prompts (step 5b).
-#    The full suite takes ~4min; running it here and waiting on it would mean
-#    staring at a spinner before you can even type your summary. Starting it
-#    in the background lets that wait overlap with the interactive prompts
-#    below instead.
-# ──────────────────────────────────────────────
-echo -e "${BLUE}🧪 Starting backend tests in background (full suite, ~4min)...${NC}"
-TEST_OUTPUT_FILE=$(mktemp)
-TEST_PID=""
-if [ -f "$PROJECT_ROOT/backend/pytest.ini" ]; then
-    ( cd "$PROJECT_ROOT/backend" && python3 -m pytest --tb=no -q > "$TEST_OUTPUT_FILE" 2>&1 || true ) &
-    TEST_PID=$!
-fi
-
-# ──────────────────────────────────────────────
-# 3. TODOs & FIXMEs in recently changed files
+# 2. TODOs & FIXMEs in recently changed files
+#    (No backend test run here — this script is a quick context snapshot for
+#    picking up tomorrow, not a CI gate. Run the suite yourself, or via
+#    pre-deploy-check.sh, when you actually need test results.)
 # ──────────────────────────────────────────────
 echo -e "${BLUE}📝 Scanning for TODOs/FIXMEs...${NC}"
 TODOS=""
@@ -95,7 +92,7 @@ if [ -z "$TODOS" ]; then
 fi
 
 # ──────────────────────────────────────────────
-# 4. Collect manual summary
+# 3. Collect manual summary
 # ──────────────────────────────────────────────
 if [ $# -gt 0 ]; then
     SUMMARY="$*"
@@ -124,7 +121,7 @@ else
 fi
 
 # ──────────────────────────────────────────────
-# 5. Collect carry-forward context
+# 4. Collect carry-forward context
 # ──────────────────────────────────────────────
 echo ""
 echo -e "${YELLOW}${BOLD}What needs to carry forward to tomorrow? (press Enter twice to finish)${NC}"
@@ -153,23 +150,7 @@ if [ -z "$CARRY_FORWARD" ]; then
 fi
 
 # ──────────────────────────────────────────────
-# 5b. Collect backend test result (started in background in step 2)
-# ──────────────────────────────────────────────
-TEST_RESULT="skipped"
-if [ -n "$TEST_PID" ]; then
-    if kill -0 "$TEST_PID" 2>/dev/null; then
-        echo ""
-        echo -e "${BLUE}🧪 Still running backend tests, waiting...${NC}"
-    fi
-    wait "$TEST_PID" 2>/dev/null || true
-    TEST_RESULT=$(tail -3 "$TEST_OUTPUT_FILE")
-else
-    TEST_RESULT="No pytest.ini found — skipped"
-fi
-rm -f "$TEST_OUTPUT_FILE"
-
-# ──────────────────────────────────────────────
-# 6. Build the daily log entry
+# 5. Build the daily log entry
 # ──────────────────────────────────────────────
 DAILY_LOG_FILE="$DAILY_LOG_DIR/$TODAY.md"
 
@@ -196,11 +177,6 @@ $(if [ -n "$GIT_STAGED_FILES" ]; then echo "- **Staged files:**"; echo "$GIT_STA
 $GIT_LAST_5_COMMITS
 \`\`\`
 
-## 🧪 Test Results
-\`\`\`
-$TEST_RESULT
-\`\`\`
-
 ## 📌 TODOs/FIXMEs in Changed Files
 $(echo -e "$TODOS")
 
@@ -208,7 +184,7 @@ $(echo -e "$TODOS")
 ENTRY_END
 
 # ──────────────────────────────────────────────
-# 7. Update PROJECT_JOURNAL.md with reference
+# 6. Update PROJECT_JOURNAL.md with reference
 # ──────────────────────────────────────────────
 if [ -f "$JOURNAL" ]; then
     # Insert the daily summary reference into the journal after the DAILY_LOGS_START marker.
@@ -216,7 +192,6 @@ if [ -f "$JOURNAL" ]; then
     JOURNAL_ENTRY="### $TODAY ($DAY_OF_WEEK)
 $(echo -e "$SUMMARY" | head -3)
 **Carry-forward:** $(echo -e "$CARRY_FORWARD" | head -2 | tr '\n' ' ')
-**Tests:** $(echo "$TEST_RESULT" | tail -1)
 **Uncommitted:** $GIT_UNCOMMITTED files | **Branch:** \`$GIT_BRANCH\`
 > Full log: [daily_logs/$TODAY.md](daily_logs/$TODAY.md)"
 
@@ -238,7 +213,7 @@ $(echo -e "$SUMMARY" | head -3)
 fi
 
 # ──────────────────────────────────────────────
-# 8. Release notes check — warn if main was updated today without a release note
+# 7. Release notes check — warn if main was updated today without a release note
 # ──────────────────────────────────────────────
 MAIN_COMMITS_TODAY=$(git log origin/main --since="$TODAY 00:00:00" --oneline 2>/dev/null | wc -l | tr -d ' ')
 RELEASES_FILE="$PROJECT_ROOT/docs/RELEASES.md"
@@ -260,7 +235,7 @@ elif [[ "$MAIN_COMMITS_TODAY" -gt 0 ]]; then
 fi
 
 # ──────────────────────────────────────────────
-# 9. Done!
+# 8. Done!
 # ──────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════╗${NC}"

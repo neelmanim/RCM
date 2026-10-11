@@ -1,4 +1,4 @@
-# Production Image for RCM
+# Production Image for Alternate Messenger CRM
 FROM python:3.9-slim
 
 WORKDIR /app
@@ -27,12 +27,25 @@ WORKDIR /app/backend
 
 # Standard port for Render/Heroku (overridable via ENV)
 ENV PORT=10000
+# Staging OOM RCA 2026-10-06: measured on staging, most of the scheduler
+# worker's climb was heap Python had already freed but glibc kept (a
+# malloc_trim gave back 23 of 39 MB). Fewer per-thread malloc arenas keeps
+# that from fanning out across every thread that ever ran.
+ENV MALLOC_ARENA_MAX=2
 EXPOSE 10000
 
-# Run uvicorn with proxy headers and forwarded IPs enabled for production
-# Single worker: in-process TTL cache (cache.py) is shared across all requests.
-# Multi-worker would isolate memory per process = cache misses on every request.
-# For a small CRM (~10 concurrent users), 1 worker + cache >> 4 workers + no cache.
-# Single worker: in-process TTL cache shared across all requests (no Redis needed).
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+# RCA 2026-10-01: single worker meant one request blocked on a slow external
+# call (Upstash, an AI call, anything) consumed 100% of the app's capacity —
+# every other request, even unrelated ones hitting only the (idle) database,
+# queued behind it. The original single-worker reasoning ("multi-worker would
+# isolate the in-process TTL cache per process = cache misses on every
+# request") predates cache.py's Redis/Upstash layer, which is already shared
+# across workers — so that reasoning no longer holds. 2 workers, not more:
+# DB pool_size=8+max_overflow=15 per worker (database.py) already uses ~60%
+# of Postgres's 103-connection ceiling at 2 workers; go higher only alongside
+# shrinking the per-worker pool size. journey_engine's tick() already claims
+# work via SELECT...FOR UPDATE SKIP LOCKED (engine.py), so running it from
+# both workers is safe — no duplicate sends.
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2 --proxy-headers --forwarded-allow-ips='*'
+
 

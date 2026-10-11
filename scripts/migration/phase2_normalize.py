@@ -4,7 +4,7 @@ Phase 2: Normalize & Filter
 ============================
 Reads all 12 raw CSVs, normalizes to a unified schema, and filters out:
   - Rows with no phone number
-  - Rows whose assigned SDR is NOT in RCM
+  - Rows whose assigned SDR is NOT in Alternate CRM
   
 Produces:
   - data/normalized_filtered.csv   (clean, unified records)
@@ -369,7 +369,7 @@ SHEET_CONFIG = [
     ("03_sf_export_tanya.csv",   "col_a",   None),
     ("04_mixed_gauri.csv",       "col_a",   None),
     ("05_enriched_outbound.csv", "named",   "Assigned SDR"),
-    ("06_rcm_tier.csv",   "named",   "SDR"),
+    ("06_messenger_tier.csv",   "named",   "SDR"),
     ("07_event_gauri.csv",       "named",   "Assigned to"),
     ("08_fresh_outbound.csv",    "named",   "Assigned SDR"),
     ("09_sql_won_tracker.csv",   "named",   "Meeting Set By"),

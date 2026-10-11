@@ -1,9 +1,14 @@
 # ── routes/pod_routes.py — POD team management ────────────────────────────────
+from collections import defaultdict
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+import ownership_history as oh
+import access_db
 import models
 from models import ACTIVE_STATUSES
 from database import get_db
@@ -26,37 +31,100 @@ def _validate_timezone(tz):
     return tz
 
 
-def _pod_to_dict(pod, db):
-    """Serialize a Pod with its admins (list) and member details."""
-    members = db.query(models.User).filter(models.User.pod_id == pod.id).all()
-    # Fetch all Pod Admins for this pod from the junction table
-    pod_admin_rows = (
-        db.query(models.PodAdmin, models.User)
-        .join(models.User, models.User.id == models.PodAdmin.user_id)
-        .filter(models.PodAdmin.pod_id == pod.id)
+def _pod_activity_stats(db, member_ids):
+    """Per-member active-lead count + staleness buckets, one bulk query for
+    the whole pod (not a per-member relationship load) — feeds the roster
+    drilldown a Pod Admin uses to see whose leads have gone untouched."""
+    stats = {mid: {"active_leads": 0, "stale_24h": 0, "stale_72h": 0} for mid in member_ids}
+    if not member_ids:
+        return stats
+    rows = (
+        db.query(models.lead_assignments.c.user_id, models.Lead.status_changed_at)
+        .join(models.Lead, models.Lead.id == models.lead_assignments.c.lead_id)
+        .filter(models.lead_assignments.c.user_id.in_(member_ids))
+        .filter(models.Lead.status.in_(ACTIVE_STATUSES))
+        .filter(models.Lead.deleted_at.is_(None))
         .all()
     )
-    admins = [
-        {
-            "id":          pa.user_id,
-            "name":        u.name,
-            "email":       u.email,
-            "assigned_at": str(pa.assigned_at) if pa.assigned_at else None,
-        }
-        for pa, u in pod_admin_rows
-    ]
+    now = datetime.now(timezone.utc)
+    for user_id, status_changed_at in rows:
+        s = stats[user_id]
+        s["active_leads"] += 1
+        if status_changed_at:
+            changed = status_changed_at if status_changed_at.tzinfo else status_changed_at.replace(tzinfo=timezone.utc)
+            hours = (now - changed).total_seconds() / 3600
+            if hours >= 72:
+                s["stale_72h"] += 1
+            elif hours >= 24:
+                s["stale_24h"] += 1
+    return stats
+
+
+def _bulk_assigned_lead_counts(db, member_ids):
+    """All-time assigned-lead count (any status) per user, one query — was a
+    per-member lazy relationship load (len(m.assigned_leads)) before."""
+    if not member_ids:
+        return {}
+    rows = (
+        db.query(models.lead_assignments.c.user_id, func.count(models.lead_assignments.c.lead_id))
+        .filter(models.lead_assignments.c.user_id.in_(member_ids))
+        .group_by(models.lead_assignments.c.user_id)
+        .all()
+    )
+    return dict(rows)
+
+
+def _pod_to_dict(pod, db, members=None, admins=None, activity=None, assigned_counts=None):
+    """Serialize a Pod with its admins (list) and member details.
+
+    The four optional params let a caller listing many pods (list_pods)
+    precompute them ONCE across every pod instead of once per pod — the
+    per-pod queries here were the actual cause of the Team Roster's slow
+    load with more than a couple of pods. Single-pod call sites (create/
+    update/delete/add-member/etc.) omit them and get the old, simpler
+    one-pod-at-a-time behavior.
+    """
+    if members is None:
+        members = db.query(models.User).filter(models.User.pod_id == pod.id).all()
+    member_ids = [m.id for m in members]
+    if activity is None:
+        activity = _pod_activity_stats(db, member_ids)
+    if assigned_counts is None:
+        assigned_counts = _bulk_assigned_lead_counts(db, member_ids)
+    if admins is None:
+        pod_admin_rows = (
+            db.query(models.PodAdmin, models.User)
+            .join(models.User, models.User.id == models.PodAdmin.user_id)
+            .filter(models.PodAdmin.pod_id == pod.id)
+            .all()
+        )
+        admins = [
+            {
+                "id":          pa.user_id,
+                "name":        u.name,
+                "email":       u.email,
+                "assigned_at": pa.assigned_at.isoformat() if pa.assigned_at else None,
+            }
+            for pa, u in pod_admin_rows
+        ]
     return {
         "id":           pod.id,
         "name":         pod.name,
         "timezone":     pod.timezone,
         "admins":       admins,
-        "created_at":   str(pod.created_at) if pod.created_at else None,
+        "created_at":   pod.created_at.isoformat() if pod.created_at else None,
         "members": [{
             "id":    m.id,
             "name":  m.name,
             "email": m.email,
             "role":  m.role,
-            "assigned_leads": len(m.assigned_leads)
+            "assigned_leads": assigned_counts.get(m.id, 0),
+            # Active (non-terminal) leads and how long they've sat untouched —
+            # distinct from assigned_leads above, which counts every lead ever
+            # assigned regardless of status.
+            "active_leads": activity[m.id]["active_leads"],
+            "stale_24h":    activity[m.id]["stale_24h"],
+            "stale_72h":    activity[m.id]["stale_72h"],
         } for m in members],
         "member_count": len(members)
     }
@@ -83,7 +151,39 @@ def list_pods(user: dict = Depends(require_admin), db: Session = Depends(get_db)
             pods = db.query(models.Pod).filter(models.Pod.id.in_(admin_pod_ids)).all()
         else:
             pods = []
-    return [_pod_to_dict(p, db) for p in pods]
+
+    if not pods:
+        return []
+
+    pod_ids = [p.id for p in pods]
+    all_members = db.query(models.User).filter(models.User.pod_id.in_(pod_ids)).all()
+    members_by_pod = defaultdict(list)
+    for m in all_members:
+        members_by_pod[m.pod_id].append(m)
+    member_ids = [m.id for m in all_members]
+    activity = _pod_activity_stats(db, member_ids)
+    assigned_counts = _bulk_assigned_lead_counts(db, member_ids)
+
+    admin_rows = (
+        db.query(models.PodAdmin, models.User)
+        .join(models.User, models.User.id == models.PodAdmin.user_id)
+        .filter(models.PodAdmin.pod_id.in_(pod_ids))
+        .all()
+    )
+    admins_by_pod = defaultdict(list)
+    for pa, u in admin_rows:
+        admins_by_pod[pa.pod_id].append({
+            "id":          pa.user_id,
+            "name":        u.name,
+            "email":       u.email,
+            "assigned_at": pa.assigned_at.isoformat() if pa.assigned_at else None,
+        })
+
+    return [
+        _pod_to_dict(p, db, members=members_by_pod[p.id], admins=admins_by_pod[p.id],
+                     activity=activity, assigned_counts=assigned_counts)
+        for p in pods
+    ]
 
 
 @router.post("")
@@ -241,14 +341,16 @@ def add_pod_member(pod_id: str, body: dict, user: dict = Depends(require_admin),
 
     # Pod Admin can only manage their own pod
     if user.get("role") == "Pod Admin":
-        admin_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
-        if not admin_user or admin_user.pod_id != pod_id:
+        if (access_db.pod_of(user)) != pod_id:
             raise HTTPException(status_code=403, detail="Pod Admin can only manage their own POD")
 
     user_id = body.get("user_id")
     member = db.query(models.User).filter(models.User.id == user_id).first()
     if not member:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.get("role") == "Pod Admin" and (member.role not in ("SDR", "AE") or (member.pod_id and member.pod_id != pod_id)):
+        # v13.12.1: a Pod Admin could pull in any user id — admins, or reps (and their leads) from another pod
+        raise HTTPException(status_code=403, detail="Pod Admins can only add reps who aren't in another POD.")
 
     # Pod purity enforcement: no mixed SDR+AE pods
     if member.role in ("SDR", "AE"):
@@ -284,6 +386,13 @@ def add_pod_member(pod_id: str, body: dict, user: dict = Depends(require_admin),
             moved += 1
 
     db.commit()
+
+    # Bust the /api/admin/users cache — otherwise the new POD is invisible in
+    # the Users list for up to the cache TTL, same gap as add/remove Pod
+    # Admin above (RCA 2026-07-11) but never applied here.
+    from cache import invalidate
+    invalidate('users')
+
     msg = f"{member.name} added to pod '{pod.name}'"
     if moved:
         msg += f". {moved} active lead(s) moved to this pod."
@@ -313,6 +422,10 @@ def remove_pod_member(pod_id: str, member_id: str, user: dict = Depends(require_
             cleared += 1
 
     db.commit()
+
+    from cache import invalidate
+    invalidate('users')
+
     msg = f"{member.name} removed from pod"
     if cleared:
         msg += f". {cleared} active lead(s) are now unaffiliated."
@@ -321,9 +434,7 @@ def remove_pod_member(pod_id: str, member_id: str, user: dict = Depends(require_
 
 @router.post("/{pod_id}/assign-leads")
 def assign_leads_to_pod(pod_id: str, body: dict, user: dict = Depends(require_super_admin), db: Session = Depends(get_db)):
-    """Assign leads to a POD. Leads are distributed to POD members (SDRs or AEs) respecting lead cap."""
-    from routes._admin_helpers import _active_lead_count, _get_active_lead_cap
-
+    """Assign leads to a POD. Leads are distributed to POD members (SDRs or AEs) via round-robin."""
     pod = db.query(models.Pod).filter(models.Pod.id == pod_id).first()
     if not pod:
         raise HTTPException(status_code=404, detail="Pod not found")
@@ -359,46 +470,19 @@ def assign_leads_to_pod(pod_id: str, body: dict, user: dict = Depends(require_su
 
     assigned = 0
     skipped = 0
-    sdr_idx = 0
     sdr_count = len(pod_sdrs)
-    full_sdrs = set()
 
-    for batch in assignment_batches:
-        if len(full_sdrs) == sdr_count:
-            skipped += len(batch)
-            continue
-
-        placed = False
-        for attempt in range(sdr_count):
-            sdr = pod_sdrs[(sdr_idx + attempt) % sdr_count]
-            if sdr.id in full_sdrs:
-                continue
-            cap = _get_active_lead_cap(db, sdr)
-            current = _active_lead_count(sdr)
-            if cap > 0 and current >= cap:
-                full_sdrs.add(sdr.id)
-                continue
-
-            batch_assigned = 0
-            for lead in batch:
-                if cap > 0 and (current + batch_assigned) >= cap:
-                    break
-                if models.assign_lead(sdr, lead):
-                    batch_assigned += 1
-                    # NOTE: AE cascade to Pod Admin removed (v10).
-                    # Pod Admins see AE leads via pod scoping in lead_helpers.py.
-
-            assigned += batch_assigned
-            skipped += len(batch) - batch_assigned
-            sdr_idx = (sdr_idx + attempt + 1) % sdr_count
-            placed = True
-            break
-
-        if not placed:
-            skipped += len(batch)
+    for i, batch in enumerate(assignment_batches):
+        sdr = pod_sdrs[i % sdr_count]
+        batch_assigned = 0
+        for lead in batch:
+            if models.assign_lead(sdr, lead, reason=oh.R_POD, actor_id=user["sub"]):
+                batch_assigned += 1
+                # NOTE: AE cascade to Pod Admin removed (v10).
+                # Pod Admins see AE leads via pod scoping in lead_helpers.py.
+        assigned += batch_assigned
+        skipped += len(batch) - batch_assigned
 
     db.commit()
     msg = f"{assigned} leads assigned to pod '{pod.name}'"
-    if skipped:
-        msg += f". {skipped} skipped (members at capacity)."
     return {"message": msg, "assigned": assigned, "skipped": skipped}

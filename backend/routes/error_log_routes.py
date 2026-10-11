@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+import access_db
 import models
 from database import get_db
 from routes.auth_routes import get_current_user
@@ -144,7 +145,7 @@ def list_error_logs(
 
         total = q.count()
         pages = max(1, (total + per_page - 1) // per_page)
-        items = q.order_by(desc(models.ErrorLog.created_at)).offset((page - 1) * per_page).limit(per_page).all()
+        items = q.order_by(desc(models.ErrorLog.created_at), desc(models.ErrorLog.id)).offset((page - 1) * per_page).limit(per_page).all()
 
         is_super = (current_user.get("role") or "").lower() in ("super_admin", "super admin", "admin")
 
@@ -209,12 +210,15 @@ def resolve_error_log(
 ):
     """Mark an error log as resolved. Admin/Pod Admin only. Idempotent."""
     role = (current_user.get("role") or "").lower()
-    if role in ("sdr", "ae"):
-        raise HTTPException(status_code=403, detail="SDRs and AEs cannot resolve error logs")
+    if role not in ("super admin", "admin", "pod admin"):      # v13.12.1: CSMs could resolve too; docstring says admins only
+        raise HTTPException(status_code=403, detail="Only admins can resolve error logs")
 
     entry = db.query(models.ErrorLog).filter(models.ErrorLog.id == error_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Error log not found")
+    if role == "pod admin" and not db.query(models.User.id).filter(
+            models.User.id == entry.user_id, models.User.pod_id == (access_db.pod_of(current_user))).first():
+        raise HTTPException(status_code=404, detail="Error log not found")     # another pod's error
 
     # Idempotent: already resolved → just return success
     if not entry.resolved:

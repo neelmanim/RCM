@@ -1,0 +1,5 @@
+READ docs/AGENT_PROTOCOL.md FIRST.
+It is the single source of truth for all rules, environments, deployment checklists, git workflow, and documentation requirements.
+DO NOT read MYAGENT.md, Dev_Protocol.md, or DEPLOYMENT_PROTOCOL.md — they are deprecated.
+DO NOT push to main without explicit user approval.
+Run `bash scripts/pre-deploy-check.sh` before ANY merge to main.

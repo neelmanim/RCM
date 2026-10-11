@@ -1,8 +1,8 @@
 # ── aircall_messaging_provider.py — Aircall native Messaging API ───────────
 """
 Implements MessagingProvider for Aircall's own SMS/WhatsApp Messaging API —
-a second, independent provider alongside RCM Built-in Messaging (see
-rcm_messaging_provider.py). Reuses the same account credentials
+a second, independent provider alongside Alternate Messenger/Messaging Provider (see
+messaging_provider_provider.py). Reuses the same account credentials
 already stored for Aircall calling (SyncSettings.dialer_api_id/dialer_api_token).
 
 API Docs: https://developer.aircall.io/api-references/ (Messages, WhatsApp)
@@ -16,7 +16,7 @@ against /numbers/:number_id/messages + /numbers/:number_id/whatsapp_messages
 scheme), another described an OAuth Bearer token against
 /messages/send/whatsapp/native with different field names. This has NOT been
 verified against a live send. Confirm with a real test message — same
-deferred-verification pattern already used for RCM's WhatsApp send —
+deferred-verification pattern already used for Alternate Messenger's WhatsApp send —
 before flipping SyncSettings.messaging_provider to "aircall" in production.
 """
 import base64
@@ -42,10 +42,57 @@ class AircallMessagingProvider(MessagingProvider):
 
     provider_name = "aircall"
 
-    def __init__(self, api_id: str, api_token: str, number_id: str):
+    def __init__(self, api_id: str, api_token: str, number_id: str = ""):
         self._api_id = api_id
         self._api_token = api_token
+        # Org-wide fallback only. The number a message actually goes out from is
+        # normally resolved per SDR from Aircall itself — see
+        # resolve_number_for_email().
         self._number_id = number_id
+
+    def resolve_number_for_email(self, email: str) -> str:
+        """The Aircall number_id this SDR should send from, discovered from
+        Aircall rather than typed in by an admin.
+
+        Aircall already knows which numbers each user owns, and calling has
+        always used exactly this (aircall_provider.initiate_call picks
+        default_number_id, else the first assigned number). Messaging asking an
+        admin to hand-type one org-wide Number ID instead meant every SDR sent
+        from the same number, and nobody could send until someone found that ID.
+
+        Cached because the lookup behind it is a paginated scan of /users;
+        returns "" when the user isn't in Aircall or owns no numbers, and the
+        caller falls back to the org-wide number.
+        """
+        if not email:
+            return ""
+        from cache import get_cached, set_cached
+        cached = get_cached("aircall_msg_number", email.lower())
+        if cached is not None:
+            return cached
+
+        number_id = ""
+        try:
+            # Reuse the calling provider's own email->user lookup rather than a
+            # second implementation of Aircall's pagination.
+            from aircall_provider import AircallDialerProvider
+            user = AircallDialerProvider(
+                api_id=self._api_id, api_token=self._api_token,
+            )._find_user_by_email(email)
+            if user:
+                default_id = user.get("default_number_id")
+                numbers = user.get("numbers") or []
+                if default_id:
+                    number_id = str(default_id)
+                elif numbers:
+                    first = numbers[0]
+                    number_id = str(first.get("id") if isinstance(first, dict) else first)
+        except Exception as e:
+            logger.warning("[AircallMessaging] number lookup for %s failed: %s", email, e)
+            return ""   # not cached — a transient API failure should be retried
+
+        set_cached("aircall_msg_number", email.lower(), number_id, ttl=600)
+        return number_id
 
     def _auth_header(self) -> dict:
         creds = base64.b64encode(f"{self._api_id}:{self._api_token}".encode()).decode()
@@ -80,7 +127,10 @@ class AircallMessagingProvider(MessagingProvider):
                 success=False, provider=self.provider_name, channel=channel,
                 error="Either 'text' or 'template_name' must be provided.",
             )
-        path = f"/numbers/{self._number_id}/{'whatsapp_messages' if channel == 'whatsapp' else 'messages'}"
+        # sender_id is the resolved per-SDR number_id (messaging_service does the
+        # resolving); fall back to the org-wide one when it couldn't.
+        number_id = sender_id or self._number_id
+        path = f"/numbers/{number_id}/{'whatsapp_messages' if channel == 'whatsapp' else 'messages'}"
         body = {"to": phone}
         if template_name:
             body["template_id"] = template_name
@@ -100,7 +150,7 @@ class AircallMessagingProvider(MessagingProvider):
     def list_recent_conversations(self, count: int = 100) -> list[ConversationSummary]:
         """
         ponytail: Aircall has no thread/conversation grouping the way
-        RCM's Converse Desk does — this groups individual messages
+        Alternate Messenger's Converse Desk does — this groups individual messages
         from /numbers/:number_id/messages by counterpart phone number as a
         best-effort stand-in. Aircall's Messages resource also supports real
         webhooks (the same mechanism the existing call integration already

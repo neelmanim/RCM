@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # scripts/pre-deploy-check.sh
-# RCM CRM — Interactive Pre-Deploy Checklist
+# Alternate CRM CRM — Interactive Pre-Deploy Checklist
 #
 # Run this BEFORE merging develop → main.
 # Usage: bash scripts/pre-deploy-check.sh
@@ -32,14 +32,21 @@ ask()    {
       echo "y"
     fi
   else
-    echo -e "\n  ${YELLOW}?${NC} $1"
+    # RCA 2026-08-24: this line used to write to stdout, and since the whole
+    # function is invoked via `$(ask ...)` command substitution, its output
+    # got prepended into the captured answer -- so `$ans` was never just
+    # "y"/"n"/"skip", it was "\n  ? <question text>\n<answer>", and every
+    # `[[ "$ans" == "y" ]]` comparison downstream silently fell through to
+    # the else/fail branch regardless of what was actually typed. >&2 keeps
+    # the question visible on screen without polluting the captured value.
+    echo -e "\n  ${YELLOW}?${NC} $1" >&2
     read -r -p "    [y/n/skip]: " ans
     echo "$ans"
   fi
 }
 
 echo ""
-echo -e "${BOLD}RCM CRM — Pre-Deploy Checklist${NC}"
+echo -e "${BOLD}Alternate CRM CRM — Pre-Deploy Checklist${NC}"
 echo -e "Running at: $(date '+%Y-%m-%d %H:%M %Z')"
 echo ""
 
@@ -102,7 +109,22 @@ else
 fi
 
 echo "  Checking for ALTER TABLE without lock_timeout..."
-if grep -A2 "ALTER TABLE" backend/migrations.py | grep -v "lock_timeout\|IF NOT EXISTS\|ADD COLUMN\|--\|#" | grep "ALTER COLUMN\|ALTER TABLE.*TYPE" > /dev/null 2>&1; then
+# RCA 2026-09-04: piping `grep -A2` into `grep -v lock_timeout` filters line by
+# line — it drops the lock_timeout line itself but leaves the ALTER line right
+# next to it untouched, so a real guard 1-2 lines above (migrations.py's
+# enum-conversion loop: `SET LOCAL lock_timeout` then `ALTER ... TYPE`) was
+# never actually detected and this warned on every single run. Check the 3
+# lines immediately before each match for lock_timeout instead of grep -v'ing
+# a flattened context blob.
+if awk '
+  { buf[NR % 4] = $0 }
+  ($0 ~ /ALTER COLUMN/ || $0 ~ /ALTER TABLE.*TYPE/) && $0 !~ /IF NOT EXISTS|ADD COLUMN/ {
+    guarded = 0
+    for (i = 1; i <= 3; i++) if (buf[(NR - i) % 4] ~ /lock_timeout/) guarded = 1
+    if (!guarded) { print; found = 1 }
+  }
+  END { exit found ? 0 : 1 }
+' backend/migrations.py > /dev/null 2>&1; then
   warn "Found ALTER TABLE TYPE without visible lock_timeout — verify manually"
 else
   ok "No unguarded ALTER TABLE TYPE statements found"
@@ -144,8 +166,8 @@ fi
 # =============================================================================
 header "6. Staging Verification"
 
-STAGING_URL="https://rcm-frontend-staging.onrender.com"
-STAGING_API="https://rcm-crm-staging.onrender.com"
+STAGING_URL="https://messenger-frontend-staging.onrender.com"
+STAGING_API="https://messenger-crm-staging.onrender.com"
 
 echo "  Staging frontend: $STAGING_URL"
 echo "  Staging API:      $STAGING_API"

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Info } from 'lucide-react';
 import { TableRow, TableCell } from '../../../components/ui/Table';
+import { Checkbox } from '../../../components/ui/Checkbox';
 import { PriorityDot } from './PriorityDot';
 import { resolveLeadPhone } from '../columns';
 
@@ -25,13 +26,11 @@ export function LeadRow({ lead, columns, sdrs, isAdmin, assignMode, selected, on
     <TableRow onClick={() => onOpenLead(lead)}>
       {assignMode && (
         <TableCell className="w-8">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={selected}
             onClick={(e) => e.stopPropagation()}
             onChange={() => onToggleSelect(lead.id)}
             aria-label={`Select ${name}`}
-            className="w-4 h-4 rounded border-slate-300 accent-blue-600 focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:ring-offset-0"
           />
         </TableCell>
       )}

@@ -9,6 +9,7 @@ python-dotenv
 simple-salesforce
 pytest
 pytest-asyncio
+pytest-xdist
 openpyxl
 bleach
 faker>=20.0

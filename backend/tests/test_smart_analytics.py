@@ -18,10 +18,13 @@ Covers:
 """
 
 import json
+import time
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
+import models
+from conftest import create_test_user, create_test_lead, create_test_pod
 from services.smart_analytics import (
     validate_dsl,
     _resolve_period,
@@ -30,11 +33,149 @@ from services.smart_analytics import (
     _sdr_table_column,
     _trend_column,
     _normalise_query,
+    _q_conversion_rate,
     SmartAnalyticsError,
     SUPPORTED_METRICS,
     SUPPORTED_DIMENSIONS,
     SUPPORTED_PERIODS,
+    _fetch_best_groq_model,
+    _resolve_groq_model,
+    parse_nl_to_dsl,
 )
+
+
+# ─── _fetch_best_groq_model ───────────────────────────────────────────────────
+
+class TestFetchBestGroqModel:
+    """RCA 2026-08-20: every entry in _GROQ_MODEL_PREFERENCE had been
+    deprecated on a real account, so the fallback ran for real and its bare
+    "llama" in mid substring check picked meta-llama/llama-prompt-guard-2-22m
+    -- a safety classifier, not a chat model -- silently breaking every
+    ai-research and analytics call that resolved through it."""
+
+    def _mock_models_response(self, ids):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"data": [{"id": mid} for mid in ids]}
+        return resp
+
+    def test_picks_a_preferred_model_when_available(self):
+        with patch("services.smart_analytics.httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.get.return_value = \
+                self._mock_models_response(["llama-3.1-8b-instant", "meta-llama/llama-prompt-guard-2-22m"])
+            assert _fetch_best_groq_model("sk-fake") == "llama-3.1-8b-instant"
+
+    def test_excludes_a_guard_model_from_the_fallback(self):
+        # None of _GROQ_MODEL_PREFERENCE's entries are available -- only a
+        # guard model and a genuine (unlisted) chat model are.
+        with patch("services.smart_analytics.httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.get.return_value = \
+                self._mock_models_response(["meta-llama/llama-prompt-guard-2-22m", "llama-4-scout-17b"])
+            assert _fetch_best_groq_model("sk-fake") == "llama-4-scout-17b"
+
+    def test_returns_none_when_only_a_guard_model_is_available(self):
+        with patch("services.smart_analytics.httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.get.return_value = \
+                self._mock_models_response(["meta-llama/llama-prompt-guard-2-22m"])
+            assert _fetch_best_groq_model("sk-fake") is None
+
+    def test_exclude_skips_a_model_confirmed_dead_this_request(self):
+        # RCA 2026-08-20 (live): Groq's /models listing can claim a model is
+        # available when it's actually already been pulled from inference --
+        # confirmed with llama-3.3-70b-versatile, which kept showing up here
+        # and 404ing on every actual completion call. Without `exclude`,
+        # retrying after that 404 just re-picks the same broken entry.
+        with patch("services.smart_analytics.httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.get.return_value = \
+                self._mock_models_response(["llama-3.3-70b-versatile", "llama-3.1-70b-versatile"])
+            assert _fetch_best_groq_model("sk-fake") == "llama-3.3-70b-versatile"
+            assert _fetch_best_groq_model("sk-fake", exclude=frozenset({"llama-3.3-70b-versatile"})) == "llama-3.1-70b-versatile"
+
+    def test_stops_trusting_the_preference_order_once_something_already_failed(self):
+        # 2026-09-01 (live): llama-3.1-8b-instant, llama3-8b-8192, and
+        # llama-3.3-70b-versatile all showed up in /models as "available"
+        # and then ALL THREE 404'd as decommissioned on the real completions
+        # endpoint, one after another -- exhausting the caller's entire
+        # 3-attempt retry budget without ever reaching a model outside the
+        # curated preference list. Once `exclude` is non-empty (something
+        # already failed for real this request), the curated order must
+        # stop being authoritative -- a genuinely live model outside the
+        # list should be reachable after just ONE exclude, not after
+        # exhausting every remaining preference entry first.
+        with patch("services.smart_analytics.httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.get.return_value = \
+                self._mock_models_response([
+                    "llama-3.1-8b-instant",   # still in the preference list, Groq still lists it
+                    "llama3-8b-8192",         # ditto
+                    "brand-new-groq-model",   # not in the curated preference list at all
+                ])
+            result = _fetch_best_groq_model("sk-fake", exclude=frozenset({"llama-3.3-70b-versatile"}))
+        assert result == "brand-new-groq-model"
+
+
+# ─── _resolve_groq_model ──────────────────────────────────────────────────────
+
+class TestResolveGroqModelFallback:
+    """RCA 2026-08-20 (live, round 2): the last-resort fallback used to
+    hardcode a single model name, reintroducing the exact model `exclude`
+    was just told to avoid whenever live discovery found nothing else --
+    so a retry after a decommissioned-model error got the same model back
+    and silently gave up instead of retrying with something new."""
+
+    def test_fallback_skips_an_excluded_model_and_picks_the_next_preferred(self):
+        db = MagicMock()
+        db.query.return_value.first.return_value = None
+        with patch("services.smart_analytics._fetch_best_groq_model", return_value=None):
+            model = _resolve_groq_model(
+                "sk-fake", db, force_refresh=True, exclude=frozenset({"gemma2-9b-it"}),
+            )
+        assert model is not None
+        assert model != "gemma2-9b-it"
+
+    def test_fallback_returns_none_when_every_preference_entry_is_excluded(self):
+        from services.smart_analytics import _GROQ_MODEL_PREFERENCE
+        db = MagicMock()
+        db.query.return_value.first.return_value = None
+        with patch("services.smart_analytics._fetch_best_groq_model", return_value=None):
+            model = _resolve_groq_model(
+                "sk-fake", db, force_refresh=True, exclude=frozenset(_GROQ_MODEL_PREFERENCE),
+            )
+        assert model is None
+
+
+class TestParseNlToDslModelRetry:
+    """RCA 2026-08-20 (live, round 2): mirrors ai_research_routes.py's fix --
+    a single one-shot retry after a decommissioned/not-found 400 wasn't
+    enough live, when Groq's /models listing offered a second stale name
+    right after the first swap."""
+
+    def test_retries_through_two_stale_models_before_succeeding(self):
+        db = MagicMock()
+        settings = MagicMock(llm_api_key="sk-fake-key", llm_model="model_1")
+        db.query.return_value.first.return_value = settings
+
+        dead_resp_1 = MagicMock(status_code=400, text='{"error":{"message":"model_1 does not exist"}}')
+        dead_resp_2 = MagicMock(status_code=400, text='{"error":{"message":"model_2 has been decommissioned"}}')
+        success_resp = MagicMock(status_code=200)
+        success_resp.json.return_value = {
+            "choices": [{"message": {"content": '{"metric": "connect_rate", "dimension": "sdr", "period": "last_7_days"}'}}]
+        }
+
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.post.side_effect = [dead_resp_1, dead_resp_2, success_resp]
+
+        with patch("services.smart_analytics.httpx.Client", return_value=mock_client), \
+             patch("services.smart_analytics._resolve_groq_model", side_effect=["model_2", "model_3"]) as mock_resolve, \
+             patch("services.smart_analytics._dsl_get", return_value=None), \
+             patch("services.smart_analytics._dsl_set"):
+            result = parse_nl_to_dsl("show me connect rate by sdr", db)
+
+        assert result["metric"] == "connect_rate"
+        assert mock_resolve.call_count == 2
+        assert mock_resolve.call_args_list[0].kwargs["exclude"] == frozenset({"model_1"})
+        assert mock_resolve.call_args_list[1].kwargs["exclude"] == frozenset({"model_1", "model_2"})
+        assert mock_client.post.call_count == 3
 
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -488,6 +629,47 @@ class TestPermissions:
             assert r["own"] is True
 
 
+class TestConversionRatePodScoping:
+    """Phase 2 security fix: _q_conversion_rate's scalar (no group_by) branch
+    used to make pod and sdr_id mutually exclusive instead of conjunctive when
+    sdr_id was set — a Pod Admin naming an SDR from a DIFFERENT pod got that
+    SDR's true, unscoped conversion rate instead of an empty/zero result."""
+
+    def test_sdr_from_other_pod_does_not_leak_true_numbers(self, db):
+        pod_a = create_test_pod(db, name="Pod A")
+        pod_b = create_test_pod(db, name="Pod B")
+        sdr_b = create_test_user(db, email="sdrb@test.com", name="SDR B", role="SDR", pod_id=pod_b.id)
+
+        # SDR B has real leads/meetings in Pod B — a Pod Admin of Pod A must
+        # never see these numbers by naming SDR B directly.
+        lead = create_test_lead(db, email="leakcheck@example.com", pod_id=pod_b.id)
+        db.execute(models.lead_assignments.insert().values(user_id=sdr_b.id, lead_id=lead.id))
+        db.commit()
+
+        result = _q_conversion_rate(
+            db, group_by=None, pod=pod_a.id, sdr_id=sdr_b.id, batch_id=None,
+            start=None, end=None, reverse=False, limit=10,
+        )
+        # Conjunctive pod+sdr filter: SDR B has zero leads in Pod A, so this
+        # must be 0%, not SDR B's real (nonzero) org-wide rate.
+        assert result == [{"label": "Conversion Rate", "value": 0.0}]
+
+    def test_sdr_from_own_pod_still_works(self, db):
+        pod_a = create_test_pod(db, name="Pod A")
+        sdr_a = create_test_user(db, email="sdra@test.com", name="SDR A", role="SDR", pod_id=pod_a.id)
+        lead = create_test_lead(db, email="ownpod@example.com", pod_id=pod_a.id)
+        db.execute(models.lead_assignments.insert().values(user_id=sdr_a.id, lead_id=lead.id))
+        db.commit()
+
+        result = _q_conversion_rate(
+            db, group_by=None, pod=pod_a.id, sdr_id=sdr_a.id, batch_id=None,
+            start=None, end=None, reverse=False, limit=10,
+        )
+        # 1 lead in scope, 0 meetings — 0%, but must not error/leak on the
+        # conjunctive filter for the ordinary same-pod case.
+        assert result == [{"label": "Conversion Rate", "value": 0.0}]
+
+
 class TestSmartAnalyticsError:
     def test_error_has_code_and_message(self):
         err = SmartAnalyticsError("Test message", code="test_code")
@@ -675,3 +857,37 @@ class TestPinnedReports:
         resp = client.post(f"/api/admin/smart-analytics/reports/{report_id}/run")
         assert resp.status_code == 200
         assert resp.json()["metric"] == "meetings_scheduled"
+
+
+class TestCacheSweep:
+    """RCA 2026-08-26 (staging OOM): _dsl_cache/_result_cache are keyed on
+    high-cardinality inputs (free-text NL queries, dsl+pod+sdr+batch hashes)
+    that are rarely re-read after expiry — _cache_get's lazy delete-on-read
+    never frees them. _cache_set must sweep expired entries once the store
+    crosses the threshold, same shape as cache.py's existing fix."""
+
+    def test_sweep_evicts_expired_entries_once_over_threshold(self):
+        from services import smart_analytics as sa
+
+        store, lock = {}, sa.Lock()
+        # Fill past the threshold with already-expired entries.
+        for i in range(sa._CACHE_SWEEP_THRESHOLD + 1):
+            store[f"k{i}"] = (f"v{i}", 0.0)  # expires_at=0 → already expired
+
+        sa._cache_set(store, lock, "new_key", "new_val", ttl=60)
+
+        assert len(store) == 1
+        assert store["new_key"][0] == "new_val"
+
+    def test_sweep_keeps_unexpired_entries(self):
+        from services import smart_analytics as sa
+
+        store, lock = {}, sa.Lock()
+        store["fresh"] = ("still_good", time.time() + 3600)
+        for i in range(sa._CACHE_SWEEP_THRESHOLD + 1):
+            store[f"k{i}"] = (f"v{i}", 0.0)
+
+        sa._cache_set(store, lock, "new_key", "new_val", ttl=60)
+
+        assert "fresh" in store
+        assert store["fresh"][0] == "still_good"

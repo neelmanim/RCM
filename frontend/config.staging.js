@@ -9,5 +9,5 @@
 //   cp frontend/config.staging.js frontend/config.js   (for staging deploy)
 //
 window.__APP_CONFIG__ = {
-    API_BASE: "https://rcm-crm-staging.onrender.com"
+    API_BASE: "https://messenger-crm-staging.onrender.com"
 };

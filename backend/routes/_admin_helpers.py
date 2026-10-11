@@ -1,7 +1,7 @@
 # ── routes/_admin_helpers.py — Shared private helpers for admin sub-modules ──
 #
 # Extracted from admin_routes.py so that:
-#   - routes/pod_routes.py      can import _get_active_lead_cap, _active_lead_count
+#   - routes/admin_user_routes.py  can import _get_active_lead_cap, _active_lead_count
 #   - routes/ai_research_routes.py can import _get_or_create_sync_settings
 # without creating circular imports.
 #
@@ -13,16 +13,40 @@ from models import ACTIVE_STATUSES
 from sqlalchemy import func
 
 
+# ── Sortable list endpoints ──────────────────────────────────────────────────
+
+def resolve_sort(sort_by, columns, default_col=None):
+    """Turn a `sort_by` query param into an (order_by column, descending) pair.
+
+    `columns` maps the allowed sort keys to their SQLAlchemy column. A
+    `-`-prefixed key means descending; an unknown/missing key falls back to
+    `default_col` descending (or, with `default_col=None`, signals the caller
+    to leave its own default `order_by` untouched via a `None` column).
+    Shared by every route below that grew its own copy of this: journey_routes,
+    email_campaign_routes, report_routes, analytics_routes, admin_routes,
+    activity_monitor_routes, admin_upload_routes.
+    """
+    key = (sort_by or "").lstrip("-")
+    col = columns.get(key, default_col)
+    if col is None:
+        return None, False
+    desc = key not in columns or (sort_by or "").startswith("-")
+    return col, desc
+
+
 # ── SDR Lead Cap ─────────────────────────────────────────────────────────────
 
 def _get_active_lead_cap(db, user):
-    """Get the active lead cap for an SDR. Checks pod-level cap first, falls back to global default."""
-    if user.pod_id:
-        # Explicitly query the pod if the relationship isn't loaded (lazy-load edge case)
-        pod = user.pod if user.pod else db.query(models.Pod).filter(models.Pod.id == user.pod_id).first()
-        if pod and pod.active_lead_cap is not None:
-            return pod.active_lead_cap
-    # Fallback to global setting
+    """Get the SDR lead-cap value — always the single global setting.
+
+    RCA 2026-09-22: this used to be enforced (blocking bulk_assign,
+    assign_leads_to_pod, and CSV/Sheet upload-import once an SDR hit this
+    count) — that enforcement was removed org-wide as a deprecated feature.
+    The value now only feeds admin_user_routes.py's per-user `max_active`
+    display, which BulkActionBar.jsx uses to softly rank/label SDRs in the
+    manual assign picker (never blocks); `user` is unused but kept in the
+    signature since every caller passes it.
+    """
     settings = _get_or_create_sync_settings(db)
     return settings.active_lead_cap if settings.active_lead_cap is not None else 500
 
@@ -59,6 +83,14 @@ def _get_or_create_sync_settings(db) -> models.SyncSettings:
     return settings
 
 
+def get_conversation_min_seconds(db) -> int:
+    """The org's configured conversation-length threshold, used by both
+    models.dialer_call_connected() and models.dialer_call_is_conversation()
+    — shared so every call site passes the same real setting instead of
+    each one falling back to the hardcoded default independently."""
+    return _get_or_create_sync_settings(db).conversation_min_seconds or models.CONVERSATION_MIN_SECONDS
+
+
 # ── Email validation ─────────────────────────────────────────────────────────
 
 def _is_valid_email(val):
@@ -85,16 +117,21 @@ def _find_duplicate_lead(db, email=None, linkedin_url=None, person_linkedin=None
     repeatedly, and each duplicate local lead independently pushes to
     Salesforce as a brand-new Lead on every sync (see push_pending_leads_to_salesforce).
 
-    Returns the existing models.Lead if found, else None.
+    Returns the existing models.Lead if found, else None. Deleted leads and
+    Cadence Sandbox test leads never count: re-adding a deleted contact is
+    legitimate, and every sandbox lead shares the sandbox phone — matching
+    them blocked creation with "already exists" pointing at a lead nobody
+    can open.
     """
+    leads = lambda: models.exclude_test_leads(models.exclude_deleted_leads(db.query(models.Lead)))
     if email and _is_valid_email(email):
-        existing = db.query(models.Lead).filter(models.Lead.email == email).first()
+        existing = leads().filter(models.Lead.email == email).first()
         if existing:
             return existing
 
     if linkedin_url or person_linkedin:
         li = linkedin_url or person_linkedin
-        existing = db.query(models.Lead).filter(
+        existing = leads().filter(
             (models.Lead.linkedin_url == li) | (models.Lead.person_linkedin == li)
         ).first()
         if existing:
@@ -103,7 +140,7 @@ def _find_duplicate_lead(db, email=None, linkedin_url=None, person_linkedin=None
     if phone:
         phone_digits = ''.join(c for c in phone if c.isdigit())[-10:]
         if phone_digits and len(phone_digits) >= 7:
-            existing = db.query(models.Lead).filter(
+            existing = leads().filter(
                 models.Lead.phone.isnot(None),
                 func.right(func.regexp_replace(models.Lead.phone, r'[^0-9]', '', 'g'), 10) == phone_digits
             ).first()
@@ -114,7 +151,7 @@ def _find_duplicate_lead(db, email=None, linkedin_url=None, person_linkedin=None
     last = (last_name or "").strip()
     comp = (company or "").strip()
     if first and last and comp:
-        existing = db.query(models.Lead).filter(
+        existing = leads().filter(
             models.Lead.first_name.ilike(first),
             models.Lead.last_name.ilike(last),
             models.Lead.company.ilike(f"%{comp}%")
@@ -123,6 +160,38 @@ def _find_duplicate_lead(db, email=None, linkedin_url=None, person_linkedin=None
             return existing
 
     return None
+
+
+def duplicate_match_field(lead, email=None, linkedin_url=None, person_linkedin=None, phone=None) -> str:
+    """Which field made `lead` a duplicate — same tier order as _find_duplicate_lead."""
+    if email and (lead.email or "").lower() == email.lower():
+        return "email"
+    li = {(x or "").lower() for x in (linkedin_url, person_linkedin) if x}
+    if li & {(lead.linkedin_url or "").lower(), (lead.person_linkedin or "").lower()}:
+        return "LinkedIn profile"
+    digits = lambda v: "".join(c for c in (v or "") if c.isdigit())[-10:]
+    if phone and digits(phone) and digits(phone) == digits(lead.phone):
+        return "phone number"
+    return "name and company"
+
+
+def _is_placeholder_lead(lead) -> bool:
+    """True for a bare Lead auto-created by a dialer webhook/sync on an
+    unmatched inbound number (Aircall real-time webhook, Aircall/Klenty
+    nightly sync) — no real name on file yet, just whatever filler the
+    creating path used ("" / "Unknown" / "Caller").
+
+    RCA 2026-08-14 (LIVE): a call placed via Aircall to a brand-new number
+    auto-creates exactly this kind of row before the SDR gets a chance to
+    add the real lead. The SDR's subsequent POST /leads for the real contact
+    then hit _find_duplicate_lead's phone tier and was hard-blocked (409) —
+    so the real name was silently discarded and the placeholder became the
+    permanent record. Detecting this shape lets the caller enrich the
+    placeholder in place instead of blocking a legitimate Add Lead.
+    """
+    first = (lead.first_name or "").strip()
+    last = (lead.last_name or "").strip()
+    return not first and last in ("", "Unknown", "Caller")
 
 
 # ── Phone validation ─────────────────────────────────────────────────────────
@@ -154,14 +223,17 @@ def _lead_data_has_phone(lead_data):
 
 # ── Round-robin assignment ───────────────────────────────────────────────────
 
-def _assign_lead_round_robin(db, new_lead, pod_sdrs, batch_counts, company_sdr_map, company_key, cap):
+def _assign_lead_round_robin(db, new_lead, pod_sdrs, batch_counts, company_sdr_map, company_key):
     """Assign a single lead using fair round-robin with company grouping.
 
     Uses batch_counts (dict: sdr_id -> int) to track how many leads each SDR
     has been assigned in THIS batch, ensuring fair distribution regardless of
     pre-existing active lead counts.
 
-    Returns the assigned SDR or None if all SDRs are at cap.
+    RCA 2026-09-22: this used to skip an SDR once a global active-lead cap
+    was reached (and return None if every SDR in the pod was "full"); the
+    cap concept was removed org-wide, so every pod SDR is always eligible —
+    always returns an SDR when pod_sdrs is non-empty.
     """
     pod_sdr_ids = {s.id for s in pod_sdrs}
     pod_sdr_map = {s.id: s for s in pod_sdrs}
@@ -169,10 +241,8 @@ def _assign_lead_round_robin(db, new_lead, pod_sdrs, batch_counts, company_sdr_m
     # 1) Same-company affinity: if this company was already assigned to an SDR in this batch
     if company_key and company_key in company_sdr_map:
         prev_sdr = company_sdr_map[company_key]
-        current = _active_lead_count(prev_sdr, db) + batch_counts.get(prev_sdr.id, 0)
-        if cap == 0 or current < cap:
-            batch_counts[prev_sdr.id] = batch_counts.get(prev_sdr.id, 0) + 1
-            return prev_sdr
+        batch_counts[prev_sdr.id] = batch_counts.get(prev_sdr.id, 0) + 1
+        return prev_sdr
 
     # 2) Cross-batch company ownership: check if an SDR in this pod already owns
     #    a lead at the same company from a previous batch
@@ -188,22 +258,17 @@ def _assign_lead_round_robin(db, new_lead, pod_sdrs, batch_counts, company_sdr_m
         )
         if existing_owner and existing_owner.user_id in pod_sdr_map:
             owner_sdr = pod_sdr_map[existing_owner.user_id]
-            current = _active_lead_count(owner_sdr, db) + batch_counts.get(owner_sdr.id, 0)
-            if cap == 0 or current < cap:
-                batch_counts[owner_sdr.id] = batch_counts.get(owner_sdr.id, 0) + 1
-                company_sdr_map[company_key] = owner_sdr
-                return owner_sdr
+            batch_counts[owner_sdr.id] = batch_counts.get(owner_sdr.id, 0) + 1
+            company_sdr_map[company_key] = owner_sdr
+            return owner_sdr
 
     # 3) Fair round-robin: pick SDR with fewest batch assignments (ties broken by fewest active)
-    candidates = []
-    for sdr in pod_sdrs:
-        current = _active_lead_count(sdr, db) + batch_counts.get(sdr.id, 0)
-        if cap > 0 and current >= cap:
-            continue
-        candidates.append((batch_counts.get(sdr.id, 0), current, sdr))
-
+    candidates = [
+        (batch_counts.get(sdr.id, 0), _active_lead_count(sdr, db) + batch_counts.get(sdr.id, 0), sdr)
+        for sdr in pod_sdrs
+    ]
     if not candidates:
-        return None  # All SDRs at cap
+        return None  # No SDRs in this pod
 
     # Sort by: batch count first (fairness), then total active (balance)
     candidates.sort(key=lambda x: (x[0], x[1]))
@@ -254,6 +319,17 @@ COLUMN_MAP = {
     "company founded": "company_founded", "company_founded": "company_founded",
     "lead source": "lead_source", "lead_source": "lead_source", "source": "lead_source",
 }
+
+# Lead fields a CSV column can map to on import (upload-preview's
+# available_fields) and that a CSV export writes back out — one list so the
+# two stay symmetric instead of two hand-maintained copies drifting apart.
+LEAD_CSV_FIELDS = [
+    "first_name", "last_name", "email", "phone", "phone_secondary", "company", "title",
+    "linkedin_url", "person_linkedin", "website", "city", "state", "country",
+    "industry", "employee_count", "annual_revenue", "total_funding",
+    "company_phone", "company_linkedin", "company_street", "company_city",
+    "company_postal_code", "company_state", "company_country", "company_founded",
+]
 
 # Phone priority columns (first non-empty wins)
 PHONE_COLUMNS = [

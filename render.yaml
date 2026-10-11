@@ -1,28 +1,58 @@
 services:
   # ═══════════════════════════════════════════════════════════════════════════
   # 🚀 PRODUCTION Backend — branch: main
-  #    rcm-crm-prod (starter, $7/mo)
+  #    messenger-crm-prod (starter, $7/mo)
   #    Decoupled: SERVE_FRONTEND=false — backend serves JSON only.
-  #    Custom domain: https://api.rcm.txtbox.in (prev: api.rcm.rcm.ai)
-  #    The static site at rcm.txtbox.in
+  #    Custom domain: https://api.alternatecrm.staging.in (prev: api.alternatecrm.messenger.ai)
+  #    The static site at alternatecrm.staging.in
   #    calls this backend via window.__APP_CONFIG__.API_BASE.
   # ═══════════════════════════════════════════════════════════════════════════
   - type: web
-    name: rcm-crm-prod
+    name: messenger-crm-prod
     env: docker
-    plan: starter
+    # 2026-09-30 incident: this declared "starter" while the live service had
+    # long been running on a bigger plan (drift never enforced because the
+    # Blueprint sync was failing on the now-deleted reactstaging branch).
+    # Fixing that sync error let it finally enforce "starter" during business
+    # hours, causing real, measured slowdowns (1-4.5s on /api/leads) until
+    # manually corrected back on Render. Keep this in sync with the actual
+    # live plan — don't guess a smaller one to save cost.
+    plan: 1c-2g
     region: ohio
     branch: main
+    # RCA 2026-10-01: a push to main that touched ONLY docs/.claude files
+    # still triggers a full container rebuild+restart with no path filter —
+    # two such docs-only pushes on 2026-09-30 each cost a real restart, and
+    # one tripped the 5s health-check window (brief, real, user-visible 502).
+    # Scoped to exactly the paths that caused that incident; render.yaml
+    # itself always syncs regardless of this filter (Render's own behavior).
+    buildFilter:
+      ignoredPaths:
+        - docs/**
+        - .claude/**
+        - "*.md"
+        - tests/screenshots/**
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: rcm-db-prod
+          name: messenger-db-prod
           property: connectionString
       - key: PORT
         value: 10000
       - key: SF_DOMAIN
         value: login  # Production Salesforce Org
+      # Access-control rollout switches (RCA 2026-09-29, backend/auth.py).
+      # "monitor" = log would-be refusals, allow; "enforce" = refuse.
+      # Flip each to enforce only after its monitor logs are reviewed.
+      - key: SECURITY_AUTH_GATE_MODE
+        value: enforce
+      - key: SECURITY_LEAD_ACCESS_MODE
+        value: monitor
+      - key: SECURITY_IDENTITY_MODE
+        value: monitor
+      - key: SECURITY_WEBHOOK_MODE
+        value: monitor  # enforce only after webhook secrets are set on both sides
       - key: SF_USERNAME
         sync: false
       - key: SF_PASSWORD
@@ -34,29 +64,27 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
-        value: https://api.rcm.txtbox.in/api/auth/callback
-      - key: ALLOW_DEMO
-        value: "false"
+        value: https://api.alternatecrm.staging.in/api/auth/callback
       - key: JWT_SECRET
         generateValue: true
       - key: APP_ENCRYPTION_KEY
         sync: false  # Must be set manually — base64-encoded 32-byte key
       - key: SERVE_FRONTEND
-        value: "false"  # Frontend served by rcm-frontend-prod static site
+        value: "false"  # Frontend served by messenger-frontend-prod static site
       - key: FRONTEND_URL
-        value: https://rcm.txtbox.in
+        value: https://alternatecrm.staging.in
       - key: FRONTEND_URLS
-        value: https://rcm.txtbox.in,https://rcm.rcm.ai
+        value: https://alternatecrm.staging.in,https://alternatecrm.messenger.ai
 
   # ═══════════════════════════════════════════════════════════════════════════
   # 🧪 STAGING — branch: staging
-  #    Backend: rcm-crm-staging (starter, 512MB RAM — verified via live
+  #    Backend: messenger-crm-staging (starter, 512MB RAM — verified via live
   #    Render API 2026-07-14; this file previously said "free/grandfathered, $0",
   #    which was stale/incorrect)
-  #    Frontend: rcm-frontend-staging (static site, $0)
+  #    Frontend: messenger-frontend-staging (static site, $0)
   #
   #    Decoupled: SERVE_FRONTEND=false — backend serves JSON only.
-  #    The static site at rcm-frontend-staging.onrender.com
+  #    The static site at messenger-frontend-staging.onrender.com
   #    calls this backend via window.__APP_CONFIG__.API_BASE.
   #
   #    512MB is tight for this app (observed baseline ~200-370MB under normal
@@ -66,19 +94,35 @@ services:
   #    instance restart). Space out staging deploys when possible.
   # ═══════════════════════════════════════════════════════════════════════════
   - type: web
-    name: rcm-crm-staging
+    name: messenger-crm-staging
     env: docker
     plan: starter
     region: ohio
     branch: staging
+    # Same docs/.claude build filter as prod — see RCA note on that block.
+    buildFilter:
+      ignoredPaths:
+        - docs/**
+        - .claude/**
+        - "*.md"
+        - tests/screenshots/**
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: rcm-db-staging
+          name: messenger-db-staging
           property: connectionString
       - key: PORT
         value: 10000
+      # Staging enforces every access-control layer (see prod block).
+      - key: SECURITY_AUTH_GATE_MODE
+        value: enforce
+      - key: SECURITY_LEAD_ACCESS_MODE
+        value: enforce
+      - key: SECURITY_IDENTITY_MODE
+        value: enforce
+      - key: SECURITY_WEBHOOK_MODE
+        value: monitor  # until staging webhook secrets are configured
       - key: SF_DOMAIN
         value: test   # Salesforce Sandbox
       - key: SF_USERNAME
@@ -92,7 +136,7 @@ services:
       - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: GOOGLE_REDIRECT_URI
-        value: https://rcm-crm-staging.onrender.com/api/auth/callback
+        value: https://messenger-crm-staging.onrender.com/api/auth/callback
       - key: JWT_SECRET
         generateValue: true
       - key: APP_ENCRYPTION_KEY
@@ -100,17 +144,17 @@ services:
       - key: SERVE_FRONTEND
         value: "false"  # Frontend served by separate static site
       - key: FRONTEND_URL
-        value: https://rcm-frontend-staging.onrender.com
+        value: https://messenger-frontend-staging.onrender.com
       - key: FRONTEND_URLS
-        value: https://rcm-frontend-staging.onrender.com,https://rcm-frontend-develop.onrender.com
+        value: https://messenger-frontend-staging.onrender.com,https://messenger-frontend-develop.onrender.com
 
   # ═══════════════════════════════════════════════════════════════════════════
   # 🌐 STAGING Frontend — Static Site (FREE)
   #    branch: staging → serves frontend/ directory
-  #    URL: https://rcm-frontend-staging.onrender.com
+  #    URL: https://messenger-frontend-staging.onrender.com
   # ═══════════════════════════════════════════════════════════════════════════
   - type: web
-    name: rcm-frontend-staging
+    name: messenger-frontend-staging
     env: static
     branch: staging
     rootDir: frontend
@@ -124,13 +168,13 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   # 🔧 DEVELOP Frontend — Static Site (FREE)
   #    branch: develop → serves frontend/ directory
-  #    URL: https://rcm-frontend-develop.onrender.com
+  #    URL: https://messenger-frontend-develop.onrender.com
   #    NOTE: No dedicated develop backend. This static site calls the
   #          staging backend (shared). config.js sets API_BASE accordingly.
   #          For local backend testing, developers run uvicorn locally.
   # ═══════════════════════════════════════════════════════════════════════════
   - type: web
-    name: rcm-frontend-develop
+    name: messenger-frontend-develop
     env: static
     branch: develop
     rootDir: frontend
@@ -144,80 +188,28 @@ services:
   # ═══════════════════════════════════════════════════════════════════════════
   # 🌐 PRODUCTION Frontend — Static Site (FREE)
   #    branch: main → serves frontend/ directory
-  #    Custom domain: https://rcm.txtbox.in (prev: rcm.rcm.ai)
+  #    Custom domain: https://alternatecrm.staging.in (prev: alternatecrm.messenger.ai)
   #    API_BASE is injected at build time via config.js to point to prod API.
   #    NOTE: rootDir=frontend, so buildCommand cwd is already frontend/
   #          → write to config.js (not js/config.js)
   # ═══════════════════════════════════════════════════════════════════════════
   - type: web
-    name: rcm-frontend-prod
+    name: messenger-frontend-prod
     env: static
     branch: main
     rootDir: frontend
     buildCommand: |
-      echo "window.__APP_CONFIG__ = { API_BASE: 'https://api.rcm.txtbox.in' };" > config.js
+      echo "window.__APP_CONFIG__ = { API_BASE: 'https://api.alternatecrm.staging.in' };" > config.js
     staticPublishPath: .
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # ⚛️  REACT MIGRATION — branch: reactstaging (grandfathered free, DO NOT DELETE)
-  #    These services are in development and not in active use.
-  # ═══════════════════════════════════════════════════════════════════════════
-  - type: web
-    name: rcm-api-react-staging
-    env: docker
-    plan: free
-    region: ohio
-    branch: reactstaging
-    rootDir: backend-react
-    dockerfilePath: ./Dockerfile
-    healthCheckPath: /health
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: rcm-db-staging
-          property: connectionString
-      - key: PORT
-        value: 10000
-      - key: JWT_SECRET
-        generateValue: true
-      - key: APP_ENCRYPTION_KEY
-        sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: GOOGLE_REDIRECT_URI
-        value: https://rcm-api-react-staging.onrender.com/api/auth/callback
-      - key: FRONTEND_URL
-        value: https://rcm-react-staging.onrender.com
-      - key: SF_DOMAIN
-        value: test
-      - key: GROQ_API_KEY
-        sync: false
-
-  - type: web
-    name: rcm-react-staging
-    env: static
-    branch: reactstaging
-    rootDir: frontend-react
-    buildCommand: npm install && npm run build
-    staticPublishPath: dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: VITE_API_BASE
-        value: https://rcm-api-react-staging.onrender.com
-
 databases:
-  - name: rcm-db-prod
+  - name: messenger-db-prod
     plan: Basic-256mb
     region: ohio
-  - name: rcm-db-staging
+  - name: messenger-db-staging
     plan: Basic-256mb
     region: ohio

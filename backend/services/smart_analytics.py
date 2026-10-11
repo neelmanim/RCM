@@ -1,7 +1,7 @@
 """
 Smart Analytics Engine v2 — backend/services/smart_analytics.py
 ================================================================
-Conversational analytics assistant for RCM CRM.
+Conversational analytics assistant for Alternate CRM CRM.
 
 Architecture:
   NL query + conversation history
@@ -39,6 +39,7 @@ from sqlalchemy import func, and_, distinct
 from sqlalchemy.orm import Session
 
 import models
+from analytics.semantic import resolve_metric_scoped
 
 logger = logging.getLogger(__name__)
 
@@ -82,23 +83,32 @@ SUPPORTED_DIMENSIONS = {
 SUPPORTED_PERIODS = {
     "today", "yesterday",
     "last_7_days", "last_30_days", "last_90_days",
-    "this_week", "this_month", "this_quarter", "this_year",
+    "this_week", "this_month", "this_quarter", "this_year", "last_month",
 }
 
-# Outcomes that count as a "connect" (call answered)
-# Outcomes that count as a real connection (answered group).
-# Must stay in sync with models.ANSWERED_OUTCOMES + Meeting Complete.
-CONNECT_OUTCOMES = {
-    "Call Back Later",
-    "Meeting Scheduled",
-    "Meeting Confirmed",
-    "Meeting Complete",     # v5.5 — SDR marks meeting actually happened
-    "Text Me",
-    "Not the Right Person",
-    "Referred Someone Else",
-    # Legacy aliases stored by older Aircall sync
-    "Call Completed",       # maps to Meeting Scheduled
-    "Callback Scheduled",   # maps to Call Back Later
+# Phase 1 fix (audit-flagged "group-by silently ignored"): the dimensions each
+# _q_* function actually implements a group_by branch for. validate_dsl()
+# rejects a requested dimension a metric doesn't support instead of silently
+# falling through to a scalar result that looks like it answered the
+# dimensional question but didn't (e.g. "connect rate by POD" returning one
+# org-wide number). Derived directly from each _q_* function's own
+# `if group_by == ...` branches below — keep in sync if a function gains one.
+SUPPORTED_DIMENSIONS_BY_METRIC = {
+    "calls_made":          {"sdr", "pod", "day", "week", "month"},
+    "emails_sent":         {"sdr", "day", "week", "month"},
+    "meetings_scheduled":  {"sdr", "pod", "day", "week", "month"},
+    "leads_created":       {"sdr", "source", "status"},
+    "conversion_rate":     {"sdr"},
+    "research_completed":  {"sdr"},
+    "no_shows":            {"sdr"},
+    "disqualified":        {"sdr"},
+    "avg_call_duration":   {"sdr"},
+    "connect_rate":        {"sdr"},
+    "email_open_rate":     {"sdr"},
+    "email_reply_rate":    {"sdr"},
+    "avg_call_retries":    {"sdr"},
+    "demos_scheduled":     {"sdr", "pod", "day", "week", "month"},
+    "demos_completed":     {"sdr", "pod", "day", "week", "month"},
 }
 
 
@@ -181,6 +191,11 @@ def _resolve_period(period: Optional[str]) -> tuple:
         return monday, now
     if period == "this_month":
         return today.replace(day=1), now
+    if period == "last_month":
+        # Phase 1 fix (audit-flagged): previously absent, forcing the LLM to
+        # guess between this_month/last_30_days — neither means "last month".
+        last_day_prev_month = today.replace(day=1) - timedelta(days=1)
+        return last_day_prev_month.replace(day=1), last_day_prev_month.replace(hour=23, minute=59, second=59)
     if period == "this_quarter":
         q_start_month = ((now.month - 1) // 3) * 3 + 1
         return today.replace(month=q_start_month, day=1), now
@@ -221,9 +236,19 @@ def _cache_get(store, lock, key):
             del store[key]
     return None
 
+# RCA 2026-08-26 (staging OOM): keys are high-cardinality (free-text NL
+# queries / dsl+pod+sdr+batch hashes) and rarely re-read after expiry, so
+# _cache_get's lazy delete-on-read never frees them — same unbounded-growth
+# shape cache.py's _SWEEP_THRESHOLD fix already addressed for its own store.
+_CACHE_SWEEP_THRESHOLD = 500
+
 def _cache_set(store, lock, key, data, ttl):
     with lock:
         store[key] = (data, time.time() + ttl)
+        if len(store) > _CACHE_SWEEP_THRESHOLD:
+            now = time.time()
+            for k in [k for k, (_, exp) in store.items() if now > exp]:
+                del store[k]
 
 def _dsl_get(key):      return _cache_get(_dsl_cache, _dsl_cache_lock, key)
 def _dsl_set(k, v):     _cache_set(_dsl_cache, _dsl_cache_lock, k, v, DSL_TTL)
@@ -437,11 +462,14 @@ def _resolve_sdr_id(name: str, sdrs: list[dict]) -> Optional[str]:
 # Ordered preference list: fastest/highest-TPM models first.
 # The live /models call is the source of truth — this is just a tiebreaker.
 _GROQ_MODEL_PREFERENCE = [
-    "llama-3.1-8b-instant",
-    "llama3-8b-8192",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
     "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
     "llama-3.1-70b-versatile",
     "llama3-70b-8192",
+    "llama3-8b-8192",
+    "gemma2-9b-it",
     "mixtral-8x7b-32768",
     "llama-3.2-3b-preview",
     "llama-3.2-1b-preview",
@@ -452,11 +480,16 @@ _GROQ_MODEL_CACHE: dict = {}
 _GROQ_MODEL_CACHE_TTL = 3600  # 1 hour
 
 
-def _fetch_best_groq_model(api_key: str) -> Optional[str]:
+def _fetch_best_groq_model(api_key: str, exclude: frozenset = frozenset()) -> Optional[str]:
     """
     Call the Groq /models API and return the best available chat model.
     Falls back to the first in the preference list that Groq lists.
     Returns None if the API call fails.
+
+    `exclude` is for models already confirmed dead this request (RCA
+    2026-08-20: Groq's /models listing can claim a model is available when
+    it's actually already been pulled from inference -- re-running discovery
+    without excluding it just returns the same broken pick again).
     """
     try:
         with httpx.Client(timeout=8.0) as client:
@@ -467,28 +500,57 @@ def _fetch_best_groq_model(api_key: str) -> Optional[str]:
         if resp.status_code != 200:
             logger.warning("smart_analytics: /models API returned %s", resp.status_code)
             return None
-        available = {m["id"] for m in resp.json().get("data", [])}
+        available = {m["id"] for m in resp.json().get("data", [])} - exclude
         logger.info("smart_analytics: Groq available models: %s", sorted(available))
-        # Pick first preferred model that is actually available
-        for preferred in _GROQ_MODEL_PREFERENCE:
-            if preferred in available:
-                return preferred
-        # Fallback: first available model that looks like a chat model
+
+        # RCA 2026-08-20 / 2026-09-01 (recurred): Groq's /models listing can
+        # claim a model is available when it's already been pulled from real
+        # inference -- confirmed live twice now, including the ENTIRE
+        # _GROQ_MODEL_PREFERENCE list failing simultaneously on 2026-09-01
+        # (llama-3.1-8b-instant, llama3-8b-8192, llama-3.3-70b-versatile all
+        # 404'd as "does not exist or you do not have access to it" /
+        # "decommissioned", one after another, exhausting every retry the
+        # caller had before ever reaching a model outside this curated list).
+        # Once `exclude` is non-empty, at least one "available" name has
+        # already failed for real this request -- the curated list has
+        # already proven untrustworthy for this account/moment, so stop
+        # consulting it and go straight to the live-catalog scan below
+        # instead of working through the remaining preference entries one
+        # exclude at a time (which just repeats the same failure mode with
+        # extra steps whenever more than one entry is simultaneously dead).
+        if not exclude:
+            for preferred in _GROQ_MODEL_PREFERENCE:
+                if preferred in available:
+                    return preferred
+
+        # Deny-list, not allow-list: matching specific family substrings
+        # ("llama"/"gemma"/"mixtral") goes stale every time Groq ships a new
+        # family — confirmed live 2026-09-01 that Groq's current production
+        # catalog already includes openai/gpt-oss-* and groq/compound*, which
+        # the old allow-list would silently never find. Assume any model
+        # Groq's own /models endpoint lists is usable for a plain single-turn
+        # JSON-completion task UNLESS it matches a known non-chat/specialty
+        # marker (safety classifiers, moderation, speech, embeddings, TTS).
+        _NON_CHAT_MARKERS = ("guard", "moderation", "whisper", "embed", "tts", "orpheus", "vision", "audio")
         for mid in sorted(available):
-            if "llama" in mid or "gemma" in mid or "mixtral" in mid:
+            if not any(marker in mid.lower() for marker in _NON_CHAT_MARKERS):
                 return mid
-        return next(iter(available), None)
+        return None
     except Exception as exc:
         logger.warning("smart_analytics: could not fetch Groq models: %s", exc)
         return None
 
 
-def _resolve_groq_model(api_key: str, db: Session, force_refresh: bool = False) -> str:
+def _resolve_groq_model(api_key: str, db: Session, force_refresh: bool = False, exclude: frozenset = frozenset()) -> Optional[str]:
     """
     Return the best available Groq model for the given API key.
     Results are cached 1 hour. On force_refresh (e.g. after a 400/decommissioned),
     the cache is cleared, a fresh /models call is made, and the DB setting is updated
     so the new model persists across restarts.
+
+    Pass `exclude` (with force_refresh=True) after a model that looked
+    available just 404'd anyway — otherwise discovery deterministically
+    re-picks the same broken entry.
     """
     import time as _time
     cache_key = api_key[:12]   # Enough to distinguish keys, not expose full key
@@ -497,12 +559,12 @@ def _resolve_groq_model(api_key: str, db: Session, force_refresh: bool = False) 
         cached = _GROQ_MODEL_CACHE.get(cache_key)
         if cached:
             model, expires = cached
-            if _time.time() < expires:
+            if _time.time() < expires and model not in exclude:
                 return model
 
     # Cache miss or forced refresh — call the API
     _GROQ_MODEL_CACHE.pop(cache_key, None)
-    model = _fetch_best_groq_model(api_key)
+    model = _fetch_best_groq_model(api_key, exclude)
 
     if model:
         _GROQ_MODEL_CACHE[cache_key] = (model, _time.time() + _GROQ_MODEL_CACHE_TTL)
@@ -516,7 +578,17 @@ def _resolve_groq_model(api_key: str, db: Session, force_refresh: bool = False) 
         except Exception as exc:
             logger.warning("smart_analytics: could not persist model to DB: %s", exc)
 
-    return model or "llama-3.3-70b-versatile"   # Last-resort hardcoded fallback
+    # RCA 2026-08-20 (live, round 2): a hardcoded last-resort fallback
+    # (first "llama-3.3-70b-versatile", then "gemma2-9b-it") reintroduces
+    # the exact model `exclude` was just told to avoid, whenever discovery
+    # finds nothing else -- so a retry that excludes a just-failed model
+    # gets that same model back, `new_model != model` never triggers, and
+    # the caller silently re-raises the original decommissioned error.
+    # Fall back through the preference list itself, skipping excluded
+    # entries, instead of a single hardcoded name.
+    if model:
+        return model
+    return next((m for m in _GROQ_MODEL_PREFERENCE if m not in exclude), None)
 
 
 def _get_llm_config(db: Session) -> dict:
@@ -538,7 +610,7 @@ def _build_system_prompt(sdr_names: list[str], pod_names: list[str] = None, batc
     sdr_list   = ", ".join(sdr_names[:20])  if sdr_names   else "none"
     pod_list   = ", ".join(pod_names[:10])  if pod_names   else "none"
     batch_list = ", ".join(batch_labels[:8]) if batch_labels else "none"
-    return f"""You are an analytics query parser for RCM CRM. Output ONLY valid JSON, no prose.
+    return f"""You are an analytics query parser for Alternate CRM CRM. Output ONLY valid JSON, no prose.
 
 SDRs: {sdr_list}
 Pods: {pod_list}
@@ -554,7 +626,7 @@ METRICS: leads_created, meetings_scheduled, calls_made, emails_sent, conversion_
 (demos_scheduled=Demo Scheduled status, demos_completed=Demo Done status)
 
 DIMENSIONS(group_by): sdr, pod, source, status, day, week, month, batch
-PERIODS: today, yesterday, last_7_days, last_30_days, last_90_days, this_week, this_month, this_quarter, this_year
+PERIODS: today, yesterday, last_7_days, last_30_days, last_90_days, this_week, this_month, this_quarter, this_year, last_month
 
 SPECIAL: {{"action":"unsupported","message":"..."}} | {{"action":"clarify","question":"..."}}
 
@@ -566,6 +638,8 @@ RULES:
 - multi mode: metrics array needs 2+ items.
 - funnel/batch_funnel: no metric or group_by needed. batch_funnel requires filter_batch.
 - Unsupported: listing SDRs/users, revenue, salary, quotas, forecasts, contact info.
+- If the user names a specific metric CONCEPT that is not one of the METRICS listed above (e.g. "close rate", "win rate", "pipeline velocity") use {{"action":"unsupported","message":"..."}} naming what wasn't understood. Do NOT pick the closest metric from the list as a silent substitute — a wrong silent substitution is worse than asking.
+- "When in doubt" (rule below) only applies to genuinely open-ended questions ("how are we doing?"), never to a question that names a specific metric concept not in the list.
 - When in doubt, use standard mode with the most relevant metric."""
 
 
@@ -631,27 +705,37 @@ def parse_nl_to_dsl(nl_query: str, db: Session,
         raise SmartAnalyticsError("Could not reach the AI service.", code="llm_error")
 
     # ── 400: model decommissioned / not found → auto-discover and retry ────────
-    if resp.status_code == 400:
+    # RCA 2026-08-20 (live, round 2): a single one-shot retry isn't enough --
+    # Groq's /models listing kept claiming stale names were available
+    # (llama-3.1-8b-instant, then llama3-8b-8192, in the same live incident),
+    # so one retry just swaps one dead model for another. Loop through a few
+    # candidates, accumulating excludes, instead of giving up after one swap.
+    excluded_models = set()
+    while resp.status_code == 400 and len(excluded_models) < 2:
         err_text = resp.text
-        if "decommissioned" in err_text.lower() or "not found" in err_text.lower() or "does not exist" in err_text.lower():
-            logger.warning("smart_analytics: model '%s' unavailable (%s), auto-discovering…", model, err_text[:120])
-            new_model = _resolve_groq_model(api_key, db, force_refresh=True)
-            if new_model and new_model != model:
-                logger.info("smart_analytics: retrying with auto-discovered model '%s'", new_model)
-                payload["model"] = new_model
-                try:
-                    resp = _call_groq()
-                except Exception as exc:
-                    logger.warning("smart_analytics: Groq retry failed: %s", exc)
-                    raise SmartAnalyticsError("Could not reach the AI service.", code="llm_error")
-            else:
-                raise SmartAnalyticsError(
-                    "No compatible AI model available. Please check your Groq API key in Settings → AI/LLM.",
-                    code="llm_no_model",
-                )
-        else:
+        if not ("decommissioned" in err_text.lower() or "not found" in err_text.lower() or "does not exist" in err_text.lower()):
             logger.warning("smart_analytics: Groq 400: %s", err_text[:200])
             raise SmartAnalyticsError("AI service error. Please try again.", code="llm_error")
+        logger.warning("smart_analytics: model '%s' unavailable (%s), auto-discovering…", model, err_text[:120])
+        excluded_models.add(model)
+        new_model = _resolve_groq_model(api_key, db, force_refresh=True, exclude=frozenset(excluded_models))
+        if not new_model:
+            raise SmartAnalyticsError(
+                "No compatible AI model available. Please check your Groq API key in Settings → AI/LLM.",
+                code="llm_no_model",
+            )
+        logger.info("smart_analytics: retrying with auto-discovered model '%s'", new_model)
+        model = new_model
+        payload["model"] = new_model
+        try:
+            resp = _call_groq()
+        except Exception as exc:
+            logger.warning("smart_analytics: Groq retry failed: %s", exc)
+            raise SmartAnalyticsError("Could not reach the AI service.", code="llm_error")
+
+    if resp.status_code == 400:
+        logger.warning("smart_analytics: Groq 400 after %d model retries: %s", len(excluded_models), resp.text[:200])
+        raise SmartAnalyticsError("AI service error. Please try again.", code="llm_error")
 
     # ── 429: rate limit → auto-retry after Groq's specified wait ──────────────
     if resp.status_code == 429:
@@ -689,20 +773,46 @@ def parse_nl_to_dsl(nl_query: str, db: Session,
         raise SmartAnalyticsError("AI service error. Please try again.", code="llm_error")
 
 
-    raw = resp.json()["choices"][0]["message"]["content"].strip()
-    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
+    # ── Parse response, retrying with a different model on unparseable output ──
+    # Same self-heal as the 400/decommissioned path above -- a model can ignore
+    # "return only JSON" (truncated by max_tokens, a reasoning preamble, plain
+    # prose) just as easily as it can 404. Treat that as evidence this model is
+    # unsuitable too, instead of failing the whole query on the first bad draw.
+    while True:
+        raw = resp.json()["choices"][0]["message"]["content"].strip()
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
 
-    try:
-        dsl = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("smart_analytics: non-JSON LLM output: %r", raw[:200])
-        raise SmartAnalyticsError(
-            "Couldn't parse the AI response. Please rephrase your question.",
-            code="invalid_llm_response",
-        )
+        try:
+            dsl = json.loads(raw)
+            if isinstance(dsl, dict):
+                break
+        except json.JSONDecodeError:
+            pass
 
-    if not isinstance(dsl, dict):
-        raise SmartAnalyticsError("Unexpected AI response. Please try again.", code="invalid_llm_response")
+        logger.warning("smart_analytics: non-JSON/non-dict output from model '%s': %r", model, raw[:200])
+        if len(excluded_models) >= 2:
+            raise SmartAnalyticsError(
+                "Couldn't parse the AI response. Please rephrase your question.",
+                code="invalid_llm_response",
+            )
+        excluded_models.add(model)
+        new_model = _resolve_groq_model(api_key, db, force_refresh=True, exclude=frozenset(excluded_models))
+        if not new_model:
+            raise SmartAnalyticsError(
+                "No compatible AI model available. Please check your Groq API key in Settings → AI/LLM.",
+                code="llm_no_model",
+            )
+        logger.info("smart_analytics: retrying with auto-discovered model '%s' after unparseable response", new_model)
+        model = new_model
+        payload["model"] = new_model
+        try:
+            resp = _call_groq()
+        except Exception as exc:
+            logger.warning("smart_analytics: Groq retry failed: %s", exc)
+            raise SmartAnalyticsError("Could not reach the AI service.", code="llm_error")
+        if resp.status_code != 200:
+            logger.warning("smart_analytics: Groq %s after non-JSON retry: %s", resp.status_code, resp.text[:200])
+            raise SmartAnalyticsError("AI service error. Please try again.", code="llm_error")
 
     if not conversation_history:
         _dsl_set(norm, dsl)
@@ -795,7 +905,29 @@ def validate_dsl(dsl: dict) -> None:
 
     group_by = dsl.get("group_by")
     if group_by and group_by not in SUPPORTED_DIMENSIONS:
-        dsl.pop("group_by", None)  # silently drop bad dimension
+        dsl.pop("group_by", None)  # unknown dimension entirely — safe to drop
+        group_by = None
+
+    # Phase 1 fix (audit-flagged): a dimension can be globally valid but not
+    # implemented for THIS metric (e.g. "connect rate by POD" — connect_rate's
+    # query only branches on group_by=="sdr", so pod silently fell through to
+    # a scalar, org-wide number that looked like it answered the question).
+    # Reject explicitly instead of silently returning the wrong shape.
+    if group_by:
+        metric_for_check = dsl.get("metric")
+        supported = SUPPORTED_DIMENSIONS_BY_METRIC.get(metric_for_check, set())
+        if group_by not in supported:
+            dsl["action"] = "clarify"
+            metric_label = (metric_for_check or "that metric").replace("_", " ")
+            if supported:
+                options = ", ".join(sorted(supported))
+                dsl["question"] = (
+                    f"Breaking {metric_label} down by {group_by} isn't supported yet. "
+                    f"Available breakdowns for {metric_label}: {options}."
+                )
+            else:
+                dsl["question"] = f"Breaking {metric_label} down by {group_by} isn't supported yet."
+            return
 
     period = dsl.get("period")
     if period and period not in SUPPORTED_PERIODS:
@@ -1107,6 +1239,9 @@ def _exec_pod_summary(db, dsl, pod, pods, start, end) -> dict:
     When pod is set (Pod Admin or filter_pod), returns a single-pod row.
     """
     from sqlalchemy import case as sa_case
+    from routes._admin_helpers import get_conversation_min_seconds
+
+    conversation_min_seconds = get_conversation_min_seconds(db)
 
     target_pods = [p for p in pods if not pod or p["id"] == pod] if pods else []
     if not target_pods:
@@ -1145,14 +1280,12 @@ def _exec_pod_summary(db, dsl, pod, pods, start, end) -> dict:
         if end:   calls = calls.filter(models.dialer_call_event_time() <= end)
         calls_n = calls.scalar() or 0
 
-        # Connected calls: outcome IN CONNECT_OUTCOMES (answered group only)
-        # Denominator: calls with any logged outcome (excludes calls not yet logged)
-        conn_outcomes = list(CONNECT_OUTCOMES)
+        # Connected calls: see models.dialer_call_connected()
         connected = (db.query(func.count(models.DialerCall.id))
                        .join(models.User, models.User.id == models.DialerCall.user_id)
                        .filter(models.User.pod_id == pid,
                                models.DialerCall.direction == "outbound",
-                               models.dialer_call_connected(conn_outcomes)))
+                               models.dialer_call_connected(conversation_min_seconds)))
         if start: connected = connected.filter(models.dialer_call_event_time() >= start)
         if end:   connected = connected.filter(models.dialer_call_event_time() <= end)
         connected_n = connected.scalar() or 0
@@ -1444,7 +1577,7 @@ def _q_calls(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
                               user_id_col=models.DialerCall.user_id,
                               pod_user_join=(models.User, models.User.id == models.DialerCall.user_id),
                               pod_col=models.User.pod_id,
-                              extra_filter=base)
+                              extra_filter=base, batch_id=batch_id)
 
     # Scalar — NOTE: batch filter not applied to calls_made because
     # dialer_calls.lead_id is only 3.6% populated; applying it would
@@ -1479,7 +1612,7 @@ def _q_emails(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
                               user_id_col=models.LeadEmailActivity.user_id,
                               pod_user_join=(models.User, models.User.id == models.LeadEmailActivity.user_id),
                               pod_col=models.User.pod_id,
-                              extra_filter=base)
+                              extra_filter=base, batch_id=batch_id)
 
     # Scalar — NOTE: batch filter not applied to emails_sent because
     # lead_email_activity.lead_id is sparsely populated; same sparse-data
@@ -1494,58 +1627,60 @@ def _q_emails(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
 
 
 def _q_meetings(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
-    meeting_statuses = ("Meeting Scheduled", "Meeting Confirmed", "Meeting Complete")
+    """Phase 2 (§2.5): grouped/ranked branches aligned to the canonical
+    event population/date-column — Lead.meeting_scheduled_at, the same column
+    backend/analytics/adapters.py:_meetings_scheduled uses — instead of the
+    previous independent LeadStatusLog.to_status-based definition (a 3rd
+    divergent "meetings" implementation, with its own 3-value status tuple).
+    Kept as separately-implemented queries per the master doc's "different
+    optimized implementations, same contract" allowance (Principle 3) — the
+    semantic layer stays scalar-only, not extended with dimensional execution."""
     if group_by == "sdr":
         q = (db.query(models.User.name.label("label"),
-                      func.count(distinct(models.LeadStatusLog.lead_id)).label("value"))
+                      func.count(distinct(models.Lead.id)).label("value"))
                .join(models.lead_assignments, models.lead_assignments.c.user_id == models.User.id)
-               .join(models.LeadStatusLog, models.LeadStatusLog.lead_id == models.lead_assignments.c.lead_id)
-               .join(models.Lead, models.Lead.id == models.LeadStatusLog.lead_id)
-               .filter(models.LeadStatusLog.to_status.in_(meeting_statuses)))
-        q = _apply_date(q, models.LeadStatusLog.changed_at, start, end)
+               .join(models.Lead, models.Lead.id == models.lead_assignments.c.lead_id)
+               .filter(models.Lead.meeting_scheduled_at.isnot(None)))
+        q = _apply_date(q, models.Lead.meeting_scheduled_at, start, end)
         q = _apply_pod(q, models.User.pod_id, pod)
         q = _apply_sdr(q, models.User.id, sdr_id)
         q = _apply_batch(q, batch_id)
         rows = q.group_by(models.User.name).order_by(
-            func.count(distinct(models.LeadStatusLog.lead_id)).desc() if reverse
-            else func.count(distinct(models.LeadStatusLog.lead_id)).asc()
+            func.count(distinct(models.Lead.id)).desc() if reverse
+            else func.count(distinct(models.Lead.id)).asc()
         ).limit(limit).all()
         return [{"label": r.label, "value": r.value} for r in rows]
 
     if group_by == "pod":
         q = (db.query(models.Pod.name.label("label"),
-                      func.count(distinct(models.LeadStatusLog.lead_id)).label("value"))
-               .join(models.Lead, models.Lead.id == models.LeadStatusLog.lead_id)
-               .join(models.Pod, models.Pod.id == models.Lead.pod_id)
-               .filter(models.LeadStatusLog.to_status.in_(meeting_statuses)))
-        q = _apply_date(q, models.LeadStatusLog.changed_at, start, end)
+                      func.count(distinct(models.Lead.id)).label("value"))
+               .join(models.Lead, models.Lead.pod_id == models.Pod.id)
+               .filter(models.Lead.meeting_scheduled_at.isnot(None)))
+        q = _apply_date(q, models.Lead.meeting_scheduled_at, start, end)
         rows = q.group_by(models.Pod.name).order_by(
-            func.count(distinct(models.LeadStatusLog.lead_id)).desc() if reverse
-            else func.count(distinct(models.LeadStatusLog.lead_id)).asc()
+            func.count(distinct(models.Lead.id)).desc() if reverse
+            else func.count(distinct(models.Lead.id)).asc()
         ).limit(limit).all()
         return [{"label": r.label, "value": r.value} for r in rows]
 
     if group_by in ("day", "week", "month"):
-        return _q_time_series(db, models.LeadStatusLog, models.LeadStatusLog.changed_at,
+        return _q_time_series(db, models.Lead, models.Lead.meeting_scheduled_at,
                               group_by, pod, sdr_id, start, end,
                               user_id_col=None,
-                              pod_user_join=(models.Lead, models.Lead.id == models.LeadStatusLog.lead_id),
+                              pod_user_join=None,
                               pod_col=models.Lead.pod_id,
-                              extra_filter=models.LeadStatusLog.to_status.in_(meeting_statuses))
+                              extra_filter=models.Lead.meeting_scheduled_at.isnot(None), batch_id=batch_id)
 
-    q = db.query(func.count(distinct(models.LeadStatusLog.lead_id))).filter(
-        models.LeadStatusLog.to_status.in_(meeting_statuses)
+    # Scalar — Phase 2: routed through the semantic layer's canonical
+    # meetings_scheduled adapter (already built in Phase 1), instead of this
+    # function's own independent LeadStatusLog-based query.
+    envelope = resolve_metric_scoped(
+        "meetings_scheduled", db,
+        effective_pod=pod, effective_sdr=sdr_id,
+        date_start=start, date_end=end,
+        upload_log_id=batch_id,
     )
-    q = _apply_date(q, models.LeadStatusLog.changed_at, start, end)
-    if pod or sdr_id:
-        q = q.join(models.Lead, models.Lead.id == models.LeadStatusLog.lead_id)
-        if pod:    q = q.filter(models.Lead.pod_id == pod)
-        if sdr_id:
-            q = q.join(
-                models.lead_assignments,
-                models.lead_assignments.c.lead_id == models.Lead.id
-            ).filter(models.lead_assignments.c.user_id == sdr_id)
-    return [{"label": "Meetings Scheduled", "value": q.scalar() or 0}]
+    return [{"label": "Meetings Scheduled", "value": envelope["value"] or 0}]
 
 
 def _q_leads_created(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
@@ -1643,11 +1778,21 @@ def _q_conversion_rate(db, group_by, pod, sdr_id, batch_id, start, end, reverse,
 
     # Scalar: overall conversion rate
     if sdr_id:
+        # SECURITY FIX (Phase 2): pod was never applied in this branch — every
+        # other _q_* scalar function ANDs pod+sdr_id independently (see
+        # _q_calls/_q_leads_created/_q_disqualified below), so a mismatched
+        # pod+sdr combination there just returns zero rows. This branch made
+        # pod and sdr_id mutually exclusive instead of conjunctive: a Pod
+        # Admin naming an SDR from a DIFFERENT pod got that SDR's true,
+        # unscoped conversion rate — a real cross-pod data leak, not merely
+        # an empty result. Applying pod unconditionally alongside sdr_id
+        # closes it, matching every sibling function's shape.
         leads_q = (db.query(func.count(distinct(models.lead_assignments.c.lead_id)))
                      .join(models.Lead, models.Lead.id == models.lead_assignments.c.lead_id)
                      .filter(models.lead_assignments.c.user_id == sdr_id))
         if start: leads_q = leads_q.filter(models.Lead.created_at >= start)
         if end:   leads_q = leads_q.filter(models.Lead.created_at <= end)
+        if pod:   leads_q = leads_q.filter(models.Lead.pod_id == pod)
 
         meetings_q = (db.query(func.count(distinct(models.LeadStatusLog.lead_id)))
                         .filter(models.LeadStatusLog.to_status.in_(meeting_statuses))
@@ -1656,6 +1801,10 @@ def _q_conversion_rate(db, group_by, pod, sdr_id, batch_id, start, end, reverse,
                         .filter(models.lead_assignments.c.user_id == sdr_id))
         if start: meetings_q = meetings_q.filter(models.LeadStatusLog.changed_at >= start)
         if end:   meetings_q = meetings_q.filter(models.LeadStatusLog.changed_at <= end)
+        if pod:
+            meetings_q = (meetings_q
+                          .join(models.Lead, models.Lead.id == models.LeadStatusLog.lead_id)
+                          .filter(models.Lead.pod_id == pod))
     else:
         leads_q = db.query(func.count(models.Lead.id))
         if start: leads_q = leads_q.filter(models.Lead.created_at >= start)
@@ -1726,35 +1875,46 @@ def _q_no_shows(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit)
         ).limit(limit).all()
         return [{"label": r.label, "value": int(r.value or 0)} for r in rows]
 
-    # Scalar
-    q = db.query(func.sum(models.Lead.no_show_count)).filter(models.Lead.no_show_count > 0)
-    if sdr_id:
-        q = q.join(
-            models.lead_assignments,
-            models.lead_assignments.c.lead_id == models.Lead.id
-        ).filter(models.lead_assignments.c.user_id == sdr_id)
-    if pod:     q = q.filter(models.Lead.pod_id == pod)
-    q = _apply_batch(q, batch_id)   # ← was missing
-    return [{"label": "No Shows", "value": int(q.scalar() or 0)}]
+    # Scalar — Phase 2: routed through the semantic layer's canonical no_shows
+    # adapter instead of this function's own unfiltered query. Real fix: this
+    # scalar path previously applied no date filter at all — every "no shows
+    # this week" question silently answered with the org's all-time total.
+    envelope = resolve_metric_scoped(
+        "no_shows", db,
+        effective_pod=pod, effective_sdr=sdr_id,
+        date_start=start, date_end=end,
+        upload_log_id=batch_id,
+    )
+    return [{"label": "No Shows", "value": int(envelope["value"] or 0)}]
 
 
 def _q_disqualified(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
     """
     Count of leads with status='Disqualified'.
 
-    Date anchor: LeadStatusLog.changed_at where to_status='Disqualified'.
-    This is more reliable than Lead.lead_closed_at which is often NULL.
-    """
-    disq_status = ("Disqualified",)
+    Phase 2 (§2.5): aligned to the canonical event population/date-column —
+    Lead.status=="Disqualified" + Lead.lead_closed_at, the same as
+    backend/analytics/adapters.py:_disqualified (built in Phase 1) — instead
+    of the previous independent LeadStatusLog.to_status-based definition.
 
+    A prior version of this docstring noted LeadStatusLog.changed_at was
+    "more reliable than Lead.lead_closed_at which is often NULL." That was
+    true historically; Lead.lead_closed_at is now written at the same moment
+    Lead.status is set to "Disqualified" in the terminal-disqualify path (see
+    analytics/registry.py's disqualified known_caveats), so the two should
+    agree going forward. If old data still has status="Disqualified" with a
+    NULL lead_closed_at, this metric will undercount vs. the pre-Phase-2
+    LeadStatusLog-based numbers for that data — a real, evidence-backed
+    business-semantics question (not a bug) worth flagging if that gap shows
+    up in the old-vs-new comparison against real data, per master doc §23.
+    """
     if group_by == "sdr":
         q = (db.query(models.User.name.label("label"),
                       func.count(distinct(models.Lead.id)).label("value"))
                .join(models.lead_assignments, models.lead_assignments.c.lead_id == models.Lead.id)
                .join(models.User, models.User.id == models.lead_assignments.c.user_id)
-               .join(models.LeadStatusLog, models.LeadStatusLog.lead_id == models.Lead.id)
-               .filter(models.LeadStatusLog.to_status.in_(disq_status)))
-        q = _apply_date(q, models.LeadStatusLog.changed_at, start, end)
+               .filter(models.Lead.status == "Disqualified"))
+        q = _apply_date(q, models.Lead.lead_closed_at, start, end)
         q = _apply_pod(q, models.Lead.pod_id, pod)
         q = _apply_sdr(q, models.User.id, sdr_id)
         q = _apply_batch(q, batch_id)
@@ -1763,19 +1923,16 @@ def _q_disqualified(db, group_by, pod, sdr_id, batch_id, start, end, reverse, li
         ).limit(limit).all()
         return [{"label": r.label, "value": r.value} for r in rows]
 
-    # Scalar — join LeadStatusLog for accurate date filtering
-    q = (db.query(func.count(distinct(models.Lead.id)))
-           .join(models.LeadStatusLog, models.LeadStatusLog.lead_id == models.Lead.id)
-           .filter(models.LeadStatusLog.to_status.in_(disq_status)))
-    q = _apply_date(q, models.LeadStatusLog.changed_at, start, end)
-    if pod:    q = q.filter(models.Lead.pod_id == pod)
-    if sdr_id:
-        q = q.join(
-            models.lead_assignments,
-            models.lead_assignments.c.lead_id == models.Lead.id
-        ).filter(models.lead_assignments.c.user_id == sdr_id)
-    q = _apply_batch(q, batch_id)   # ← was missing; apply AFTER Lead is in scope
-    return [{"label": "Disqualified", "value": q.scalar() or 0}]
+    # Scalar — Phase 2: routed through the semantic layer's canonical
+    # disqualified adapter (already built in Phase 1), instead of this
+    # function's own independent LeadStatusLog-based query.
+    envelope = resolve_metric_scoped(
+        "disqualified", db,
+        effective_pod=pod, effective_sdr=sdr_id,
+        date_start=start, date_end=end,
+        upload_log_id=batch_id,
+    )
+    return [{"label": "Disqualified", "value": envelope["value"] or 0}]
 
 
 def _q_avg_call_duration(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
@@ -1808,9 +1965,9 @@ def _q_avg_call_duration(db, group_by, pod, sdr_id, batch_id, start, end, revers
 
 
 def _q_connect_rate(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
-    """Percentage of outbound calls that resulted in a real connection
-    (answered group). Denominator = total outbound calls made; numerator =
-    calls whose outcome is in CONNECT_OUTCOMES.
+    """Percentage of outbound calls that resulted in a real connection.
+    Denominator = total outbound calls made; numerator = see
+    models.dialer_call_connected().
 
     Matches the same logic (and denominator) as analytics_routes.get_sdr_table
     so numbers are consistent across both dashboards — this previously used
@@ -1818,11 +1975,13 @@ def _q_connect_rate(db, group_by, pod, sdr_id, batch_id, start, end, reverse, li
     disagreed with the SDR table (BUG-ANALYTICS-1 pattern).
     """
     from sqlalchemy import case as sa_case
+    from routes._admin_helpers import get_conversation_min_seconds
+
+    conversation_min_seconds = get_conversation_min_seconds(db)
     base = models.DialerCall.direction == "outbound"
-    conn_outcomes = list(CONNECT_OUTCOMES)
 
     connected_expr = func.count(
-        sa_case((models.dialer_call_connected(conn_outcomes), models.DialerCall.id))
+        sa_case((models.dialer_call_connected(conversation_min_seconds), models.DialerCall.id))
     )
     total_expr = func.count(models.DialerCall.id)
     rate_expr = (connected_expr * 100.0 / func.nullif(total_expr, 0))
@@ -1851,17 +2010,24 @@ def _q_connect_rate(db, group_by, pod, sdr_id, batch_id, start, end, reverse, li
             for r in rows
         ]
 
-    # Scalar
-    q = db.query(connected_expr.label("connected"), total_expr.label("total")).filter(base)
-    q = _apply_date(q, models.dialer_call_event_time(), start, end)
-    if pod or sdr_id:
-        q = q.join(models.User, models.User.id == models.DialerCall.user_id)
-        if pod:    q = q.filter(models.User.pod_id == pod)
-        if sdr_id: q = q.filter(models.User.id == sdr_id)
-    row = q.one()
-    connected = row.connected or 0
-    total     = row.total or 0
-    rate = round(connected / total * 100, 1) if total else 0.0
+    # Scalar — Phase 1: routed through the semantic layer's canonical
+    # connect_rate adapter instead of this function's own DialerCall-only
+    # query. Two real fixes as a result: (1) the canonical definition also
+    # includes pure-manual CallLog rows (this scalar path used to be
+    # DialerCall-only — a genuine population difference from the Dashboard,
+    # not just a batch-filter gap), and (2) batch_id, silently ignored here
+    # before, is now respected. Expect Ask AI's connect_rate scalar answers
+    # to change for orgs with manual (non-Aircall) call logging — that's the
+    # intended correction, not a regression (see old-vs-new comparison).
+    envelope = resolve_metric_scoped(
+        "connect_rate", db,
+        effective_pod=pod, effective_sdr=sdr_id,
+        date_start=start, date_end=end,
+        upload_log_id=batch_id,
+    )
+    connected = envelope["explanation"]["numerator"] or 0
+    total     = envelope["explanation"]["denominator"] or 0
+    rate      = envelope["value"] or 0.0
     return [{"label": "Connect Rate", "value": rate, "connected": connected, "total_calls": total}]
 
 
@@ -1890,20 +2056,16 @@ def _q_email_open_rate(db, group_by, pod, sdr_id, batch_id, start, end, reverse,
         ).limit(limit).all()
         return [{"label": r.label, "value": round(float(r.value or 0), 1)} for r in rows]
 
-    # Scalar
-    q = db.query(
-        func.count(models.LeadEmailActivity.id),
-        func.count(models.LeadEmailActivity.opened_at)
-    ).join(models.Lead, models.Lead.id == models.LeadEmailActivity.lead_id).filter(base)
-    q = _apply_date(q, models.LeadEmailActivity.timestamp, start, end)
-    if pod:    q = q.filter(models.Lead.pod_id == pod)
-    if sdr_id: q = q.filter(models.LeadEmailActivity.user_id == sdr_id)
-    if batch_id: q = q.filter(models.Lead.upload_log_id == batch_id)
-    total, opened = q.one()
-    total = total or 0
-    opened = opened or 0
-    rate = round(opened / total * 100, 1) if total else 0.0
-    return [{"label": "Email Open Rate", "value": rate}]
+    # Scalar — Phase 2: routed through the semantic layer's canonical
+    # email_open_rate adapter, which now also excludes test/deleted leads
+    # (this scalar path previously didn't) — matches Dashboard's definition.
+    envelope = resolve_metric_scoped(
+        "email_open_rate", db,
+        effective_pod=pod, effective_sdr=sdr_id,
+        date_start=start, date_end=end,
+        upload_log_id=batch_id,
+    )
+    return [{"label": "Email Open Rate", "value": envelope["value"] or 0.0}]
 
 
 def _q_email_reply_rate(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
@@ -1940,21 +2102,17 @@ def _q_email_reply_rate(db, group_by, pod, sdr_id, batch_id, start, end, reverse
         ).limit(limit).all()
         return [{"label": r.label, "value": round(float(r.value or 0), 1)} for r in rows]
 
-    # Scalar
-    sent_q = db.query(func.count(distinct(models.LeadEmailActivity.nylas_thread_id))).filter(base_out)
-    reply_q = db.query(func.count(distinct(models.LeadEmailActivity.nylas_thread_id))).filter(base_in)
-    if sdr_id:
-        sent_q  = sent_q.filter(models.LeadEmailActivity.user_id == sdr_id)
-        reply_q = reply_q.filter(models.LeadEmailActivity.user_id == sdr_id)
-    if pod or batch_id:
-        sent_q  = sent_q.join(models.Lead, models.Lead.id == models.LeadEmailActivity.lead_id)
-        reply_q = reply_q.join(models.Lead, models.Lead.id == models.LeadEmailActivity.lead_id)
-        if pod:    sent_q  = sent_q.filter(models.Lead.pod_id == pod);  reply_q = reply_q.filter(models.Lead.pod_id == pod)
-        if batch_id: sent_q = sent_q.filter(models.Lead.upload_log_id == batch_id); reply_q = reply_q.filter(models.Lead.upload_log_id == batch_id)
-    sent   = sent_q.scalar()  or 0
-    replied = reply_q.scalar() or 0
-    rate = round(replied / sent * 100, 1) if sent else 0.0
-    return [{"label": "Email Reply Rate", "value": rate}]
+    # Scalar — Phase 2: routed through the semantic layer's canonical
+    # email_reply_rate adapter. Real fix: this scalar path previously applied
+    # no date filter at all — every reply-rate question silently answered
+    # with the org's all-time total.
+    envelope = resolve_metric_scoped(
+        "email_reply_rate", db,
+        effective_pod=pod, effective_sdr=sdr_id,
+        date_start=start, date_end=end,
+        upload_log_id=batch_id,
+    )
+    return [{"label": "Email Reply Rate", "value": envelope["value"] or 0.0}]
 
 
 def _q_avg_call_retries(db, group_by, pod, sdr_id, batch_id, start, end, reverse, limit):
@@ -2040,7 +2198,7 @@ def _q_demos_scheduled(db, group_by, pod, sdr_id, batch_id, start, end, reverse,
                               user_id_col=None,
                               pod_user_join=(models.Lead, models.Lead.id == models.LeadStatusLog.lead_id),
                               pod_col=models.Lead.pod_id,
-                              extra_filter=models.LeadStatusLog.to_status.in_(demo_status))
+                              extra_filter=models.LeadStatusLog.to_status.in_(demo_status), batch_id=batch_id)
 
     # Scalar — always join Lead so pod + batch filters work
     q = db.query(func.count(distinct(models.LeadStatusLog.lead_id))).filter(
@@ -2101,7 +2259,7 @@ def _q_demos_completed(db, group_by, pod, sdr_id, batch_id, start, end, reverse,
                               user_id_col=None,
                               pod_user_join=(models.Lead, models.Lead.id == models.LeadStatusLog.lead_id),
                               pod_col=models.Lead.pod_id,
-                              extra_filter=models.LeadStatusLog.to_status.in_(demo_done))
+                              extra_filter=models.LeadStatusLog.to_status.in_(demo_done), batch_id=batch_id)
 
     # Scalar — always join Lead so pod + batch filters work
     q = db.query(func.count(distinct(models.LeadStatusLog.lead_id))).filter(
@@ -2120,7 +2278,13 @@ def _q_demos_completed(db, group_by, pod, sdr_id, batch_id, start, end, reverse,
 
 
 def _q_time_series(db, Model, date_col, group_by, pod, sdr_id, start, end,
-                   user_id_col, pod_user_join, pod_col, extra_filter=None):
+                   user_id_col, pod_user_join, pod_col, extra_filter=None, batch_id=None):
+    """Phase 1 fix (audit-flagged, confirmed live): batch_id used to be
+    silently dropped here — every day/week/month-grouped Ask AI query ignored
+    the active batch filter even though the scalar/sdr-grouped paths for the
+    same metric respected it. All 3 Models this is called with (DialerCall,
+    LeadEmailActivity, LeadStatusLog) have a lead_id FK, so a generic join to
+    Lead is enough to apply it."""
     try:
         is_postgres = "postgresql" in str(db.bind.url) if hasattr(db, 'bind') and db.bind else True
     except Exception:
@@ -2144,14 +2308,29 @@ def _q_time_series(db, Model, date_col, group_by, pod, sdr_id, start, end,
     if start: q = q.filter(date_col >= start)
     if end:   q = q.filter(date_col <= end)
 
+    lead_already_joined = False
     if pod and pod_user_join:
         join_model, join_cond = pod_user_join
         q = q.join(join_model, join_cond).filter(pod_col == pod)
+        lead_already_joined = join_model is models.Lead
     elif pod and not pod_user_join:
         q = q.filter(pod_col == pod)
 
     if sdr_id and user_id_col is not None:
         q = q.filter(user_id_col == sdr_id)
+
+    if batch_id:
+        if Model is models.Lead:
+            # Lead-anchored callers (Phase 2: meetings/disqualified aligned to
+            # Lead.meeting_scheduled_at / Lead.lead_closed_at) have no lead_id
+            # FK to join through — Model.lead_id doesn't exist on Lead itself.
+            q = q.filter(models.Lead.upload_log_id == batch_id)
+        else:
+            # Some callers (LeadStatusLog-based) already joined Lead via
+            # pod_user_join above — reuse it instead of joining it twice.
+            if not lead_already_joined:
+                q = q.join(models.Lead, models.Lead.id == Model.lead_id)
+            q = q.filter(models.Lead.upload_log_id == batch_id)
 
     rows = q.group_by("sort_key", "label").order_by("sort_key").all()
     return [{"label": r.label, "value": r.value} for r in rows]

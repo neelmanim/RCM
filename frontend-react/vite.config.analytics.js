@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { readFileSync, appendFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
 /**
@@ -14,17 +14,26 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [
     react(),
-    // Post-build: append our handcrafted scoped CSS to the Tailwind output.
-    // This runs after Vite has written analytics-hub.css so the merge is
-    // always fresh and does not require a manual step.
+    // Post-build: add our handcrafted scoped CSS to the Tailwind output, after
+    // Vite has written analytics-hub.css, so the merge needs no manual step.
+    //
+    // Marker-guarded rather than a plain append: this only ever produced one
+    // copy because analytics-entry.jsx imports a CSS file, so Vite emits an
+    // asset and overwrites the file each build. vite.config.email.js had the
+    // identical plugin without that accident and stacked nine copies of its
+    // scoped CSS into the committed output. Don't leave the trap armed here.
     {
       name: 'append-scoped-css',
       closeBundle() {
+        const MARKER = '/* ─── appended from frontend/css/analytics-hub.css ─── */';
         const tailwindOut = resolve(__dirname, '../frontend/js/analytics-hub.css');
         const scopedCss   = resolve(__dirname, '../frontend/css/analytics-hub.css');
         try {
           const extra = readFileSync(scopedCss, 'utf8');
-          appendFileSync(tailwindOut, '\n' + extra);
+          let base = existsSync(tailwindOut) ? readFileSync(tailwindOut, 'utf8') : '';
+          const at = base.indexOf(MARKER);
+          if (at !== -1) base = base.slice(0, at);
+          writeFileSync(tailwindOut, `${base.trimEnd()}\n${MARKER}\n${extra}`);
           console.log('[append-scoped-css] Appended scoped CSS →', tailwindOut);
         } catch (e) {
           console.warn('[append-scoped-css] Could not append scoped CSS:', e.message);

@@ -4,24 +4,12 @@ import { Button } from '../../components/ui/Button';
 import { SalesJourneyService } from '../../services/api';
 import { toast } from './toast';
 
-// Mirrors frontend/js/views/lead_detail.js's JOURNEY_REASON_LABEL — the same
-// enum values are shown to SDRs there, keep both surfaces consistent.
-const REASON_LABEL = {
-  suppressed: 'Contact suppressed (opted out / disqualified)',
-  journey_archived: 'Cadence archived',
-  exceeded_max_node_passes: 'Exceeded max steps — likely a loop',
-  send_failed: 'Send failed',
-  manually_skipped: 'Manually skipped',
-  unexpected_error: 'Unexpected error',
-  cooldown_stalled: 'Blocked by another cadence for too long',
-  node_not_found: 'Internal error — step no longer exists',
-  unknown_node_type: 'Internal error — unsupported step type',
-};
+import { JOURNEY_REASON_LABEL as REASON_LABEL } from './journeyLabels';
 
 // Phase 4 dead-letter view — surfaced inline in the builder rather than a
 // separate page, since an admin publishing/monitoring a journey is already
 // looking at this screen when they'd want to check on failures.
-export function FailedEnrollmentsPanel({ journeyId }) {
+export function FailedEnrollmentsPanel({ journeyId, readOnly = false }) {
   const [enrollments, setEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
@@ -83,16 +71,18 @@ export function FailedEnrollmentsPanel({ journeyId }) {
                 <div className="text-slate-400 truncate" title={e.last_error}>Details: {e.last_error}</div>
               )}
             </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <Button size="sm" variant="outline" disabled={busyId === e.enrollment_id}
-                onClick={() => handleRetry(e.enrollment_id)}>
-                <RotateCcw size={12} /> Retry
-              </Button>
-              <Button size="sm" variant="ghost" disabled={busyId === e.enrollment_id}
-                onClick={() => handleSkip(e.enrollment_id)}>
-                <XCircle size={12} /> Skip
-              </Button>
-            </div>
+            {!readOnly && (
+              <div className="flex items-center gap-1 shrink-0">
+                <Button size="sm" variant="outline" disabled={busyId === e.enrollment_id}
+                  onClick={() => handleRetry(e.enrollment_id)}>
+                  <RotateCcw size={12} /> Retry
+                </Button>
+                <Button size="sm" variant="ghost" disabled={busyId === e.enrollment_id}
+                  onClick={() => handleSkip(e.enrollment_id)}>
+                  <XCircle size={12} /> Skip
+                </Button>
+              </div>
+            )}
           </div>
         ))}
       </div>

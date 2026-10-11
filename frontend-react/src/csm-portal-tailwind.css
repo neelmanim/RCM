@@ -1,0 +1,33 @@
+/*
+ * csm-portal-tailwind.css
+ *
+ * Tailwind entry point for the CSM Portal IIFE bundle ONLY. Mirrors
+ * sdr-performance-tailwind.css exactly — omits @tailwind base to avoid
+ * leaking resets into the Vanilla JS shell, and reproduces just the
+ * border-reset half of Preflight, scoped to .csm-portal-hub.
+ */
+/*
+ * Radix (DropdownMenu/Popover) portals its content to document.body, so it
+ * renders as a sibling of .csm-portal-hub rather than a descendant — the
+ * shared Select/Popover components portal through this same literal class
+ * regardless of which bundle hosts it (see sales-tools-tailwind.css for the
+ * fuller explanation of why this exact class name is shared).
+ */
+.csm-portal-hub, .csm-portal-hub *, .csm-portal-hub *::before, .csm-portal-hub *::after,
+.activitymonitor-portal, .activitymonitor-portal *, .activitymonitor-portal *::before, .activitymonitor-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.csm-portal-hub, .activitymonitor-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

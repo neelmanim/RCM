@@ -15,6 +15,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAttachments } from './hooks/useAttachments';
 import { RichTextToolbar } from './richTextToolbar';
+import { Button } from '../../components/ui/Button';
 
 export function ReplyComposer({ thread, token, apiBase, onSent }) {
   const [open, setOpen]       = useState(false);
@@ -96,8 +97,8 @@ export function ReplyComposer({ thread, token, apiBase, onSent }) {
   if (!canReply) {
     return (
       <div className="eh-reply-disabled">
-        <span title="This email was not sent via RCM — reply from your email client directly.">
-          ↩ Reply unavailable (sent outside RCM)
+        <span title="This email was not sent via Alternate CRM — reply from your email client directly.">
+          ↩ Reply unavailable (sent outside Alternate CRM)
         </span>
       </div>
     );
@@ -106,9 +107,9 @@ export function ReplyComposer({ thread, token, apiBase, onSent }) {
   return (
     <div className="eh-reply-composer" ref={composerRef}>
       {!open ? (
-        <button className="eh-reply-trigger" onClick={() => setOpen(true)}>
+        <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
           ↩ Reply
-        </button>
+        </Button>
       ) : (
         <div className="eh-reply-form">
           {!showCcBcc ? (
@@ -146,12 +147,13 @@ export function ReplyComposer({ thread, token, apiBase, onSent }) {
           {error && <div className="eh-reply-error">⚠ {error}</div>}
 
           <div className="eh-reply-actions">
-            <button
-              className="eh-btn-ghost"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => fileInputRef.current?.click()}
             >
               📎 Attach
-            </button>
+            </Button>
             <input
               ref={fileInputRef}
               type="file"
@@ -163,20 +165,21 @@ export function ReplyComposer({ thread, token, apiBase, onSent }) {
               }}
             />
             <div className="eh-reply-actions-right">
-              <button
-                className="eh-btn-ghost"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => { setOpen(false); setError(null); }}
                 disabled={sending}
               >
                 Cancel
-              </button>
-              <button
-                className="eh-btn-primary"
+              </Button>
+              <Button
+                size="sm"
                 onClick={handleSend}
                 disabled={sending || !body.trim()}
               >
                 {sending ? 'Sending…' : '✉ Send Reply'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

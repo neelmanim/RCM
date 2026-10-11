@@ -19,6 +19,34 @@ describe('HelpHub', () => {
     expect(screen.queryByText('Admin Panel')).not.toBeInTheDocument();
   });
 
+  it('renders AE Pipeline for an AE, and every ae-visible section, excluding nothing they should still see', () => {
+    render(<HelpHub userRole="AE" />);
+    expect(screen.getByText('AE Pipeline')).toBeInTheDocument();
+    const aeSections = SECTIONS.filter(s => s.roles.includes('ae'));
+    for (const s of aeSections) {
+      expect(screen.getByText(stripLeadingEmoji(s.title))).toBeInTheDocument();
+    }
+    expect(screen.queryByText('CSM Portal')).not.toBeInTheDocument();
+    expect(screen.queryByText('Admin Panel')).not.toBeInTheDocument();
+  });
+
+  it('renders CSM Portal for a CSM, and hides everything now irrelevant to CSM', () => {
+    render(<HelpHub userRole="CSM" />);
+    expect(screen.getByText('CSM Portal')).toBeInTheDocument();
+    const csmSections = SECTIONS.filter(s => s.roles.includes('csm'));
+    for (const s of csmSections) {
+      expect(screen.getByText(stripLeadingEmoji(s.title))).toBeInTheDocument();
+    }
+    // A CSM's nav no longer has these — their help content shouldn't either.
+    expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+    expect(screen.queryByText('Leads', { selector: 'h3, h2, button, span' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Leaderboard & SDR Performance/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Sales Tools')).not.toBeInTheDocument();
+    expect(screen.queryByText('Power Dialer')).not.toBeInTheDocument();
+    expect(screen.queryByText('Analytics Hub')).not.toBeInTheDocument();
+    expect(screen.queryByText('AE Pipeline')).not.toBeInTheDocument();
+  });
+
   it('has no Kanban Board section — decommissioned', () => {
     expect(SECTIONS.some(s => s.title.includes('Kanban'))).toBe(false);
     render(<HelpHub userRole="Super Admin" />);

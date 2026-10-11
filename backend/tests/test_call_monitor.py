@@ -30,7 +30,7 @@ def _make_dialer_call(
     db,
     user_id,
     lead_id=None,
-    provider="rcm",
+    provider="messenger",
     direction="outbound",
     status="CALL_ENDED",
     outcome="No Answer",
@@ -172,6 +172,14 @@ class TestCallLogsBasic:
         ids = [i["id"] for i in items]
         assert ids.index(newer.id) < ids.index(older.id)
 
+    def test_sort_by_direction(self, client, db):
+        sdr = create_test_user(db, email="sdr_sort@t.com", role="SDR")
+        inbound = _make_dialer_call(db, user_id=sdr.id, direction="inbound")
+        outbound = _make_dialer_call(db, user_id=sdr.id, direction="outbound")
+        items = client.get("/api/admin/call-logs?sort_by=direction").json()["items"]
+        directions = [i["direction"] for i in items]
+        assert directions == sorted(directions)
+
 
 # ── Filters ──────────────────────────────────────────────────────────────────
 
@@ -187,14 +195,14 @@ class TestCallLogsFilters:
         for item in data["items"]:
             assert item["user_email"] == "sdr_f1@t.com"
 
-    def test_filter_by_provider_rcm(self, client, db):
-        """provider=rcm must exclude Aircall calls."""
+    def test_filter_by_provider_messenger(self, client, db):
+        """provider=messenger must exclude Aircall calls."""
         sdr = create_test_user(db, email="sdr_prov@t.com", role="SDR")
-        _make_dialer_call(db, user_id=sdr.id, provider="rcm")
+        _make_dialer_call(db, user_id=sdr.id, provider="messenger")
         _make_dialer_call(db, user_id=sdr.id, provider="aircall")
-        data = client.get("/api/admin/call-logs", params={"provider": "rcm"}).json()
+        data = client.get("/api/admin/call-logs", params={"provider": "messenger"}).json()
         for item in data["items"]:
-            assert item["provider"] == "rcm"
+            assert item["provider"] == "messenger"
 
     def test_filter_by_direction_outbound(self, client, db):
         """direction=outbound must exclude inbound calls."""
@@ -277,12 +285,34 @@ class TestCallLogsFilters:
         ).json()
         assert data["total"] == 1
 
+    def test_search_matches_lead_name_or_company(self, client, db):
+        """Activity Monitor design pass: search was previously collected by
+        the legacy UI but never sent to this endpoint at all (a silent
+        no-op) — now wired, matching the Email/Message tabs' search."""
+        sdr = create_test_user(db, email="sdr_search@t.com", role="SDR")
+        matching_lead = create_test_lead(db, email="ada@t.com", first_name="Ada", last_name="Lovelace", company="Acme")
+        other_lead = create_test_lead(db, email="grace@t.com", first_name="Grace", last_name="Hopper", company="Navy")
+        matching_call = _make_dialer_call(db, user_id=sdr.id, lead_id=matching_lead.id)
+        other_call = _make_dialer_call(db, user_id=sdr.id, lead_id=other_lead.id)
+
+        data = client.get("/api/admin/call-logs", params={"sdr_id": sdr.id, "search": "Lovelace"}).json()
+        ids = [i["id"] for i in data["items"]]
+        assert matching_call.id in ids
+        assert other_call.id not in ids
+
+    def test_search_with_no_match_returns_empty(self, client, db):
+        sdr = create_test_user(db, email="sdr_search2@t.com", role="SDR")
+        _make_dialer_call(db, user_id=sdr.id)
+        data = client.get("/api/admin/call-logs", params={"sdr_id": sdr.id, "search": "zzz-no-such-lead-zzz"}).json()
+        assert data["total"] == 0
+        assert data["items"] == []
+
     def test_filters_are_combinable(self, client, db):
         """Multiple filters applied together should AND correctly."""
         sdr1 = create_test_user(db, email="sdr_combo1@t.com", role="SDR")
         sdr2 = create_test_user(db, email="sdr_combo2@t.com", role="SDR")
         _make_dialer_call(db, user_id=sdr1.id, provider="aircall", direction="outbound")
-        _make_dialer_call(db, user_id=sdr1.id, provider="rcm", direction="outbound")
+        _make_dialer_call(db, user_id=sdr1.id, provider="messenger", direction="outbound")
         _make_dialer_call(db, user_id=sdr2.id, provider="aircall", direction="outbound")
         data = client.get(
             "/api/admin/call-logs",
@@ -319,17 +349,22 @@ class TestCallLogsStats:
         summary.completed (status ILIKE '%ENDED%') as if it meant "answered"
         — CALL_ENDED is true for a call that rang out unanswered too. On real
         prod data this showed 97% "Connected" when the real rate (an
-        SDR-tagged answered outcome, or provider_disposition='ANSWERED') was
-        15%. completed counts every ended call regardless of whether it was
-        answered; connected must only count the ones that actually were."""
+        SDR-tagged answered outcome, or a real >120s duration) was 15%.
+        completed counts every ended call regardless of whether it was
+        answered; connected must only count the ones that actually were.
+
+        2026-09-01: provider_disposition is no longer trusted as connect
+        evidence (see dialer_call_connected()'s docstring) — a null-outcome
+        call with a short duration no longer counts just because Aircall's
+        own disposition said "ANSWERED"."""
         sdr = create_test_user(db, email="sdr_stat_conn@t.com", role="SDR")
         _make_dialer_call(db, user_id=sdr.id, status="CALL_ENDED", outcome="No Answer")
         _make_dialer_call(db, user_id=sdr.id, status="CALL_ENDED", outcome="No Answer")
         _make_dialer_call(db, user_id=sdr.id, status="CALL_ENDED", outcome="Meeting Scheduled")
-        _make_dialer_call(db, user_id=sdr.id, status="CALL_ENDED", outcome=None, provider_disposition="ANSWERED")
+        _make_dialer_call(db, user_id=sdr.id, status="CALL_ENDED", outcome=None, provider_disposition="ANSWERED", duration=90)
         data = client.get("/api/admin/call-logs", params={"sdr_id": sdr.id}).json()
         assert data["summary"]["completed"] == 4    # all 4 reached CALL_ENDED
-        assert data["summary"]["connected"] == 2    # only the answered ones
+        assert data["summary"]["connected"] == 1    # only the SDR-tagged outcome
 
     def test_summary_missed_counts_the_real_no_answer_status_value(self, client, db):
         """RCA 2026-08-06: the missed pattern matched '%no-answer%' (hyphenated)
@@ -388,6 +423,26 @@ class TestCallLogsStats:
         _make_dialer_call(db, user_id=sdr.id, duration=120)
         data = client.get("/api/admin/call-logs", params={"sdr_id": sdr.id}).json()
         assert data["summary"]["avg_duration"] == 90
+
+    def test_summary_invites_created_counts_only_leads_with_a_calendar_invite(self, client, db):
+        """summary.invites_created (v12.7.10) should count "Meeting Confirmed"
+        CallLogs whose lead actually got a Nylas calendar event, not just
+        every confirmed call — summary.meetings_confirmed is the denominator
+        an SDR/admin compares it against to spot a real invite-creation gap."""
+        sdr = create_test_user(db, email="sdr_invites@t.com", role="SDR")
+        lead_with_invite = create_test_lead(db, email="invited@t.com")
+        lead_with_invite.nylas_event_id = "evt_123"
+        lead_without_invite = create_test_lead(db, email="not-invited@t.com")
+        db.commit()
+
+        db.add(models.CallLog(lead_id=lead_with_invite.id, user_id=sdr.id, outcome="Meeting Confirmed"))
+        db.add(models.CallLog(lead_id=lead_without_invite.id, user_id=sdr.id, outcome="Meeting Confirmed"))
+        db.add(models.CallLog(lead_id=lead_without_invite.id, user_id=sdr.id, outcome="No Answer"))
+        db.commit()
+
+        data = client.get("/api/admin/call-logs", params={"sdr_id": sdr.id}).json()
+        assert data["summary"]["meetings_confirmed"] == 2
+        assert data["summary"]["invites_created"] == 1
 
 
 # ── Edge Cases ───────────────────────────────────────────────────────────────
@@ -455,7 +510,7 @@ class TestCallLogsEdgeCases:
         _make_dialer_call(db, user_id=sdr.id, provider="aircall")
         data = client.get(
             "/api/admin/call-logs",
-            params={"sdr_id": sdr.id, "provider": "rcm"},
+            params={"sdr_id": sdr.id, "provider": "messenger"},
         ).json()
         assert data["total"] == 0
         assert data["items"] == []
@@ -562,6 +617,50 @@ class TestCallLogsPodAdminScoping:
         sdr_emails = [s["email"] for s in data["sdrs"]]
         assert "in_dd@t.com" in sdr_emails
         assert "out_dd@t.com" not in sdr_emails
+        app.dependency_overrides.clear()
+
+    def test_pod_admin_does_not_see_other_pods_sdr_calling_a_lead_in_their_pod(self, db):
+        """v14.0.0: the rep's pod decides (was: rep's pod OR the lead's pod, which showed US reps to the India Pod Admin).
+        Older note — list_call_logs' pod scoping used to be a bare
+        User.pod_id == admin.pod_id subquery with no fallback — a call dialed
+        by an SDR outside the Pod Admin's pod, but against a lead assigned
+        into that pod (pod re-org drift), was invisible in Call Monitor even
+        though Analytics Hub's _pod_scope_call_query already covers this via
+        an OR on the dialed lead's pod. Now reusing that same helper, so the
+        two views can't disagree on the same data."""
+        from fastapi.testclient import TestClient
+        from tests.conftest import _build_test_app
+        from database import get_db
+        from auth import get_current_user, require_admin, require_super_admin
+
+        pod = create_test_pod(db, name="Lead-Fallback Pod")
+        pod_admin_user = create_test_user(db, email="pa_leadfb@t.com", role="Pod Admin", pod_id=pod.id)
+        pod_admin_payload = {
+            "sub": pod_admin_user.id, "email": "pa_leadfb@t.com",
+            "name": "Pod Admin", "role": "Pod Admin", "pod_id": pod.id,
+        }
+
+        out_pod_sdr = create_test_user(db, email="out_leadfb@t.com", role="SDR")  # NOT in this pod
+        in_pod_lead = create_test_lead(db, email="lead_leadfb@t.com", pod_id=pod.id)
+        call_via_lead = _make_dialer_call(db, user_id=out_pod_sdr.id, lead_id=in_pod_lead.id)
+
+        app = _build_test_app()
+
+        def _override_db():
+            yield db
+
+        app.dependency_overrides[get_db]              = _override_db
+        app.dependency_overrides[get_current_user]    = lambda: pod_admin_payload
+        app.dependency_overrides[require_admin]       = lambda: pod_admin_payload
+        app.dependency_overrides[require_super_admin] = lambda: (_ for _ in ()).throw(
+            __import__('fastapi').HTTPException(status_code=403, detail="Super Admin only")
+        )
+
+        with TestClient(app) as c:
+            data = c.get("/api/admin/call-logs").json()
+
+        assert call_via_lead.id not in [i["id"] for i in data["items"]], \
+            "A Pod Admin sees their own pod's reps only, even when another pod's rep dialed a lead in this pod"
         app.dependency_overrides.clear()
 
     def test_super_admin_sees_all_pods_calls(self, client, db):

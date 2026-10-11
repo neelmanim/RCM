@@ -10,6 +10,8 @@ export const nodeTypes = {
   wait: JourneyNode,
   condition: JourneyNode,
   call: JourneyNode,
+  task: JourneyNode,
   sms: JourneyNode,
   whatsapp: JourneyNode,
+  instantly_sequence: JourneyNode,
 };

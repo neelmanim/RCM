@@ -18,10 +18,13 @@
  *   - API error → Retry button, stale data preserved
  */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Mail, Link2, AlertTriangle, XCircle } from 'lucide-react';
 import { useEmails } from './hooks/useEmails';
 import { ThreadSidebar } from './ThreadSidebar';
 import { MessageThread } from './MessageThread';
 import { ComposeDrawer } from './ComposeDrawer';
+import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
 
 /** Group flat email array into threads keyed by nylas_thread_id or subject. */
 function groupThreads(emails) {
@@ -67,11 +70,11 @@ async function fetchEmailStatus(token, apiBase) {
   return resp.json();
 }
 
-export function EmailHub({ leadId, lead, token, apiBase }) {
+export function EmailHub({ leadId, lead, token, apiBase, initialEmailId = null, initialMode = 'thread' }) {
   const [status,      setStatus]      = useState(null);  // email account status
   const [statusLoad,  setStatusLoad]  = useState(true);
   const [activeIdx,   setActiveIdx]   = useState(0);
-  const [mode,        setMode]        = useState('thread'); // 'thread' | 'compose'
+  const [mode,        setMode]        = useState(initialMode); // 'thread' | 'compose'
 
   const { emails, loading, error, refetch } = useEmails(leadId, token, apiBase);
 
@@ -86,6 +89,15 @@ export function EmailHub({ leadId, lead, token, apiBase }) {
 
   // Group emails into threads (memoized)
   const threads = useMemo(() => groupThreads(emails), [emails]);
+
+  // Lead Detail opens the hub on the email that was clicked — select its thread once.
+  const [focusedOnce, setFocusedOnce] = useState(false);
+  useEffect(() => {
+    if (focusedOnce || !initialEmailId || threads.length === 0) return;
+    const idx = threads.findIndex((t) => t.messages.some((m) => m.id === initialEmailId));
+    if (idx >= 0) setActiveIdx(idx);
+    setFocusedOnce(true);
+  }, [threads, initialEmailId, focusedOnce]);
 
   // Keep activeIdx in bounds
   const safeActiveIdx = Math.min(activeIdx, Math.max(0, threads.length - 1));
@@ -143,10 +155,12 @@ export function EmailHub({ leadId, lead, token, apiBase }) {
   // Backend returns `nylas_configured` (not `configured`)
   if (status && !status.nylas_configured) {
     return (
-      <div className="eh-root eh-state-empty">
-        <div className="eh-state-icon">📧</div>
-        <h3>Email Not Configured</h3>
-        <p>Ask your Super Admin to configure the Nylas email integration in Admin → Settings.</p>
+      <div className="eh-root">
+        <EmptyState
+          icon={Mail}
+          title="Email Not Configured"
+          message="Ask your Super Admin to configure the Nylas email integration in Admin → Settings."
+        />
       </div>
     );
   }
@@ -154,17 +168,13 @@ export function EmailHub({ leadId, lead, token, apiBase }) {
   // ── No mailbox connected ──────────────────────────────────────────────────
   if (status && !status.connected) {
     return (
-      <div className="eh-root eh-state-empty">
-        <div className="eh-state-icon">🔗</div>
-        <h3>Connect Your Email</h3>
-        <p>Connect your Gmail or Outlook account to send and track emails from RCM.</p>
-        <button
-          id="eh-connect-email-btn"
-          className="eh-btn-primary eh-connect-btn"
-          onClick={handleConnectEmail}
-        >
-          Connect Email Account
-        </button>
+      <div className="eh-root">
+        <EmptyState
+          icon={Link2}
+          title="Connect Your Email"
+          message="Connect your Gmail or Outlook account to send and track emails from Alternate CRM."
+          action={<Button id="eh-connect-email-btn" onClick={handleConnectEmail}>Connect Email Account</Button>}
+        />
       </div>
     );
   }
@@ -172,10 +182,12 @@ export function EmailHub({ leadId, lead, token, apiBase }) {
   // ── Lead has no email address ─────────────────────────────────────────────
   if (!lead?.email) {
     return (
-      <div className="eh-root eh-state-empty">
-        <div className="eh-state-icon">⚠️</div>
-        <h3>No Email Address</h3>
-        <p>Add an email address to this lead to enable email tracking.</p>
+      <div className="eh-root">
+        <EmptyState
+          icon={AlertTriangle}
+          title="No Email Address"
+          message="Add an email address to this lead to enable email tracking."
+        />
       </div>
     );
   }
@@ -183,11 +195,13 @@ export function EmailHub({ leadId, lead, token, apiBase }) {
   // ── API error with no cached data ─────────────────────────────────────────
   if (error && emails.length === 0) {
     return (
-      <div className="eh-root eh-state-empty">
-        <div className="eh-state-icon">❌</div>
-        <h3>Could not load emails</h3>
-        <p>{error}</p>
-        <button className="eh-btn-primary" onClick={() => refetch()}>Retry</button>
+      <div className="eh-root">
+        <EmptyState
+          icon={XCircle}
+          title="Could not load emails"
+          message={error}
+          action={<Button onClick={() => refetch()}>Retry</Button>}
+        />
       </div>
     );
   }
@@ -218,15 +232,13 @@ export function EmailHub({ leadId, lead, token, apiBase }) {
             onClose={() => setMode('thread')}
           />
         ) : threads.length === 0 ? (
-          <div className="eh-state-empty eh-main-empty">
-            <div className="eh-state-icon">✉️</div>
-            <h3>No emails yet</h3>
-            <p>Send the first email to {lead.first_name || lead.email} from RCM,
-               or emails you've sent directly from Gmail will sync here automatically.</p>
-            <button className="eh-btn-primary" onClick={() => setMode('compose')}>
-              ✏ Compose Email
-            </button>
-          </div>
+          <EmptyState
+            icon={Mail}
+            title="No emails yet"
+            message={`Send the first email to ${lead.first_name || lead.email} from Alternate CRM, or emails you've sent directly from Gmail will sync here automatically.`}
+            action={<Button onClick={() => setMode('compose')}>✏ Compose Email</Button>}
+            className="eh-main-empty"
+          />
         ) : (
           <MessageThread
             thread={threads[safeActiveIdx]}

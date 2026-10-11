@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { applyNodeChanges, applyEdgeChanges, addEdge } from '@xyflow/react';
 import { defaultDataFor, nextNodeId } from '../nodeDefaults';
+import { layoutPositions } from './layout';
 
 // Canvas state only (nodes, edges, selection, dirty flag) — scoped to this
 // feature folder, not a repo-wide store. Server state (loading/saving) stays
@@ -14,6 +15,7 @@ export const useJourneyStore = create((set, get) => ({
   edges: [],
   selectedNodeId: null,
   dirty: false,
+  layoutDirection: 'TB',
 
   loadGraph: (journeyId, versionId, graph, updatedAt, liveVersionId = null) => set({
     journeyId, versionId, liveVersionId,
@@ -23,6 +25,18 @@ export const useJourneyStore = create((set, get) => ({
     selectedNodeId: null,
     dirty: false,
   }),
+
+  // Re-lays out every node by graph depth from the trigger — a growing
+  // branchy cadence otherwise only ever stacks straight down (handleAddNode).
+  applyLayout: (direction) => {
+    const { nodes, edges } = get();
+    const positions = layoutPositions(nodes, edges, direction);
+    set({
+      nodes: nodes.map((n) => ({ ...n, position: positions[n.id] || n.position })),
+      layoutDirection: direction,
+      dirty: true,
+    });
+  },
 
   onNodesChange: (changes) => set({ nodes: applyNodeChanges(changes, get().nodes), dirty: true }),
   onEdgesChange: (changes) => set({ edges: applyEdgeChanges(changes, get().edges), dirty: true }),

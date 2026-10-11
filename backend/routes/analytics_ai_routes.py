@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from database import get_db
+from database import get_db, get_ai_db
 from auth import require_admin
 
 from routes.analytics_routes import _cache_key
@@ -36,14 +36,17 @@ router = APIRouter(prefix="/api/admin/analytics", tags=["analytics"])
 class _InsightSummaryRequest(BaseModel):
     insights: _List[str]
 
-_llm_summary_cache: dict = {}  # hash(insights_tuple) → str
+# RCA 2026-08-26 (staging OOM): this cache never checked TTL on read (the
+# constant below was dead) and never evicted anything, so it grew forever.
+_llm_summary_cache: dict = {}  # hash(insights_tuple) → (str, expires_at)
 _LLM_SUMMARY_CACHE_TTL = 900   # 15 min
+_CACHE_SWEEP_THRESHOLD = 500
 
 @router.post("/insights-summary")
 def get_insights_summary(
     payload: _InsightSummaryRequest,
     admin: dict = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_ai_db),
 ):
     """
     Receives 1–3 precomputed rule-based insights.
@@ -60,10 +63,13 @@ def get_insights_summary(
     cache_key = hash(tuple(texts))
     cached = _llm_summary_cache.get(cache_key)
     if cached is not None:
-        return {"summary": cached}
+        summary, expires_at = cached
+        if time.time() < expires_at:
+            return {"summary": summary}
+        del _llm_summary_cache[cache_key]
 
     try:
-        from routes.ai_research_routes import _get_llm_config, _call_groq as _call_groq_raw
+        from routes.ai_research_routes import _get_llm_config
         cfg = _get_llm_config(db)
         if not cfg.get("api_key"):
             return {"summary": None}
@@ -91,7 +97,11 @@ def get_insights_summary(
             return {"summary": None}
 
         summary = resp.json()["choices"][0]["message"]["content"].strip().strip('"')
-        _llm_summary_cache[cache_key] = summary
+        _llm_summary_cache[cache_key] = (summary, time.time() + _LLM_SUMMARY_CACHE_TTL)
+        if len(_llm_summary_cache) > _CACHE_SWEEP_THRESHOLD:
+            now = time.time()
+            for k in [k for k, (_, exp) in _llm_summary_cache.items() if now > exp]:
+                del _llm_summary_cache[k]
         return {"summary": summary}
 
     except Exception as exc:
@@ -212,6 +222,10 @@ def get_ai_recommendation(
             if resp.status_code == 200:
                 rec = resp.json()["choices"][0]["message"]["content"].strip().strip('"')
                 _ai_rec_cache[ck] = (rec, time.time() + _AI_REC_TTL)
+                if len(_ai_rec_cache) > _CACHE_SWEEP_THRESHOLD:
+                    now = time.time()
+                    for k in [k for k, (_, exp) in _ai_rec_cache.items() if now > exp]:
+                        del _ai_rec_cache[k]
 
         except Exception as exc:
             logger.warning("ai-recommendation background fetch failed: %s", exc)

@@ -1,0 +1,31 @@
+/*
+ * control-center-tailwind.css
+ *
+ * Tailwind entry point for the Control Center IIFE bundle ONLY. Mirrors
+ * activity-monitor-tailwind.css exactly — omits @tailwind base to avoid
+ * leaking resets into the Vanilla JS shell, and reproduces just the
+ * border-reset half of Preflight, scoped to .controlcenter.
+ */
+/*
+ * Radix (DropdownMenu/Popover) portals its content to document.body, so it
+ * renders as a sibling of .controlcenter rather than a descendant — the
+ * reset below re-applies to .controlcenter-portal for that reason.
+ */
+.controlcenter, .controlcenter *, .controlcenter *::before, .controlcenter *::after,
+.controlcenter-portal, .controlcenter-portal *, .controlcenter-portal *::before, .controlcenter-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.controlcenter, .controlcenter-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

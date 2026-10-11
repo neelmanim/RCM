@@ -7,7 +7,7 @@ Migration tracking: data migrations are recorded in _applied_migrations so each
 runs exactly once — never on restart/redeploy. This prevents full-table UPDATE
 scans from competing with DDL locks on startup.
 """
-from sqlalchemy import text, inspect
+from sqlalchemy import text, inspect, bindparam
 import logging
 
 logger = logging.getLogger(__name__)
@@ -187,6 +187,57 @@ def _backfill_klenty_started_at_and_disposition(engine):
             logger.warning(f"[Migration] {migration_name} failed (non-fatal): {e}")
 
 
+def _encrypt_messenger_api_key(engine):
+    """Encrypt sync_settings.messenger_api_key at rest (AES-256-GCM).
+
+    It was the only credential on this table still stored in plaintext — its
+    siblings (dialer_api_token, llm_api_key, messenger_access_token,
+    public_api_key) have always been encrypted. models.SyncSettings now
+    exposes it through an encrypting property, so this backfill only has to
+    convert the value already on disk.
+
+    Idempotent by decrypt-probe rather than by the tracker alone: a value that
+    decrypts is already ciphertext and is left alone, so a re-run (or a row
+    written by a newer app instance mid-deploy) can never double-encrypt.
+    """
+    from crypto import encrypt_token, decrypt_token
+
+    migration_name = "encrypt_messenger_api_key"
+    with engine.connect() as conn:
+        _ensure_migration_tracker(conn)
+        if _migration_applied(conn, migration_name):
+            return
+        try:
+            rows = conn.execute(text(
+                "SELECT id, messenger_api_key FROM sync_settings "
+                "WHERE messenger_api_key IS NOT NULL AND messenger_api_key != ''"
+            )).fetchall()
+            encrypted = 0
+            for row_id, value in rows:
+                try:
+                    decrypt_token(value)
+                    continue  # already ciphertext
+                except Exception:
+                    pass
+                conn.execute(
+                    text("UPDATE sync_settings SET messenger_api_key = :v WHERE id = :id"),
+                    {"v": encrypt_token(value), "id": row_id},
+                )
+                encrypted += 1
+            conn.commit()
+            _mark_migration_applied(conn, migration_name)
+            logger.info(
+                f"[Migration] {migration_name}: encrypted {encrypted}/{len(rows)} "
+                f"messenger_api_key value(s)"
+            )
+        except Exception as e:
+            # Non-fatal, like its neighbours: the property tolerates a
+            # still-plaintext value, so messaging keeps working and the next
+            # boot retries (the tracker is only marked on success).
+            conn.rollback()
+            logger.warning(f"[Migration] {migration_name} failed (non-fatal): {e}")
+
+
 def _ensure_execution_log_partitions(engine):
     """Sales Journey (docs/SALES_JOURNEY_ARCHITECTURE.md): execution_logs is
     range-partitioned by created_at on Postgres — a partitioned table with zero
@@ -229,6 +280,75 @@ def _ensure_execution_log_partitions(engine):
                 year, month = next_year, next_month
         except Exception as e:
             logger.warning(f"[Migration] execution_logs partition setup failed (non-fatal): {e}")
+
+
+def _ensure_ownership_history(engine):
+    """Install the lead_assignments → lead_ownership_periods trigger and open a period for every current owner.
+    Idempotent; Postgres only. An advisory lock serialises the two uvicorn workers that boot together (otherwise both
+    would backfill). Non-fatal: the app must boot, and the nightly reconcile alarms if history is missing."""
+    if "postgresql" not in str(engine.url):
+        return
+    try:
+        import ownership_history as oh
+        with engine.begin() as conn:
+            conn.execute(text("SELECT pg_advisory_xact_lock(727001)"))
+            if not conn.execute(text("SELECT to_regclass('public.lead_ownership_periods')")).scalar():
+                logger.warning("[ownership] lead_ownership_periods missing — create_all has not run; skipping")
+                return
+            oh.install_trigger(conn)
+            opened = oh.backfill_current_owners(conn)
+            logger.info(f"[ownership] trigger installed; backfilled {opened} current-owner periods")
+    except Exception as e:
+        logger.error(f"[ownership] history setup FAILED (ownership is still recorded in lead_assignments): {e}")
+
+
+def _backfill_lead_meetings(engine):
+    """v13.11.0 — one-off, idempotent: give every live lead that is in a meeting stage but has no lead_meetings row a
+    booking record, and fill the lead_closed_at that the call-outcome / Aircall-tag paths never stamped.
+    Approximate by design (source='backfill'): the booker comes from the status log by NAME, only when exactly one
+    user matches; status is held for stages after Meeting Scheduled, no_show when the lead ever recorded one.
+    Meetings of leads that have since moved out of a meeting stage (e.g. disqualified later) are not reconstructed."""
+    try:
+        import meeting_log
+        from datetime import datetime, timezone
+        from sqlalchemy.orm import Session
+        with Session(engine) as db:
+            if "postgresql" in str(engine.url):
+                db.execute(text("SELECT pg_advisory_xact_lock(727002)"))   # two workers boot together
+            import models
+            stamped = db.execute(text(
+                "UPDATE leads SET lead_closed_at = status_changed_at WHERE lead_closed_at IS NULL "
+                "AND status_changed_at IS NOT NULL AND status IN :s"
+            ).bindparams(bindparam("s", expanding=True)), {"s": list(meeting_log.MEETING_REACHED)}).rowcount or 0
+            have = db.query(models.LeadMeeting.lead_id)
+            leads = (models.exclude_test_and_deleted_leads(db.query(models.Lead))
+                     .filter(models.Lead.status.in_(meeting_log.MEETING_REACHED), ~models.Lead.id.in_(have)).all())
+            users = {}
+            for u in db.query(models.User).all():
+                for k in (u.name, u.email):
+                    if k:
+                        users.setdefault(k.lower(), set()).add(u.id)
+            made = 0
+            for lead in leads:
+                first = (db.query(models.LeadStatusLog)
+                         .filter(models.LeadStatusLog.lead_id == lead.id, models.LeadStatusLog.to_status == meeting_log.BOOKED_STATUS)
+                         .order_by(models.LeadStatusLog.changed_at.asc()).first())
+                ids = users.get((first.changed_by or "").lower(), set()) if first else set()
+                held = lead.status != meeting_log.BOOKED_STATUS
+                db.add(models.LeadMeeting(
+                    lead_id=lead.id,
+                    booked_at=(first.changed_at if first else None) or lead.lead_closed_at or lead.status_changed_at
+                              or lead.created_at or datetime.now(timezone.utc),
+                    booked_by_user_id=(first.changed_by_user_id or (next(iter(ids)) if len(ids) == 1 else None)) if first else None,
+                    meeting_at=lead.meeting_scheduled_at,
+                    status="no_show" if (lead.no_show_count or 0) > 0 and not held else "held" if held else "booked",
+                    held_at=lead.status_changed_at if held else None,
+                    source="backfill"))
+                made += 1
+            db.commit()
+            logger.info(f"[meetings] backfill: {made} booking records created, {stamped} lead_closed_at stamped")
+    except Exception as e:
+        logger.error(f"[meetings] backfill FAILED (meetings still counted from leads): {e}")
 
 
 def run_schema_migrations(engine):
@@ -297,7 +417,8 @@ def run_schema_migrations(engine):
         ("sync_settings", "sync_declined_to_salesforce", "BOOLEAN", "false"),
         ("sync_settings", "sync_unreachable_to_salesforce", "BOOLEAN", "false"),
         ("sync_settings", "terminal_lead_cooldown_days", "INTEGER", "30"),
-        ("sync_settings", "conversation_min_seconds", "INTEGER", "30"),
+        ("sync_settings", "conversation_min_seconds", "INTEGER", "120"),
+        ("sync_settings", "icp_keywords", "TEXT", None),
         # V5 Phase 3: Per-POD lead cap + admin assignment
         # NOTE (2026-07-11): "pods.admin_id" entry deliberately removed from this list.
         # It was unconditionally re-adding the column on every boot (this list runs
@@ -335,16 +456,21 @@ def run_schema_migrations(engine):
         # V17: Per-SDR dialer & email sync access toggles
         ("users", "dialer_enabled", "BOOLEAN", "false"),
         ("users", "email_sync_enabled", "BOOLEAN", "false"),
-        # V18: RCM / RCM Messaging messaging integration
-        ("sync_settings", "rcm_enabled", "BOOLEAN", "false"),
-        ("sync_settings", "rcm_base_url", "VARCHAR", "'https://app.bercm.com'"),
-        ("sync_settings", "rcm_api_key", "VARCHAR", None),
-        ("sync_settings", "rcm_user_id", "VARCHAR", None),
-        ("sync_settings", "rcm_access_token", "TEXT", None),
+        ("users", "export_enabled", "BOOLEAN", "false"),
+        ("users", "export_blocked", "BOOLEAN", "false"),
+        ("saved_views", "scope", "VARCHAR", "'leads'"),
+        ("saved_views", "shared", "BOOLEAN", "false"),
+        ("sf_field_mappings", "builtin", "BOOLEAN", "false"),
+        # V18: Alternate Messenger / Messaging Provider messaging integration
+        ("sync_settings", "messenger_enabled", "BOOLEAN", "false"),
+        ("sync_settings", "messenger_base_url", "VARCHAR", "'https://app.alternatecrm.com'"),
+        ("sync_settings", "messenger_api_key", "VARCHAR", None),
+        ("sync_settings", "messenger_user_id", "VARCHAR", None),
+        ("sync_settings", "messenger_access_token", "TEXT", None),
         # V18: Audience Manager contact reference on leads
         ("leads", "am_record_id", "VARCHAR", None),
-        # V19: Per-SDR RCM user ID for conversation tagging
-        ("users", "rcm_user_id", "VARCHAR", None),
+        # V19: Per-SDR Alternate Messenger user ID for conversation tagging
+        ("users", "messenger_user_id", "VARCHAR", None),
         # V20: Email open tracking
         ("lead_email_activity", "opened_at", "TIMESTAMPTZ", None),
         ("lead_email_activity", "open_count", "INTEGER", "0"),
@@ -361,17 +487,19 @@ def run_schema_migrations(engine):
         ("sync_settings", "public_api_key", "TEXT", None),
         # V24: Aircall headless sync
         ("leads",         "times_called",         "INTEGER",   "0"),
-        ("dialer_calls",  "source",                "VARCHAR",   "'rcm'"),
+        ("dialer_calls",  "source",                "VARCHAR",   "'alternatecrm'"),
         ("sync_settings", "aircall_last_sync_at",  "TIMESTAMP", None),
-        # V25: RCM Contact Center dialer (dual-dialer architecture)
+        ("sync_settings", "public_api_call_count", "INTEGER", "0"),
+        ("sync_settings", "public_api_last_used_at", "TIMESTAMP", None),
+        # V25: Alternate Messenger Contact Center dialer (dual-dialer architecture)
         ("users",          "dialer_provider_override", "VARCHAR",   None),
-        ("sync_settings",  "rcm_from_number",   "VARCHAR",   None),
-        ("sync_settings",  "rcm_last_sync_at",  "TIMESTAMP", None),
+        ("sync_settings",  "messenger_from_number",   "VARCHAR",   None),
+        ("sync_settings",  "messenger_last_sync_at",  "TIMESTAMP", None),
         # V26: Upload tag — optional source label (e.g. "Apollo", "Lusha")
         ("lead_upload_logs", "tag", "VARCHAR", None),
-        # V27: Per-SDR RCM caller ID (senderId) — each SDR can override the global from_number
-        ("users", "rcm_from_number", "VARCHAR", None),
-        # V28: Separate dialer credentials — Contact Center may use different RCM account
+        # V27: Per-SDR Alternate Messenger caller ID (senderId) — each SDR can override the global from_number
+        ("users", "messenger_from_number", "VARCHAR", None),
+        # V28: Separate dialer credentials — Contact Center may use different Alternate Messenger account
         ("sync_settings", "dialer_use_shared_creds", "BOOLEAN", "true"),
         ("sync_settings", "dialer_base_url", "VARCHAR", None),
         ("sync_settings", "dialer_api_key", "TEXT", None),
@@ -387,12 +515,12 @@ def run_schema_migrations(engine):
         ("sync_settings", "sandbox_refresh_lead_count", "INTEGER", None),
         # V31: Custom AI Research Prompt template (Super Admin configurable)
         ("sync_settings", "research_prompt", "TEXT", None),
-        # V34: RCM Converse Desk account ID (for native Conversations API)
-        ("sync_settings", "rcm_account_id", "VARCHAR", None),
-        # V35: RCM sender number (WhatsApp/SMS sender ID e.g. "918956778474")
-        ("sync_settings",  "rcm_sender_id",   "VARCHAR",   None),
-        # Messaging provider selection — "rcm" (default) or "aircall"
-        ("sync_settings", "messaging_provider", "VARCHAR", "'rcm'"),
+        # V34: Alternate Messenger Converse Desk account ID (for native Conversations API)
+        ("sync_settings", "messenger_account_id", "VARCHAR", None),
+        # V35: Alternate Messenger sender number (WhatsApp/SMS sender ID e.g. "918956778474")
+        ("sync_settings",  "messenger_sender_id",   "VARCHAR",   None),
+        # Messaging provider selection — "messenger" (default) or "aircall"
+        ("sync_settings", "messaging_provider", "VARCHAR", "'messenger'"),
         ("sync_settings", "aircall_messaging_number_id", "VARCHAR", None),
         # V36: Discovery meeting tracking
         ("leads", "discovery_meeting_count", "INTEGER", "0"),
@@ -400,8 +528,8 @@ def run_schema_migrations(engine):
         ("leads", "is_test", "BOOLEAN", "false"),
         ("sync_settings", "sandbox_test_phone_number", "VARCHAR", None),
         # V37: Pending-review meeting lifecycle state (placeholder — no new columns)
-        # V38: Per-SDR RCM login email (audit/display only; not used in API calls)
-        ("users", "rcm_email", "VARCHAR", None),
+        # V38: Per-SDR Alternate Messenger login email (audit/display only; not used in API calls)
+        ("users", "messenger_email", "VARCHAR", None),
         # V39: Aircall tag → outcome mapping (admin-configurable JSON)
         ("sync_settings", "aircall_tag_mapping", "TEXT", None),
         # V40 (Research v2): Pre-Call Intelligence Card
@@ -423,6 +551,22 @@ def run_schema_migrations(engine):
         ("sync_settings", "klenty_api_key",      "TEXT",      None),
         ("sync_settings", "klenty_last_sync_at", "TIMESTAMP", None),
         ("users",         "klenty_username",     "VARCHAR",   None),
+        # Instantly.ai campaign/lead-engagement pull sync (matches models.py)
+        ("sync_settings", "instantly_enabled",        "BOOLEAN",   "false"),
+        ("sync_settings", "instantly_api_key",        "TEXT",      None),
+        ("sync_settings", "instantly_last_sync_at",   "TIMESTAMP", None),
+        ("leads",         "instantly_interest_status","INTEGER",   None),
+        ("leads",         "instantly_interest_label", "VARCHAR",   None),
+        ("leads",         "instantly_last_synced_at", "TIMESTAMP", None),
+        ("lead_email_activity", "source",             "VARCHAR",   "'nylas'"),
+        ("lead_email_activity", "instantly_lead_id",  "VARCHAR",   None),
+        ("lead_email_activity", "instantly_campaign_id", "VARCHAR", None),
+        # v13.8.0 — Instantly mail sync (matches models.py)
+        ("lead_email_activity", "instantly_email_id",  "VARCHAR",   None),
+        ("lead_email_activity", "instantly_thread_id", "VARCHAR",   None),
+        ("lead_email_activity", "instantly_step",      "INTEGER",   None),
+        ("lead_email_activity", "instantly_eaccount",  "VARCHAR",   None),
+        ("sync_settings",       "instantly_mail_cursor", "TEXT",    None),
         # V44: Salesforce auto-sync schedule (matches models.py)
         ("sync_settings", "sf_auto_sync_enabled",     "BOOLEAN",   "false"),
         ("sync_settings", "sf_auto_sync_hour_utc",    "INTEGER",   None),
@@ -441,10 +585,11 @@ def run_schema_migrations(engine):
         # contact-suppression gate, checked before every automated send.
         ("leads", "do_not_contact",  "BOOLEAN",   "false"),
         ("leads", "unsubscribed_at", "TIMESTAMP", None),
+        ("leads", "phone_invalid_at", "TIMESTAMP", None),
         # V48: Aircall Everywhere (embedded browser softphone) — org-wide kill switch
         # (matches models.py). Default off until piloted.
         ("sync_settings", "aircall_everywhere_enabled", "BOOLEAN", "false"),
-        # v10.9.4: per-user opt-out of the "RCM · Powered by RCM"
+        # v10.9.4: per-user opt-out of the "Alternate CRM · Powered by Alternate Messenger"
         # footer on sent mail (matches models.py).
         ("users", "hide_branding_in_email", "BOOLEAN", "false"),
         # v10.9.4: per-user rich-text email signature (matches models.py).
@@ -469,16 +614,169 @@ def run_schema_migrations(engine):
         ("sms_logs", "journey_id", "VARCHAR", None),
         ("sms_logs", "enrollment_id", "VARCHAR", None),
         ("sms_logs", "journey_node_id", "VARCHAR", None),
-        # v10.9.13: give the RCM Widget's manual sends the same persistence
+        # v10.9.13: give the Alternate Messenger Widget's manual sends the same persistence
         # the Cadence engine already had — sms_logs now covers both, distinguished
         # by channel/provider so a future second provider (e.g. Aircall) fits the
         # same table instead of a parallel one.
         ("sms_logs", "channel", "VARCHAR", "'sms'"),
-        ("sms_logs", "provider", "VARCHAR", "'rcm'"),
+        ("sms_logs", "provider", "VARCHAR", "'messenger'"),
         ("sms_logs", "conversation_id", "VARCHAR", None),
         ("sms_logs", "template_name", "VARCHAR", None),
         # v10.9.11: per-pod timezone for Analytics day-boundary bucketing (matches models.py). NULL = UTC.
         ("pods", "timezone", "VARCHAR", None),
+        # v11.2.0: lead soft-delete (see routes/admin_assignment_routes.py::bulk_delete_leads).
+        # RCA 2026-08-17 (LIVE, staging): Base.metadata.create_all() only creates
+        # brand-new tables, it never alters an existing one — this column needs
+        # an explicit migration entry like any other addition to `leads`.
+        ("leads", "deleted_at", "TIMESTAMP", None),
+        # v11.3.0: reply-notification bell (see routes/task_routes.py::get_pending_replies).
+        ("lead_email_activity", "read_at", "TIMESTAMP", None),
+        # NOTE: v11.3.0 shipped a single org-wide report_schedule_* set of columns
+        # on sync_settings for one hour on 2026-08-17, superseded same-day by the
+        # multi-report report_configs/report_executions tables below (v11.4.0) —
+        # never had real data configured. Those 8 ALTER TABLE entries were
+        # removed here; the columns themselves are harmless orphans on any
+        # environment that already ran that migration, left in place rather
+        # than risking a DROP COLUMN.
+        # v11.4.1: Aircall Everywhere per-SDR adoption telemetry (matches models.py).
+        # RCA 2026-08-18: the org-wide aircall_everywhere_enabled flag says nothing
+        # about which SDRs actually logged into the embed vs. are still desktop-app
+        # only — there was no server-side signal at all until this column.
+        ("users", "aircall_everywhere_last_login_at", "TIMESTAMP", None),
+        # v11.4.2: real Salesforce Opportunity Id a lead is linked to — see
+        # models.py's Lead.sf_opportunity_id and salesforce.py's
+        # find_lead_or_opportunity_by_phone.
+        ("leads", "sf_opportunity_id", "VARCHAR", None),
+        # v11.5.0: link an AutoLog-created CallLog back to its DialerCall (matches
+        # models.py's CallLog.dialer_call_id) — see dialer_service._auto_log_outcome
+        # and routes/call_routes.py::log_call's outcome-correction path.
+        ("call_logs", "dialer_call_id", "VARCHAR", None),
+        # v11.5.3: on/off switch for the Aircall nightly + startup catch-up sync
+        # (matches models.py's SyncSettings.aircall_sync_enabled) — mirrors
+        # klenty_enabled above. Defaults true so existing behavior is unchanged
+        # until an admin explicitly turns it off in Settings.
+        ("sync_settings", "aircall_sync_enabled", "BOOLEAN", "true"),
+        # v11.5.9: singleton "Weekly Changelog Digest" toggle (matches
+        # models.py's ReportConfig.send_to_all_users) — the one report row
+        # this is true for resolves its recipients dynamically to every
+        # current CRM user at send time (see report_service.execute_report),
+        # instead of a static to_recipients snapshot that goes stale as
+        # people join/leave.
+        ("report_configs", "send_to_all_users", "BOOLEAN", "false"),
+        # v11.5.22: surface the real reason a WhatsApp/SMS send failed (matches
+        # models.py's SmsLog.failure_reason) — every failure used to collapse
+        # to a generic "Send failed" with the provider's actual error discarded.
+        ("sms_logs", "failure_reason", "TEXT", None),
+        # v11.5.22: per-SDR WhatsApp sender (matches models.py's
+        # User.messenger_whatsapp_sender_id) — mirrors the existing per-SDR
+        # messenger_from_number pattern for calling.
+        ("users", "messenger_whatsapp_sender_id", "VARCHAR", None),
+        # v11.10.0: per-SDR messaging access + vendor (matches models.py's
+        # User.sms_enabled / whatsapp_enabled / messaging_provider_override).
+        # Messaging previously had no per-user gate at all — it rode on
+        # dialer_enabled plus a Alternate Messenger dialer provider. Backfilled from
+        # dialer_enabled by v11_10_0_backfill_messaging_access below so nobody
+        # who can message today loses it on deploy.
+        ("users", "sms_enabled", "BOOLEAN", "false"),
+        ("users", "whatsapp_enabled", "BOOLEAN", "false"),
+        ("users", "messaging_provider_override", "VARCHAR", None),
+        # v12: Email Campaigns linkage (matches models.LeadEmailActivity.campaign_id)
+        ("lead_email_activity", "campaign_id", "VARCHAR", None),
+        # v12: Email Campaign scheduling/recurrence (matches models.EmailCampaign) —
+        # email_campaigns was created earlier this same release, so a fresh DB
+        # already gets these via table_creates below; this covers the
+        # already-migrated staging table.
+        ("email_campaigns", "frequency", "VARCHAR", "'once'"),
+        ("email_campaigns", "scheduled_send_at", "TIMESTAMP", None),
+        ("email_campaigns", "weekday", "INTEGER", None),
+        ("email_campaigns", "day_of_month", "INTEGER", None),
+        ("email_campaigns", "timezone", "VARCHAR", "'UTC'"),
+        ("email_campaigns", "send_hour", "INTEGER", None),
+        ("email_campaigns", "send_minute", "INTEGER", "0"),
+        ("email_campaigns", "last_run_at", "TIMESTAMP", None),
+        # v12.3: per-campaign signature toggle (matches models.EmailCampaign.include_signature)
+        ("email_campaigns", "include_signature", "BOOLEAN", "true"),
+        # CSM Portal foundation: Opportunity/Account sync direction, separate from Lead's
+        ("sync_settings", "opportunity_sync_direction", "VARCHAR", "'push_only'"),
+        # CSM Portal foundation: `accounts` pre-existed on at least staging from
+        # an earlier, incomplete pass at this same model (had `website`, not
+        # these) — create_all() no-ops on a table that already exists, so
+        # these never got added there and every CSM Portal query 500'd on a
+        # missing column. Explicit ADD COLUMN, same as any other environment
+        # drift, rather than assuming "new model = create_all handles it."
+        ("accounts", "owner_user_id", "VARCHAR", None),
+        ("accounts", "customer_since", "TIMESTAMP", None),
+        ("accounts", "assigned_csm_id", "VARCHAR", None),
+        # CSM Portal: manual health-tier override (launch-readiness gap #5)
+        ("accounts", "manual_health_tier", "VARCHAR", None),
+        ("accounts", "health_override_by", "VARCHAR", None),
+        ("accounts", "health_override_at", "TIMESTAMP", None),
+        ("accounts", "health_override_reason", "TEXT", None),
+        # Champion-departure playbook: manual-trigger flag on the handover brief
+        ("closing_briefs", "champion_active", "BOOLEAN", "true"),
+        # Salesforce write-back guardrails (see csm_portal_routes.py /
+        # ae_pipeline_routes.py): a master off-by-default switch for the
+        # AE/CSM action-triggered pushes, and per-Opportunity visibility into
+        # whether the last push actually reached Salesforce.
+        ("sync_settings", "opportunity_writeback_enabled", "BOOLEAN", "false"),
+        ("opportunities", "sf_push_status", "VARCHAR", None),
+        ("opportunities", "sf_push_error", "TEXT", None),
+        ("opportunities", "sf_push_at", "TIMESTAMP", None),
+        # Power Dialer call script (v12.6.0): per-lead override + cadence
+        # default carried on the Task a "call" journey node creates.
+        ("leads", "talking_points", "TEXT", None),
+        ("tasks", "description", "TEXT", None),
+        # Closed-Won validation-rule fix (live finding, 2026-09-15): fields
+        # this org requires before an Opportunity can move to a closed stage.
+        ("opportunities", "standard_product_names", "TEXT", None),
+        ("opportunities", "invoice_number", "VARCHAR", None),
+        ("opportunities", "lost_reason", "VARCHAR", None),
+        # Sync Log guardrail fix (2026-09-16): "create"/"upsert" on the
+        # Sync Log reads as an outbound Salesforce write regardless of
+        # direction, which is what triggered a false data-pollution scare —
+        # source_system alone can't disambiguate since "sync_button" covers
+        # both pull and push. Explicit direction, defaulting to the
+        # (majority) outbound case; backfilled false at the three inbound
+        # pull sites in salesforce.py.
+        ("salesforce_integration_logs", "direction", "VARCHAR", "'outbound'"),
+        # Owner/CSM display fix (2026-09-17): raw SF identity, stored even
+        # when there's no matching Alternate CRM user yet — see models.py's
+        # Account.sf_owner_email/sf_csm_email doc comment.
+        ("accounts", "sf_owner_email", "VARCHAR", None),
+        ("accounts", "sf_owner_name", "VARCHAR", None),
+        ("accounts", "sf_csm_email", "VARCHAR", None),
+        ("accounts", "sf_csm_name", "VARCHAR", None),
+        # v13.0.0 cadence playbook support (matches models.py). Every default
+        # is "off" so existing cadences behave exactly as before; new ones
+        # get stop_on_reply/stop_on_meeting on at creation (journey_routes).
+        ("journeys", "stop_on_reply", "BOOLEAN", "false"),
+        ("journeys", "stop_on_meeting", "BOOLEAN", "false"),
+        ("journeys", "max_duration_days", "INTEGER", None),
+        ("journeys", "reengage_after_days", "INTEGER", None),
+        ("journeys", "reengage_min_opens", "INTEGER", None),
+        ("journeys", "allow_reenroll", "BOOLEAN", None),   # NULL = legacy cadence = allowed
+        ("journeys", "reenroll_cooloff_days", "INTEGER", None),
+        ("journeys", "send_as", "VARCHAR", None),   # NULL = owner (legacy); "assigned_rep" for new cadences
+        # Manual cadence steps: the Task a "task" node created, and the
+        # outcome the rep picked when completing it.
+        ("tasks", "journey_enrollment_id", "VARCHAR", None),
+        ("tasks", "journey_node_id", "VARCHAR", None),
+        ("tasks", "outcome_options", "TEXT", None),
+        ("tasks", "outcome", "VARCHAR", None),
+        # 2026-09-30: the Aircall Webhook URL box was a read-only, auto-derived
+        # display value. User decision: make it editable (e.g. a proxy/custom
+        # domain in front of this backend) — NULL keeps today's auto-derived
+        # behavior, unchanged for everyone who never touches it.
+        ("sync_settings", "dialer_webhook_url_override", "VARCHAR", None),
+        # v13.3.0: Instantly send-side (campaign-per-node handoff, matches models.py)
+        ("sync_settings", "instantly_webhook_secret",     "TEXT",      None),
+        ("sync_settings", "instantly_webhook_id",         "VARCHAR",   None),
+        ("sync_settings", "instantly_sending_accounts",   "TEXT",      None),
+        ("sync_settings", "mcp_write_enabled",            "BOOLEAN",   "false"),
+        ("sync_settings", "mcp_everyone_enabled",         "BOOLEAN",   "false"),
+        # v13.11.0: who made a status move (id, not a name string). NULL = older row or a system move.
+        ("lead_status_logs", "changed_by_user_id", "VARCHAR", None),
+        ("users", "left_at", "TIMESTAMP", None),   # v13.11.0: offboarding stamp
     ]
 
     table_creates = [
@@ -731,11 +1029,20 @@ def run_schema_migrations(engine):
             resolved_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )""",
-        # V33: RCM Floating Widget — widget fields on sync_settings + sms_logs table
-        "ALTER TABLE sync_settings ADD COLUMN IF NOT EXISTS widget_enabled BOOLEAN NOT NULL DEFAULT false",
+        # V33: Alternate Messenger Floating Widget — widget fields on sync_settings + sms_logs table
+        # v11.10.0: widget_enabled is no longer created — it was never read.
+        # Existing databases keep the column (dropping it buys nothing and
+        # risks a lock); it is simply unmapped and unexposed now.
         "ALTER TABLE sync_settings ADD COLUMN IF NOT EXISTS widget_position VARCHAR DEFAULT 'bottom-right'",
         "ALTER TABLE sync_settings ADD COLUMN IF NOT EXISTS widget_theme VARCHAR DEFAULT 'dark'",
         "ALTER TABLE sync_settings ADD COLUMN IF NOT EXISTS widget_allowed_domains TEXT",
+        # v13.1.0: manual-email cadence step (Viren's request) — a Task with
+        # kind="email_approval" carries the merge-resolved draft the rep
+        # reviews/edits/sends; journey_engine.engine._handle_manual_email_node.
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS kind VARCHAR",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS draft_subject TEXT",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS draft_body TEXT",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS draft_body_format VARCHAR",
         """CREATE TABLE IF NOT EXISTS sms_logs (
             id VARCHAR PRIMARY KEY,
             message_id VARCHAR,
@@ -818,6 +1125,100 @@ def run_schema_migrations(engine):
         )""",
         "CREATE INDEX IF NOT EXISTS idx_disqualify_requests_company ON disqualify_requests (company)",
         "CREATE INDEX IF NOT EXISTS idx_disqualify_requests_status ON disqualify_requests (status)",
+
+        # ── Reassign requests (matches models.ReassignRequest) ──────────────────
+        """CREATE TABLE IF NOT EXISTS reassign_requests (
+            id VARCHAR PRIMARY KEY,
+            lead_id VARCHAR NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+            requested_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            note VARCHAR,
+            status VARCHAR NOT NULL DEFAULT 'pending',
+            reviewed_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+            reviewed_at TIMESTAMP,
+            rejection_reason VARCHAR
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_reassign_requests_lead ON reassign_requests (lead_id)",
+        "CREATE INDEX IF NOT EXISTS idx_reassign_requests_status ON reassign_requests (status)",
+        # one open request per lead+requester — a double-click or retry must not queue two
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_reassign_requests_pending_uniq ON reassign_requests (lead_id, requested_by) WHERE status = 'pending'",
+
+        # ── Saved Leads views, per user (matches models.SavedView) ─────────────
+        """CREATE TABLE IF NOT EXISTS saved_views (
+            id VARCHAR PRIMARY KEY,
+            user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name VARCHAR NOT NULL,
+            filters JSONB,
+            keys JSONB,
+            search VARCHAR,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_saved_views_user ON saved_views (user_id)",
+
+        # ── Call Lists (matches models.CallList / models.call_list_leads) ──────
+        # User-curated, org-wide-visible Power Dialer dial lists — any SDR/AE/
+        # Admin can create one and add leads to it (unlike tags, which are
+        # admin-curated at upload time).
+        """CREATE TABLE IF NOT EXISTS call_lists (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            created_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS call_list_leads (
+            call_list_id VARCHAR NOT NULL REFERENCES call_lists(id) ON DELETE CASCADE,
+            lead_id VARCHAR NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+            PRIMARY KEY (call_list_id, lead_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_call_list_leads_lead_id ON call_list_leads (lead_id)",
+
+        # ── Email Campaigns (matches models.EmailTemplate/EmailCampaign/EmailCampaignRecipient) ──
+        """CREATE TABLE IF NOT EXISTS email_templates (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            subject VARCHAR NOT NULL,
+            body TEXT NOT NULL,
+            created_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS email_campaigns (
+            id VARCHAR PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            subject VARCHAR NOT NULL,
+            body TEXT NOT NULL,
+            created_by VARCHAR REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status VARCHAR NOT NULL DEFAULT 'running',
+            total_recipients INTEGER NOT NULL DEFAULT 0,
+            sent_count INTEGER NOT NULL DEFAULT 0,
+            failed_count INTEGER NOT NULL DEFAULT 0,
+            skipped_count INTEGER NOT NULL DEFAULT 0,
+            frequency VARCHAR NOT NULL DEFAULT 'once',
+            scheduled_send_at TIMESTAMP,
+            weekday INTEGER,
+            day_of_month INTEGER,
+            timezone VARCHAR NOT NULL DEFAULT 'UTC',
+            send_hour INTEGER,
+            send_minute INTEGER NOT NULL DEFAULT 0,
+            last_run_at TIMESTAMP
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_email_campaigns_created_by ON email_campaigns (created_by)",
+        """CREATE TABLE IF NOT EXISTS email_campaign_recipients (
+            id VARCHAR PRIMARY KEY,
+            campaign_id VARCHAR NOT NULL REFERENCES email_campaigns(id) ON DELETE CASCADE,
+            lead_id VARCHAR NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+            status VARCHAR NOT NULL DEFAULT 'pending',
+            error VARCHAR,
+            sent_at TIMESTAMP
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_email_campaign_recipients_campaign_id ON email_campaign_recipients (campaign_id)",
+        "CREATE INDEX IF NOT EXISTS idx_email_campaign_recipients_lead_id ON email_campaign_recipients (lead_id)",
+        # Backlog fix: no guardrail existed against enrolling a lead into the
+        # wrong vertical's cadence. Both nullable, no backfill — a lead/journey
+        # with no vertical set simply never triggers the mismatch warning
+        # (see journey_routes.py's enroll()), so existing rows are unaffected.
+        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS vertical VARCHAR",
+        "ALTER TABLE journeys ADD COLUMN IF NOT EXISTS vertical VARCHAR",
     ]
 
 
@@ -862,7 +1263,7 @@ def run_schema_migrations(engine):
             WHERE times_called IS NULL OR times_called = 0
         """),
         ("v24_backfill_dialer_source",
-         "UPDATE dialer_calls SET source = 'rcm' WHERE source IS NULL"),
+         "UPDATE dialer_calls SET source = 'alternatecrm' WHERE source IS NULL"),
         # V10: Pod Admin multi-admin architecture
         # Step 1 — backfill pod_admins from pods.admin_id (runs once, idempotent via INSERT ... ON CONFLICT)
         ("v10_backfill_pod_admins_from_admin_id", """
@@ -902,6 +1303,89 @@ def run_schema_migrations(engine):
         ("v_backfill_meeting_scheduled_at", """
             UPDATE leads SET meeting_scheduled_at = status_changed_at
             WHERE status = 'Meeting Scheduled' AND meeting_scheduled_at IS NULL
+        """),
+
+        # v11.10.0: messaging gained its own per-SDR gates (sms_enabled /
+        # whatsapp_enabled). Before this release the effective gate was
+        # dialer_enabled — frontend/js/app.js only mounted the widget (which
+        # hosts the Message tab) for users whose dialer resolved to Alternate Messenger.
+        # Defaulting the new columns to false would therefore have silently
+        # revoked messaging from every SDR who has it today, so carry the old
+        # implicit grant forward. Runs exactly once; new users default to false
+        # and must be granted explicitly by an admin.
+        ("v11_10_0_backfill_messaging_access", """
+            UPDATE users SET sms_enabled = true, whatsapp_enabled = true
+            WHERE dialer_enabled = true
+        """),
+
+        # v11.10.5: v11_10_0_backfill_messaging_access above used dialer_enabled
+        # as its condition. Confirmed against live prod data (2026-09-02) that
+        # this is the wrong proxy: dialer_enabled reflects calling access on
+        # whatever vendor is configured (Aircall, for most SDRs at this org),
+        # not messaging. Real effect on this org's 23 users: 17 Aircall-only
+        # callers with no Alternate Messenger identity at all were granted
+        # sms_enabled/whatsapp_enabled=true they'd never had before (their
+        # cadence-owned leads could now get automated Alternate Messenger SMS/WhatsApp
+        # sent from the org-wide sender — not what was intended), while 4 real,
+        # already-active Alternate Messenger agents (each with a real messenger_user_id)
+        # who happened to have dialer_enabled=false lost access their cadence
+        # sends already relied on pre-v11.10.0 — before that release neither
+        # sms_channel.py nor whatsapp_channel.py gated on any per-user flag at
+        # all, so their messages were always going out.
+        #
+        # messenger_user_id is the correct signal: a real Alternate Messenger agent
+        # identity already configured for this user is what "already
+        # messaging" actually meant, independent of which vendor they call
+        # through. Re-derives both columns for every user (not just the
+        # affected 21) so the result is provably consistent rather than a
+        # hand-picked patch — safe to run unconditionally because this is the
+        # first and only write to either column since the buggy backfill
+        # above ran (confirmed via a live prod data pull immediately before
+        # writing this migration: every row's sms_enabled/whatsapp_enabled
+        # still exactly matches its dialer_enabled value, so nothing has
+        # since been manually toggled that this would clobber).
+        ("v11_10_5_correct_messaging_access_gate", """
+            UPDATE users SET sms_enabled = (messenger_user_id IS NOT NULL),
+                              whatsapp_enabled = (messenger_user_id IS NOT NULL)
+        """),
+        # 2026-09-16: the ADD COLUMN ... DEFAULT 'outbound' that introduced
+        # salesforce_integration_logs.direction backfilled EVERY existing row
+        # to 'outbound' — including the historical Account/Opportunity pull
+        # logs that caused the original data-pollution scare this column
+        # exists to prevent. Two unambiguous signatures to correct:
+        #   - Account/Opportunity + source_system='sync_button': there is no
+        #     outbound push path for either object that uses 'sync_button'
+        #     (Opportunity's own push always logs source_system='ae_pipeline'),
+        #     so this combination is always a pull.
+        #   - Lead + source_system='sync_button' is genuinely ambiguous (a
+        #     lead-push-during-manual-sync path also uses 'sync_button'), but
+        #     the two are distinguishable by fields_updated: the pull always
+        #     logs the fixed ["FirstName", "LastName", ...] list; the push
+        #     path logs ["sf_lead_id"] or nothing.
+        ("v12_6_5_correct_sf_log_direction_backfill", """
+            UPDATE salesforce_integration_logs
+            SET direction = 'inbound'
+            WHERE source_system = 'sync_button'
+              AND operation_type IN ('create', 'upsert')
+              AND (
+                sf_object IN ('Account', 'Opportunity')
+                OR (sf_object = 'Lead' AND fields_updated LIKE '%FirstName%')
+              )
+        """),
+        # v13.7.0: cadence tasks were created due "now", so every open approval
+        # / LinkedIn / call task read "Overdue" in My Tasks and inflated the
+        # bell. Give open ones the deadline their cadence step is actually
+        # waiting for (the parked queue row); a hard-stop step (~100 years
+        # out) gets no due time. New tasks get it at creation
+        # (channels.base.manual_step_due_time).
+        ("v13_7_0_cadence_task_due_time_from_step_deadline", """
+            UPDATE tasks t
+            SET due_time = CASE WHEN q.next_run_at > now() + interval '50 years' THEN NULL ELSE q.next_run_at END
+            FROM journey_execution_queue q
+            WHERE t.journey_enrollment_id = q.enrollment_id
+              AND t.journey_node_id = q.node_id
+              AND q.status = 'pending'
+              AND t.done = 'false'
         """),
     ]
 
@@ -1040,6 +1524,25 @@ def run_schema_migrations(engine):
                         f"[Migration] {migration_name}: about to delete "
                         f"{count_row[0] if count_row else 0} lead_assignments rows"
                     )
+                # Revokes access from some users (the wrongly-granted 17, see
+                # comment above) as well as granting it — log both counts so a
+                # prod run leaves an audit trail of exactly what flipped, not
+                # just that the migration ran.
+                if migration_name == "v11_10_5_correct_messaging_access_gate":
+                    to_grant = conn.execute(text("""
+                        SELECT COUNT(*) FROM users
+                        WHERE messenger_user_id IS NOT NULL
+                        AND (sms_enabled = false OR whatsapp_enabled = false)
+                    """)).fetchone()[0]
+                    to_revoke = conn.execute(text("""
+                        SELECT COUNT(*) FROM users
+                        WHERE messenger_user_id IS NULL
+                        AND (sms_enabled = true OR whatsapp_enabled = true)
+                    """)).fetchone()[0]
+                    logger.info(
+                        f"[Migration] {migration_name}: about to grant messaging "
+                        f"to {to_grant} user(s) and revoke it from {to_revoke} user(s)"
+                    )
                 conn.execute(text(stmt))
                 conn.commit()
                 _mark_migration_applied(conn, migration_name)
@@ -1054,6 +1557,12 @@ def run_schema_migrations(engine):
             "CREATE INDEX IF NOT EXISTS idx_leads_company_lower ON leads (LOWER(company))",
             # V24: Deduplicate dialer calls by provider + external call ID
             # Partial index: only index non-empty provider_call_id values
+            # v13.8.0: one row per Instantly email; campaign lookups for the Replies report
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_lea_instantly_email_id
+               ON lead_email_activity (instantly_email_id)
+               WHERE instantly_email_id IS NOT NULL""",
+            "CREATE INDEX IF NOT EXISTS idx_lea_instantly_campaign ON lead_email_activity (instantly_campaign_id)",
+            "CREATE INDEX IF NOT EXISTS idx_lea_instantly_thread ON lead_email_activity (instantly_thread_id)",
             """CREATE UNIQUE INDEX IF NOT EXISTS idx_dialer_calls_dedup
                ON dialer_calls (provider, provider_call_id)
                WHERE provider_call_id IS NOT NULL AND provider_call_id != ''""",
@@ -1092,6 +1601,17 @@ def run_schema_migrations(engine):
 
             # leaderboard (469ms): outbound filter + date range on dialer_calls
             "CREATE INDEX IF NOT EXISTS idx_dialer_calls_user_dir_created ON dialer_calls (user_id, direction, created_at DESC)",
+
+            # RCA 2026-10-01: SDRs reported Activity Monitor / Analytics Hub
+            # (call-logs, sdr-table, leaderboard) taking 10-76s. EXPLAIN ANALYZE
+            # on prod showed a Seq Scan on dialer_calls (66k rows) — every index
+            # above is on the raw `created_at` column, but models.dialer_call_
+            # event_time() (the actual filter every one of these routes uses)
+            # is COALESCE(started_at, created_at), a different expression a
+            # plain created_at index cannot serve. These two mirror the pair
+            # above, indexed on the expression actually queried.
+            "CREATE INDEX IF NOT EXISTS idx_dialer_calls_event_time ON dialer_calls (coalesce(started_at, created_at) DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_dialer_calls_user_dir_event_time ON dialer_calls (user_id, direction, coalesce(started_at, created_at) DESC)",
 
             # ── v8.9.9-perf: Phase 2 remediation — 4 indexes confirmed missing from prod ──
             # leads/my (2,735ms): ORDER BY priority_score DESC, created_at DESC — full table sort
@@ -1157,6 +1677,10 @@ def run_schema_migrations(engine):
             # This standalone index enables an index scan for the unfiltered ORDER BY path.
             "CREATE INDEX IF NOT EXISTS idx_call_logs_called_at ON call_logs (called_at DESC)",
 
+            # v11.5.0: lookup index for CallLog.dialer_call_id (outcome-correction
+            # path in call_routes.py::log_call needs to find the paired auto-log row).
+            "CREATE INDEX IF NOT EXISTS idx_call_logs_dialer_call_id ON call_logs (dialer_call_id)",
+
             # ── error-logs summary fix (RCA: 2026-07-07) ─────────────────────────────
             # /api/admin/error-logs/summary runs 4 sequential COUNT(*) queries with
             # WHERE resolved = false AND severity = '...' AND created_at >= cutoff.
@@ -1187,6 +1711,10 @@ def run_schema_migrations(engine):
                 "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_leads_last_name_trgm ON leads USING gin (last_name gin_trgm_ops)",
                 "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_leads_email_trgm ON leads USING gin (email gin_trgm_ops)",
                 "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_leads_company_trgm ON leads USING gin (company gin_trgm_ops)",
+                # v13.9.0: phone was the one searched column without an index, so every search scanned all leads
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_leads_phone_trgm ON leads USING gin (phone gin_trgm_ops)",
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_leads_phone_secondary_trgm ON leads USING gin (phone_secondary gin_trgm_ops)",
+                "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_leads_company_phone_trgm ON leads USING gin (company_phone gin_trgm_ops)",
             ]
             try:
                 with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as ac_conn:
@@ -1237,5 +1765,14 @@ def run_schema_migrations(engine):
     # Runs after dialer_calls.provider_disposition is guaranteed to exist (V47 above).
     _backfill_klenty_started_at_and_disposition(engine)
 
+    # Runs after the sync_settings column migrations above.
+    _encrypt_messenger_api_key(engine)
+
     # Runs after execution_logs is guaranteed to exist (create_all, main.py).
     _ensure_execution_log_partitions(engine)
+
+    # Runs after create_all has made lead_ownership_periods; installs the ownership-history trigger + backfill.
+    _ensure_ownership_history(engine)
+
+    # Runs after create_all has made lead_meetings and the lead_status_logs column migration above.
+    _backfill_lead_meetings(engine)

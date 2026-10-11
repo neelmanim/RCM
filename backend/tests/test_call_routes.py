@@ -1,12 +1,13 @@
 """Tests for routes/call_routes.py — Call logging, close-lead, SDR call summary."""
 import sys, os
+import threading
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from unittest.mock import patch, MagicMock
 
-from conftest import (
+from conftest import (SUPER_ADMIN, 
     create_test_user, create_test_lead, create_test_call, create_sync_settings,
-    create_nylas_config, create_user_mailbox,
+    create_nylas_config, create_user_mailbox, create_test_dialer_call,
 )
 import models
 
@@ -41,6 +42,19 @@ class TestLogCall:
         })
         assert resp.status_code == 200
         assert resp.json()["call"]["outcome"] == "No Answer"
+
+    def test_log_call_invalidates_leads_cache(self, client, db):
+        # RCA 2026-08-25: logging a call mutates call_attempt_count/times_called/
+        # priority_score but never busted my_leads/leads_count — the SDR's own
+        # "My Leads" view could keep showing 0 calls until the cache's TTL
+        # passed on its own.
+        lead = create_test_lead(db, email="cachecall@t.com")
+        create_test_user(db, email="admin@test.com")
+        with patch("cache.invalidate") as mock_invalidate:
+            resp = client.post(f"/api/leads/{lead.id}/calls", json={"outcome": "No Answer", "notes": ""})
+        assert resp.status_code == 200
+        invalidated = {call.args[0] for call in mock_invalidate.call_args_list}
+        assert {"my_leads", "leads_count", "leads_page"}.issubset(invalidated)
 
     def test_invalid_outcome_returns_400(self, client, db):
         lead = create_test_lead(db, email="badcall@t.com")
@@ -98,6 +112,55 @@ class TestLogCall:
         assert resp.status_code == 200
         assert resp.json()["lead_status"] == "Calling"  # Status stays as Calling
 
+    def test_can_correct_an_already_logged_dialer_outcome(self, client, db):
+        """RCA 2026-08-19: an outcome auto-logged (e.g. by Aircall AutoLog tag
+        mapping) or previously mis-logged must be correctable — the SDR's
+        explicit correction should overwrite DialerCall.outcome (what analytics
+        reads), not silently create a second, separate CallLog."""
+        lead = create_test_lead(db, email="correct@t.com", status="Calling")
+        user = create_test_user(db, email="admin@test.com")
+        dc = create_test_dialer_call(
+            db, lead_id=lead.id, user_id="test-user-id",
+            status="CALL_ENDED", outcome="No Answer",  # wrong auto-tagged outcome
+        )
+        resp = client.post(f"/api/leads/{lead.id}/calls", json={
+            "outcome": "Call Back Later", "notes": "Actually connected", "dialer_call_id": dc.id,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["call"]["outcome"] == "Call Back Later"
+        assert resp.json()["call"]["attached_to_dialer"] is True
+
+        db.refresh(dc)
+        assert dc.outcome == "Call Back Later"  # overwritten, not left stale
+
+        # No duplicate manual CallLog created for this correction
+        manual_logs = db.query(models.CallLog).filter(models.CallLog.lead_id == lead.id).count()
+        assert manual_logs == 0
+
+    def test_correcting_outcome_also_updates_the_paired_autolog_call_log(self, client, db):
+        """The AutoLog CallLog created alongside a tag-mapped DialerCall (linked via
+        CallLog.dialer_call_id) must be kept in sync on correction — otherwise the
+        Calls tab shows two rows disagreeing on the outcome for the same call."""
+        lead = create_test_lead(db, email="paired@t.com", status="Calling")
+        user = create_test_user(db, email="admin@test.com")
+        dc = create_test_dialer_call(
+            db, lead_id=lead.id, user_id="test-user-id",
+            status="CALL_ENDED", outcome="No Answer",
+        )
+        paired = models.CallLog(lead_id=lead.id, user_id=None, outcome="No Answer",
+                                 notes="[Auto-logged from Aircall tag: Not Answered]",
+                                 dialer_call_id=dc.id)
+        db.add(paired)
+        db.commit()
+
+        resp = client.post(f"/api/leads/{lead.id}/calls", json={
+            "outcome": "Call Back Later", "notes": "Actually connected", "dialer_call_id": dc.id,
+        })
+        assert resp.status_code == 200
+
+        db.refresh(paired)
+        assert paired.outcome == "Call Back Later"
+
     def test_no_answer_increments_attempt_count(self, client, db):
         """All non-successful outcomes should increment call_attempt_count."""
         lead = create_test_lead(db, email="noanswer@t.com", status="Calling")
@@ -109,6 +172,91 @@ class TestLogCall:
         # Check the lead was updated
         db.refresh(lead)
         assert lead.call_attempt_count >= 1
+
+    def test_times_called_not_double_counted_when_webhook_already_ended_the_call(self, client, db):
+        """RCA 2026-08-21 (live): dialer_service.handle_webhook increments
+        lead.times_called unconditionally on outbound CALL_ENDED. Submitting
+        the outcome afterward must not increment it a second time here --
+        call_attempt_count already had this exact guard (already_counted_by_
+        webhook), but times_called two lines below it never got it. This
+        counted every Aircall call twice once the outcome-modal SSE fix made
+        the webhook-then-outcome-submit sequence complete reliably."""
+        from datetime import datetime, timezone
+        lead = create_test_lead(db, email="doublecount@t.com", status="Calling")
+        lead.times_called = 0
+        db.commit()
+        create_test_user(db, email="admin@test.com")
+        dc = create_test_dialer_call(
+            db, lead_id=lead.id, user_id="test-user-id",
+            status="CALL_ENDED", outcome=None,  # webhook set status, no outcome yet
+        )
+        # Simulate what dialer_service.handle_webhook already did for this call:
+        # set ended_at and increment times_called once (dialer_service.py:1056-1058).
+        dc.ended_at = datetime.now(timezone.utc)
+        lead.times_called = 1
+        db.commit()
+
+        resp = client.post(f"/api/leads/{lead.id}/calls", json={
+            "outcome": "Call Back Later", "notes": "", "dialer_call_id": dc.id,
+        })
+        assert resp.status_code == 200
+
+        db.refresh(lead)
+        assert lead.times_called == 1
+
+    def test_logging_outcome_closes_out_a_still_active_dialer_call(self, client, db):
+        """RCA 2026-09-01 (live production, reported by SDRs): initiate_call's
+        "you already have an active call in progress" guard keys purely on
+        DialerCall.status, cleared only by a provider webhook (or a 5-15min
+        staleness timeout) -- never by the SDR finishing this outcome-log
+        step. When the provider's webhook never lands on this row (a known,
+        confirmed Aircall Everywhere embedded-window race), the SDR is
+        blocked from their next dial even after logging the outcome in both
+        the CRM pop-up and Aircall's own window. Logging an outcome must
+        close out the call itself, independent of any webhook ever arriving."""
+        lead = create_test_lead(db, email="stillactive@t.com", status="Calling")
+        create_test_user(db, email="admin@test.com")
+        dc = create_test_dialer_call(
+            db, lead_id=lead.id, user_id="test-user-id",
+            status="CALL_STARTED", outcome=None,  # no webhook has fired yet
+        )
+        assert dc.ended_at is None
+
+        resp = client.post(f"/api/leads/{lead.id}/calls", json={
+            "outcome": "Call Back Later", "notes": "", "dialer_call_id": dc.id,
+        })
+        assert resp.status_code == 200
+
+        db.refresh(dc)
+        assert dc.status == "CALL_ENDED"
+        assert dc.ended_at is not None
+
+    def test_logging_outcome_does_not_touch_ended_at_already_set_by_a_webhook(self, client, db):
+        """The fix above must be additive to the webhook path, not override
+        it: if a webhook already set ended_at (the call's real end time),
+        logging the outcome afterward must not overwrite it with "now"."""
+        from datetime import datetime, timezone, timedelta
+        lead = create_test_lead(db, email="webhookended@t.com", status="Calling")
+        create_test_user(db, email="admin@test.com")
+        real_ended_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+        dc = create_test_dialer_call(
+            db, lead_id=lead.id, user_id="test-user-id",
+            status="CALL_ENDED", outcome=None,
+        )
+        dc.ended_at = real_ended_at
+        db.commit()
+
+        resp = client.post(f"/api/leads/{lead.id}/calls", json={
+            "outcome": "Call Back Later", "notes": "", "dialer_call_id": dc.id,
+        })
+        assert resp.status_code == 200
+
+        db.refresh(dc)
+        assert dc.status == "CALL_ENDED"
+        # SQLite round-trips DateTime columns as naive — normalize before diffing.
+        stored = dc.ended_at.replace(tzinfo=None) if dc.ended_at.tzinfo else dc.ended_at
+        expected = real_ended_at.replace(tzinfo=None)
+        assert abs((stored - expected).total_seconds()) < 1
 
     def test_lead_not_found_404(self, client):
         resp = client.post("/api/leads/fake-id/calls", json={
@@ -192,6 +340,67 @@ class TestCloseLead:
             "reason": "Unreachable"
         })
         assert resp.status_code == 422
+
+    # RCA 2026-08-17: stakeholder report "wrong-number disqualify not
+    # working" — lead_detail.js offers the Disqualify button (incl. Wrong
+    # Number) across 5 statuses, but close_lead() only accepted "Calling".
+    def test_close_lead_from_meeting_scheduled_now_allowed(self, client, db):
+        lead = create_test_lead(db, email="post-calling@t.com", status="Meeting Scheduled")
+        resp = client.post(f"/api/leads/{lead.id}/close", json={
+            "reason": "Wrong Number"
+        })
+        assert resp.status_code == 200
+        assert resp.json()["lead_status"] == "Disqualified"
+
+    def test_close_lead_still_blocked_outside_disqualifiable_statuses(self, client, db):
+        """Research is not one of the statuses the Disqualify button is ever
+        shown for — must still be blocked, not just widened to everything."""
+        lead = create_test_lead(db, email="research-close@t.com", status="Research")
+        resp = client.post(f"/api/leads/{lead.id}/close", json={
+            "reason": "Wrong Number"
+        })
+        assert resp.status_code == 422
+
+    def test_close_lead_with_definitive_reason_needs_no_prior_call_log(self, client, db):
+        """The SDR explicitly choosing a terminal reason (Wrong Number) through
+        this endpoint is itself the definitive outcome — it must not also
+        require a separately-logged CallLog/DialerCall row with that same
+        outcome, and must not require call_attempt_count to have caught up."""
+        lead = create_test_lead(db, email="wrongnum-noattempt@t.com", status="Calling")
+        assert lead.call_attempt_count in (0, None)
+        resp = client.post(f"/api/leads/{lead.id}/close", json={
+            "reason": "Wrong Number"
+        })
+        assert resp.status_code == 200
+        assert resp.json()["lead_status"] == "Disqualified"
+
+    def test_close_lead_non_definitive_reason_still_needs_attempts(self, client, db):
+        """"Other" is a valid close reason but not a terminal-group outcome,
+        so it doesn't get the definitive-reason bypass — the attempts gate
+        must still fire for it on a lead with 0 attempts and no call logged."""
+        lead = create_test_lead(db, email="zero-attempts@t.com", status="Meeting Scheduled")
+        lead.call_attempt_count = 0
+        db.commit()
+        # "Other" is an always-valid extra reason but not in the terminal
+        # config group, so it doesn't get the definitive-reason bypass.
+        resp = client.post(f"/api/leads/{lead.id}/close", json={
+            "reason": "Other"
+        })
+        assert resp.status_code == 422
+
+    def test_close_lead_other_with_note_bypasses_attempts_gate(self, client, db):
+        """RCA 2026-08-31: "Other: <note>" — an SDR explaining why through
+        the free-text field — is as deliberate a choice as a real terminal
+        outcome and must not need prior attempts either, unlike bare "Other"
+        above."""
+        lead = create_test_lead(db, email="other-with-note@t.com", status="Meeting Scheduled")
+        lead.call_attempt_count = 0
+        db.commit()
+        resp = client.post(f"/api/leads/{lead.id}/close", json={
+            "reason": "Other: prospect confirmed via LinkedIn they left the company"
+        })
+        assert resp.status_code == 200
+        assert resp.json()["lead_status"] == "Disqualified"
 
 
 class TestGetCallLogs:
@@ -357,8 +566,16 @@ class TestNewOutcomes:
         assert lead.meeting_scheduled_at.month == 8 and lead.meeting_scheduled_at.day == 15
         assert lead.meeting_scheduled_at.hour == 14 and lead.meeting_scheduled_at.minute == 30
 
-    def test_meeting_confirmed_without_meeting_datetime_is_a_noop(self, client, db):
-        """Optional field — omitting it (e.g. an older caller) must not break the call."""
+    def test_meeting_confirmed_without_meeting_datetime_falls_back_to_status_changed_at(self, client, db):
+        """Optional field — omitting it (e.g. an older caller) must not break the call.
+
+        RCA 2026-09-24: meeting_scheduled_at used to stay NULL here, which made
+        this exact transition invisible to Analytics Hub's meetings_scheduled
+        metric (it filters on meeting_scheduled_at) even though the Leaderboard
+        counted it correctly (it reads current status). Now falls back to
+        status_changed_at, same convention as the v_backfill_meeting_scheduled_at
+        migration for pre-existing leads.
+        """
         lead = create_test_lead(db, email="conf4@t.com", status="Calling")
         _connect_mailbox(db)
         resp = client.post(f"/api/leads/{lead.id}/calls", json={
@@ -366,7 +583,7 @@ class TestNewOutcomes:
         })
         assert resp.status_code == 200
         db.refresh(lead)
-        assert lead.meeting_scheduled_at is None
+        assert lead.meeting_scheduled_at == lead.status_changed_at
 
 
 class TestMeetingConfirmedCalendarIntegration:
@@ -493,14 +710,14 @@ class TestMeetingConfirmedCalendarIntegration:
         mock_post.return_value = _resp(200, {"data": {"id": "evt-5"}})
 
         resp = self._post_meeting(client, lead.id,
-                                   meeting_title="Discovery Call: Acme x RCM",
+                                   meeting_title="Discovery Call: Acme x Alternate CRM",
                                    meeting_agenda="We'll cover current workflow and next steps.")
         assert resp.status_code == 200
         sent = mock_post.call_args.kwargs["json"]
-        assert sent["title"] == "Discovery Call: Acme x RCM"
-        assert sent["description"] == "We'll cover current workflow and next steps.\n\n— Booked via RCM by Test Admin"
+        assert sent["title"] == "Discovery Call: Acme x Alternate CRM"
+        assert sent["description"] == "We'll cover current workflow and next steps.\n\n— Booked via Alternate CRM by Test Admin"
         db.refresh(lead)
-        assert lead.calendar_event_title == "Discovery Call: Acme x RCM"
+        assert lead.calendar_event_title == "Discovery Call: Acme x Alternate CRM"
         assert lead.calendar_event_agenda == "We'll cover current workflow and next steps."
 
     @patch("crypto.decrypt_token", return_value="fake-api-key")
@@ -517,7 +734,7 @@ class TestMeetingConfirmedCalendarIntegration:
         assert resp.status_code == 200
         sent = mock_post.call_args.kwargs["json"]
         assert sent["title"] == "Meeting: Jane Doe (Acme)"
-        assert sent["description"] == "Booked via RCM by Test Admin"
+        assert sent["description"] == "Booked via Alternate CRM by Test Admin"
         db.refresh(lead)
         assert lead.calendar_event_title == "Meeting: Jane Doe (Acme)"
         assert lead.calendar_event_agenda is None
@@ -536,7 +753,7 @@ class TestMeetingConfirmedCalendarIntegration:
         assert resp.status_code == 200
         sent = mock_post.call_args.kwargs["json"]
         assert sent["title"] == "Meeting: Jane Doe (Acme)"
-        assert sent["description"] == "Booked via RCM by Test Admin"
+        assert sent["description"] == "Booked via Alternate CRM by Test Admin"
 
     def test_not_interested_requires_notes(self, client, db):
         lead = create_test_lead(db, email="ni1@t.com", status="Calling")
@@ -1034,6 +1251,33 @@ class TestCallOutcomesFromDB:
         default_values = {o["value"] for o in models.DEFAULT_OUTCOME_CONFIG}
         assert values == default_values
 
+    def test_meeting_scheduled_outcome_is_not_offered_to_sdrs(self, client, db):
+        """RCA 2026-09-29: 'Meeting Scheduled' (action none) sat next to the
+        'Meeting Booked' card as a lookalike chip — picking it logged a meeting
+        that never advanced the lead. Only the status-advancing 'Meeting
+        Confirmed' may be offered; 'Meeting Scheduled' stays valid for history."""
+        create_sync_settings(db)
+        data = client.get("/api/call-outcomes").json()
+        enabled = {o["value"] for o in data["enabled_outcomes"]}
+        assert "Meeting Scheduled" not in enabled
+        assert "Meeting Confirmed" in enabled
+        assert "Meeting Scheduled" in models.get_valid_outcomes(db)
+        # Every enabled "meeting"-sounding outcome must actually advance the lead.
+        for o in data["enabled_outcomes"]:
+            if "meeting" in o["value"].lower():
+                assert o["action"] == "meeting_scheduled", o
+
+    def test_saved_outcome_config_cannot_re_enable_the_lookalike(self, client, db):
+        """RCA 2026-09-29 (staging Playwright): a saved outcome_config copied from
+        the old defaults kept 'Meeting Scheduled' enabled, so the chip came back."""
+        import json
+        s = create_sync_settings(db)
+        s.outcome_config = json.dumps([dict(o, enabled=True) for o in models.DEFAULT_OUTCOME_CONFIG])
+        db.commit()
+        enabled = {o["value"] for o in client.get("/api/call-outcomes").json()["enabled_outcomes"]}
+        assert "Meeting Scheduled" not in enabled
+        assert "Meeting Confirmed" in enabled
+
     def test_log_call_respects_db_notes_override(self, client, db):
         """If DB config overrides notes_required for an outcome, enforce it."""
         import json
@@ -1151,7 +1395,7 @@ class TestRefreshRecordingUrlTranscriptBackfill:
     def _make_call(self, db, lead, user, transcript=None):
         from datetime import datetime, timezone
         call = models.DialerCall(
-            lead_id=lead.id, user_id=user.id, provider="rcm",
+            lead_id=lead.id, user_id=user.id, provider="messenger",
             provider_call_id="conv-123", status="CALL_ENDED", direction="outbound",
             duration=20, answered_at=datetime.now(timezone.utc),
             ended_at=datetime.now(timezone.utc), recording_url="https://example.com/rec.mp3",
@@ -1197,7 +1441,7 @@ class TestFetchApplySplit:
     """
     RCA 2026-07-27: activity_feed_routes.py's batch recording-URL refresh used
     to hold one DB session (a pooled connection) for its entire loop while
-    calling the provider API — during a RCM brownout (502 retries with
+    calling the provider API — during a Alternate Messenger brownout (502 retries with
     time.sleep backoff), this starved the connection pool enough to make
     unrelated requests (e.g. dashboard-stats) time out. Fixed by splitting the
     provider fetch (no db needed) from the DB write (fast, short-lived
@@ -1210,7 +1454,7 @@ class TestFetchApplySplit:
         lead = create_test_lead(db, email="split-fetch@t.com")
         user = create_test_user(db, email="split-fetch-sdr@t.com")
         call = models.DialerCall(
-            lead_id=lead.id, user_id=user.id, provider="rcm",
+            lead_id=lead.id, user_id=user.id, provider="messenger",
             provider_call_id="conv-split-1", status="CALL_ENDED", direction="outbound",
             recording_url=None, duration=None, ended_at=None,
         )
@@ -1242,7 +1486,7 @@ class TestFetchApplySplit:
         lead = create_test_lead(db, email="split-noop@t.com")
         user = create_test_user(db, email="split-noop-sdr@t.com")
         call = models.DialerCall(
-            lead_id=lead.id, user_id=user.id, provider="rcm",
+            lead_id=lead.id, user_id=user.id, provider="messenger",
             provider_call_id="conv-split-2", status="CALL_ENDED", direction="outbound",
             recording_url=fresh_signed_url, duration=30,
             ended_at=now, transcript='{"already": "set"}',
@@ -1260,3 +1504,158 @@ class TestFetchApplySplit:
 
         assert _fetch_call_update_data(call, _Provider()) is None
         assert calls["n"] == 0, "Provider must not be called when nothing needs refreshing."
+
+
+class TestLeadCallsRefreshFanOut:
+    """
+    RCA 2026-09-03 (self-inflicted staging outage, reproduced): GET
+    /api/leads/{id}/calls spawned one background thread per DialerCall on the
+    lead, each opening its OWN DB session and then making a provider API call
+    *while holding that pooled connection*. Aircall's 429 backoff sleeps 10s
+    doubling to 60s over 5 attempts, so a throttled thread could sit on a
+    connection for ~150s. Opening ~18 leads in quick succession exhausted the
+    pool and the whole app returned platform 502s — reachable by any SDR
+    opening the Calls tab on a lead with many calls, and it degrades the app
+    for everyone.
+
+    These tests pin the two properties that make that impossible now: the
+    refresh is bounded to the requested page, and no DB session is ever held
+    across the provider call.
+    """
+
+    def _lead_with_calls(self, db, n, email):
+        lead = create_test_lead(db, email=email)
+        user = create_test_user(db, email=f"fanout-sdr-{email}")
+        made = []
+        for i in range(n):
+            c = models.DialerCall(
+                lead_id=lead.id, user_id=user.id, provider="aircall",
+                provider_call_id=f"ac-fanout-{i}", status="CALL_ENDED",
+                direction="outbound", recording_url=None, duration=None, ended_at=None,
+            )
+            db.add(c)
+            made.append(c)
+        db.commit()
+        return lead, made
+
+    def test_refresh_is_bounded_to_the_requested_page(self, db):
+        """25 calls on the lead, page size 5 → at most 5 ids refreshed, not 25.
+        Refreshing every call on the lead is what let one request fan out
+        without bound."""
+        from routes.call_routes import get_lead_calls
+        lead, _ = self._lead_with_calls(db, 25, "fanout-page@t.com")
+
+        seen = {}
+        with patch("routes.call_routes._refresh_calls_in_background") as mock_bg:
+            resp = get_lead_calls(lead_id=lead.id, page=1, limit=5, db=db, user=SUPER_ADMIN)
+            seen["ids"] = mock_bg.call_args.args[0]
+
+        assert len(resp["calls"]) == 5
+        assert resp["total_count"] == 25
+        assert len(seen["ids"]) <= 5, (
+            f"Refresh must be bounded to the page; got {len(seen['ids'])} ids"
+        )
+        # And they must be exactly the dialer rows on this page.
+        assert set(seen["ids"]) == {c["id"] for c in resp["calls"] if c["source"] == "dialer"}
+
+    def test_no_db_session_is_held_across_the_provider_call(self, db):
+        """The property that actually caused the outage: the provider's
+        fetch_call must run with zero refresh-owned DB sessions open. Tested
+        against _refresh_calls_now directly — racing a real background thread
+        makes this unobservable (and the assertion silently vacuous)."""
+        import routes.call_routes as cr
+        import database, dialer_service
+        lead, made = self._lead_with_calls(db, 3, "fanout-session@t.com")
+
+        state = {"open": 0, "opens": 0, "max_during_fetch": 0}
+        fetched = []
+        real_session_local = database.SessionLocal
+
+        class _TrackingSession:
+            def __init__(self, inner):
+                self._inner = inner
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+            def close(self):
+                state["open"] -= 1
+                return self._inner.close()
+
+        def _fake_session_local():
+            state["open"] += 1
+            state["opens"] += 1
+            return _TrackingSession(real_session_local())
+
+        class _Provider:
+            def fetch_call(self, provider_call_id):
+                state["max_during_fetch"] = max(state["max_during_fetch"], state["open"])
+                fetched.append(provider_call_id)
+                return {"recording_url": f"https://example.com/{provider_call_id}.mp3",
+                        "duration": 12}
+
+        with patch.object(database, "SessionLocal", _fake_session_local), \
+             patch.object(dialer_service, "get_provider_by_name", return_value=_Provider()):
+            cr._refresh_calls_now([c.id for c in made])
+
+        # Non-vacuity: the patched SessionLocal really was used, the provider
+        # really was called, and the writes really landed. Without these the
+        # assertion below would pass just as happily on a no-op.
+        assert state["opens"] >= 2, f"refresh opened {state['opens']} sessions"
+        assert sorted(fetched) == sorted(c.provider_call_id for c in made)
+        for c in made:
+            db.refresh(c)
+            assert c.recording_url == f"https://example.com/{c.provider_call_id}.mp3"
+            assert c.duration == 12
+        assert state["open"] == 0, "refresh leaked a DB session"
+
+        assert state["max_during_fetch"] == 0, (
+            "A DB connection was held while calling the provider — the exact "
+            "pool-starvation shape that took staging down."
+        )
+
+    def test_one_thread_per_request_not_one_per_call(self, db):
+        """The fan-out itself: 30 calls must still be one thread, not 30."""
+        import routes.call_routes as cr
+        started = []
+
+        class _FakeThread:
+            def __init__(self, target=None, args=(), daemon=None, **kw):
+                self._target, self._args = target, args
+            def start(self):
+                started.append(self._args)
+
+        with patch.object(cr.threading, "Thread", _FakeThread):
+            cr._refresh_calls_in_background([f"id-{i}" for i in range(30)])
+
+        assert len(started) == 1, f"expected 1 thread for the batch, got {len(started)}"
+        assert len(started[0][0]) == 30, "the single thread must receive the whole batch"
+
+    def test_empty_id_list_starts_no_thread(self, db):
+        import routes.call_routes as cr
+        before = threading.active_count()
+        cr._refresh_calls_in_background([])
+        assert threading.active_count() == before
+
+    def test_calls_already_complete_are_not_refreshed(self, db):
+        """EC-17 behaviour must survive the rework: a call with everything
+        already backfilled must not be queued for a provider hit."""
+        from datetime import datetime, timezone
+        from routes.call_routes import get_lead_calls
+        now = datetime.now(timezone.utc)
+        fresh_signed_url = (
+            "https://example.com/done.mp3"
+            f"?X-Amz-Date={now.strftime('%Y%m%dT%H%M%SZ')}&X-Amz-Expires=3600"
+        )
+        lead = create_test_lead(db, email="fanout-complete@t.com")
+        user = create_test_user(db, email="fanout-complete-sdr@t.com")
+        db.add(models.DialerCall(
+            lead_id=lead.id, user_id=user.id, provider="aircall",
+            provider_call_id="ac-complete-1", status="CALL_ENDED", direction="outbound",
+            recording_url=fresh_signed_url, duration=30,
+            ended_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            transcript="already there",
+        ))
+        db.commit()
+
+        with patch("routes.call_routes._refresh_calls_in_background") as mock_bg:
+            get_lead_calls(lead_id=lead.id, page=1, limit=10, db=db, user=SUPER_ADMIN)
+            assert mock_bg.call_args.args[0] == []

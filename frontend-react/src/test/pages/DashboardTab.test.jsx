@@ -43,6 +43,38 @@ class MockChart {
   update() {}
 }
 
+// Landing state (RCA 2026-08-25): nothing fetches until the user applies at
+// least one filter — every test below must drive that Apply once before
+// asserting on fetched data.
+async function applyFilters(user) {
+  await user.click(screen.getByRole('button', { name: '7D' }));
+  await user.click(screen.getByRole('button', { name: /apply filters/i }));
+}
+
+describe('DashboardTab — landing state (no auto-load)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('fetches nothing and shows a centered prompt until the user applies filters', async () => {
+    const { AnalyticsService } = await import('../../services/api');
+    render(<DashboardTab token="t" userRole="Super Admin" filters={{}} onFiltersChange={() => {}} />);
+
+    expect(screen.getByText(/choose filters to see your data/i)).toBeInTheDocument();
+    expect(AnalyticsService.getFunnel).not.toHaveBeenCalled();
+    expect(AnalyticsService.getSdrTable).not.toHaveBeenCalled();
+    expect(AnalyticsService.getTrend).not.toHaveBeenCalled();
+  });
+
+  it('replaces the prompt with the dashboard once Apply Filters is clicked', async () => {
+    const user = userEvent.setup();
+    render(<DashboardTab token="t" userRole="Super Admin" filters={{}} onFiltersChange={() => {}} />);
+
+    await applyFilters(user);
+
+    await waitFor(() => expect(screen.queryByText(/choose filters to see your data/i)).not.toBeInTheDocument());
+    expect(screen.getByText(/📍 Last 7 Days/)).toBeInTheDocument();
+  });
+});
+
 describe('DashboardTab — Activity Trend metric toggle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -55,6 +87,7 @@ describe('DashboardTab — Activity Trend metric toggle', () => {
     render(
       <DashboardTab token="t" userRole="Super Admin" filters={{}} onFiltersChange={() => {}} />
     );
+    await applyFilters(user);
 
     await waitFor(() => expect(MockChart.lastInstance).not.toBeNull());
 
@@ -85,11 +118,14 @@ describe('DashboardTab — filters require explicit Apply, not autosubmit', () =
     const user = userEvent.setup();
     render(<DashboardTab token="t" userRole="Super Admin" filters={{}} onFiltersChange={() => {}} />);
 
+    // Nothing fetches on mount — the landing state waits for a first Apply.
+    expect(AnalyticsService.getFunnel).not.toHaveBeenCalled();
+    await applyFilters(user);
     await waitFor(() => expect(AnalyticsService.getFunnel).toHaveBeenCalledTimes(1));
     const callsBeforeApply = AnalyticsService.getFunnel.mock.calls.length;
 
-    const podSelect = await screen.findByDisplayValue('All Pods');
-    await user.selectOptions(podSelect, 'p1');
+    await user.click(await screen.findByRole('button', { name: 'All Pods' }));
+    await user.click(await screen.findByRole('option', { name: 'US Team' }));
 
     // Selecting a pod alone must NOT trigger a new fetch (RCA 2026-08-03:
     // this used to fire immediately with whatever partial filter state
@@ -113,8 +149,8 @@ describe('DashboardTab — filters require explicit Apply, not autosubmit', () =
     const applyBtn = await screen.findByRole('button', { name: /apply filters/i });
     expect(applyBtn).toBeDisabled();
 
-    const podSelect = await screen.findByDisplayValue('All Pods');
-    await user.selectOptions(podSelect, 'p1');
+    await user.click(await screen.findByRole('button', { name: 'All Pods' }));
+    await user.click(await screen.findByRole('option', { name: 'US Team' }));
     expect(applyBtn).toBeEnabled();
   });
 
@@ -122,13 +158,17 @@ describe('DashboardTab — filters require explicit Apply, not autosubmit', () =
     const user = userEvent.setup();
     render(<DashboardTab token="t" userRole="Super Admin" filters={{}} onFiltersChange={() => {}} />);
 
-    await waitFor(() => expect(screen.getAllByText(/all pods/i).length).toBeGreaterThan(0));
+    // Landing state: no breadcrumb at all until the first Apply.
+    expect(screen.queryByText(/📍/)).not.toBeInTheDocument();
 
-    const podSelect = await screen.findByDisplayValue('All Pods');
-    await user.selectOptions(podSelect, 'p1');
+    await applyFilters(user);
+    await waitFor(() => expect(screen.getByText(/📍 Last 7 Days/)).toBeInTheDocument());
 
-    // Draft changed, but nothing applied yet — breadcrumb must still say "All Pods".
-    expect(screen.getByText(/📍 All Pods/)).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'All Pods' }));
+    await user.click(await screen.findByRole('option', { name: 'US Team' }));
+
+    // Draft changed, but not re-applied yet — breadcrumb must still reflect the last Apply.
+    expect(screen.getByText(/📍 Last 7 Days/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /apply filters/i }));
     await waitFor(() => expect(screen.getByText(/📍 US Team/)).toBeInTheDocument());
@@ -153,6 +193,7 @@ describe('DashboardTab — Pipeline Funnel unit consistency', () => {
     });
 
     render(<DashboardTab token="t" userRole="Super Admin" filters={{}} onFiltersChange={() => {}} />);
+    await applyFilters(userEvent.setup());
 
     const callingLabel = await screen.findByText('Calling');
     const stageColumn = callingLabel.closest('div');
@@ -161,41 +202,46 @@ describe('DashboardTab — Pipeline Funnel unit consistency', () => {
   });
 });
 
-describe('DashboardTab — SDR Performance Conversations column', () => {
+describe('DashboardTab — SDR Performance table columns', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('shows the conversations count per SDR', async () => {
+  it('shows accounts called instead of leads assigned, and drops the Conversations column', async () => {
     const { AnalyticsService } = await import('../../services/api');
     AnalyticsService.getSdrTable.mockResolvedValue({
       sdrs: [
-        { user_id: 'u1', sdr_name: 'Aditya Sharma', leads_assigned: 616, calls_made: 2412, conversations: 87, connect_rate: 15.4, emails_sent: 0, meetings: 25 },
+        { user_id: 'u1', sdr_name: 'Aditya Sharma', leads_assigned: 616, calls_made: 2412, calls_connected: 372, conversations: 87, accounts_called: 210, accounts_connected: 60, account_connect_rate: 28.6, connect_rate: 15.4, emails_sent: 0, meetings: 25 },
       ],
     });
 
     render(<DashboardTab token="t" userRole="Super Admin" filters={{}} onFiltersChange={() => {}} />);
+    await applyFilters(userEvent.setup());
 
     // "Aditya Sharma" also appears as an <option> in the trend chart's SDR
     // filter dropdown — disambiguate to the table row itself (a <p>).
     await waitFor(() => {
       expect(screen.getAllByText('Aditya Sharma').some(el => el.tagName === 'P')).toBe(true);
     });
-    expect(screen.getByText('Conversations')).toBeInTheDocument();
-    expect(screen.getByText('87')).toBeInTheDocument();
+    expect(screen.getByText('Accounts Called')).toBeInTheDocument();
+    expect(screen.getByText('210')).toBeInTheDocument();
+    expect(screen.queryByText('Conversations')).not.toBeInTheDocument();
+    expect(screen.queryByText('87')).not.toBeInTheDocument();
+    expect(screen.queryByText('616')).not.toBeInTheDocument();
   });
 
-  it('shows 0 conversations rather than blank when there are none', async () => {
+  it('shows 0 accounts called rather than blank when there are none', async () => {
     const { AnalyticsService } = await import('../../services/api');
     AnalyticsService.getSdrTable.mockResolvedValue({
       sdrs: [
-        { user_id: 'u1', sdr_name: 'No Convos SDR', leads_assigned: 5, calls_made: 3, conversations: 0, connect_rate: null, emails_sent: 0, meetings: 0 },
+        { user_id: 'u1', sdr_name: 'No Accounts SDR', leads_assigned: 5, calls_made: 3, calls_connected: 0, accounts_called: 0, accounts_connected: 0, account_connect_rate: null, connect_rate: null, emails_sent: 0, meetings: 0 },
       ],
     });
 
     render(<DashboardTab token="t" userRole="Super Admin" filters={{}} onFiltersChange={() => {}} />);
+    await applyFilters(userEvent.setup());
 
     let nameEl;
     await waitFor(() => {
-      nameEl = screen.getAllByText('No Convos SDR').find(el => el.tagName === 'P');
+      nameEl = screen.getAllByText('No Accounts SDR').find(el => el.tagName === 'P');
       expect(nameEl).toBeTruthy();
     });
     expect(nameEl.closest('tr')).toHaveTextContent('0');
@@ -218,6 +264,7 @@ describe('DashboardTab — SDR Performance panel scroll', () => {
     AnalyticsService.getSdrTable.mockResolvedValue({ sdrs: manySdrs });
 
     render(<DashboardTab token="t" userRole="Super Admin" filters={{}} onFiltersChange={() => {}} />);
+    await applyFilters(userEvent.setup());
 
     await waitFor(() => expect(screen.getAllByText(/SDR \d+/).length).toBeGreaterThan(0));
     const table = screen.getByRole('columnheader', { name: 'SDR' }).closest('table');

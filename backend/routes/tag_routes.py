@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 import models
 from database import get_db
 from auth import get_current_user, require_admin
+from routes.lead_helpers import load_lead
 
 router = APIRouter(prefix="/api", tags=["Tags"])
 
@@ -36,23 +37,23 @@ def create_tag(body: dict, db: Session = Depends(get_db), admin: dict = Depends(
 
 @router.post("/leads/{lead_id}/tags/{tag_id}")
 def attach_tag(lead_id: str, tag_id: str, db: Session = Depends(get_db), admin: dict = Depends(require_admin)):
-    lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    lead = load_lead(db, admin, lead_id, edit=True)  # Pod Admin: own pod's leads only
     tag = db.query(models.Tag).filter(models.Tag.id == tag_id).first()
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
     if tag not in lead.tags:
         lead.tags.append(tag)
+        models.record_lead_history(db, lead.id, "tags", None, tag.name, admin.get("name") or admin.get("email"))
         db.commit()
     return {"message": "Tag attached", "tags": [{"id": t.id, "name": t.name} for t in lead.tags]}
 
 
 @router.delete("/leads/{lead_id}/tags/{tag_id}")
 def detach_tag(lead_id: str, tag_id: str, db: Session = Depends(get_db), admin: dict = Depends(require_admin)):
-    lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    lead = load_lead(db, admin, lead_id, edit=True)  # Pod Admin: own pod's leads only
+    removed = [t for t in lead.tags if t.id == tag_id]
     lead.tags = [t for t in lead.tags if t.id != tag_id]
+    for t in removed:
+        models.record_lead_history(db, lead.id, "tags", t.name, None, admin.get("name") or admin.get("email"))
     db.commit()
     return {"message": "Tag detached", "tags": [{"id": t.id, "name": t.name} for t in lead.tags]}

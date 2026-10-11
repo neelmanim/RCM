@@ -5,7 +5,7 @@ Exposes two Super Admin-only endpoints:
   GET /api/admin/perf-summary
       Aggregates perf_metrics (last 24h) from DB + merges with in-memory
       rolling window stats.  Returns RAIL distribution, slowest endpoints,
-      index health, and RCM API health.
+      index health, and Alternate Messenger API health.
 
   GET /api/admin/perf-index-health
       Queries pg_indexes to confirm all expected performance indexes exist.
@@ -49,6 +49,10 @@ EXPECTED_INDEXES = [
     "idx_lead_status_logs_changed_at",
     "idx_lead_assignments_user_id",
     "idx_leads_pod_id",
+    # v13.0.9 — Seq Scan RCA: existing dialer_calls indexes are on created_at,
+    # but every route filters on COALESCE(started_at, created_at)
+    "idx_dialer_calls_event_time",
+    "idx_dialer_calls_user_dir_event_time",
 ]
 
 
@@ -77,15 +81,15 @@ def _get_index_health(db: Session) -> dict:
         }
 
 
-def _get_rcm_health(db: Session) -> dict:
-    """Last RCM 502 timestamp + today's error count from perf context.
-    Reads from error_logs table (where [RCM] 502 entries are stored)."""
+def _get_messenger_health(db: Session) -> dict:
+    """Last Alternate Messenger 502 timestamp + today's error count from perf context.
+    Reads from error_logs table (where [Alternate Messenger] 502 entries are stored)."""
     try:
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         row = db.execute(text("""
             SELECT COUNT(*) AS cnt, MAX(created_at) AS last_at
             FROM error_logs
-            WHERE message LIKE '%RCM%502%'
+            WHERE message LIKE '%Alternate Messenger%502%'
               AND created_at >= :today_start
         """), {"today_start": today_start}).fetchone()
         if row:
@@ -111,7 +115,7 @@ def get_perf_summary(
     - RAIL tier distribution (OK / ACCEPTABLE / SLOW / CRITICAL)
     - Top 10 slowest endpoints by P95 (from DB + in-memory rolling window)
     - Index health (pg_indexes check)
-    - RCM API health (502 error count today)
+    - Alternate Messenger API health (502 error count today)
 
     Query params:
       hours       — lookback window in hours (default 24)
@@ -210,7 +214,7 @@ def get_perf_summary(
             pass
 
     index_health = _get_index_health(db)
-    rcm_health = _get_rcm_health(db)
+    messenger_health = _get_messenger_health(db)
 
     return {
         "snapshot_at": datetime.now(timezone.utc).isoformat(),
@@ -222,7 +226,7 @@ def get_perf_summary(
         "rail_distribution": rail_dist,
         "slowest_endpoints": slowest_endpoints,
         "index_health": index_health,
-        "rcm_health": rcm_health,
+        "messenger_health": messenger_health,
         "data_source": "db" if db_available else "in_memory_only",
     }
 

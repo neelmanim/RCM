@@ -1,8 +1,8 @@
 /**
- * dialer_machine.js — RCM Dialer Finite State Machine
+ * dialer_machine.js — Alternate Messenger Dialer Finite State Machine
  * ===========================================================
  * Replaces 17 scattered module-level variables across dialer_widget.js and
- * rcm_widget.js with a single, explicit state machine.
+ * messenger_widget.js with a single, explicit state machine.
  *
  * States:
  *   IDLE           → no active call
@@ -43,7 +43,7 @@
  *   window.DialerMachine.on('transition', handler)
  *   window.DialerMachine.on('timer:tick', handler)
  *
- * Load BEFORE rcm_widget.js and dialer_widget.js.
+ * Load BEFORE messenger_widget.js and dialer_widget.js.
  */
 
 (function (global) {
@@ -201,7 +201,7 @@
         }
 
         // ── Guard 3: ringing timeout ─────────────────────────────────────────
-        // RCM returns stale "ringing" for 30-90s after a decline.
+        // Alternate Messenger returns stale "ringing" for 30-90s after a decline.
         // After GUARD3_TIMEOUT_MS with no answer, auto-send TIMEOUT event.
         // EC-2 fix: capture callId at schedule time — not at fire time — so
         //           a second call cannot accidentally trigger this timer.
@@ -303,7 +303,7 @@
                         if (_state !== 'IDLE') break;
                         _ctx.pendingCallCtx = payload.pendingCallCtx || null;
                         _transition('AWAITING_MODE');
-                        // Resolve the mode-select promise used by rcm_widget.js
+                        // Resolve the mode-select promise used by messenger_widget.js
                         if (_pendingModeResolve) {
                             _pendingModeResolve = null;
                         }
@@ -342,7 +342,7 @@
                             leadName:     payload.leadName     || '',
                             leadId:       payload.leadId       || null,
                             callMode:     payload.callMode     || 'browser',
-                            provider:     payload.provider     || 'rcm',
+                            provider:     payload.provider     || 'messenger',
                             livekitToken: payload.livekitToken || null,
                             livekitUrl:   payload.livekitUrl   || null,
                         };
@@ -479,7 +479,7 @@
                 return _ctx.livekitRoom;
             },
 
-            // ── Mode resolution (for rcm_widget.js modal) ─────────────
+            // ── Mode resolution (for messenger_widget.js modal) ─────────────
 
             /**
              * Returns a Promise that resolves to 'browser'|'bridge'|null

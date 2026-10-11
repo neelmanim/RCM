@@ -155,6 +155,39 @@ class TestGlobalSearchSDR:
         assert len(data["leads"]) == 0  # Not assigned to this SDR
 
 
+class TestGlobalSearchAccounts:
+
+    def test_admin_search_returns_matching_accounts(self, client, db):
+        db.add(models.Account(id="acc-1", name="Wayne Analytics Findme", industry="Tech"))
+        db.commit()
+        resp = client.get("/api/search?q=Findme")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert any(a["name"] == "Wayne Analytics Findme" for a in data["accounts"])
+
+    def test_csm_search_only_returns_own_assigned_accounts(self, client_as_csm, db):
+        create_test_user(db, id="csm-user-id", email="csm@test.com", role="CSM")
+        db.add(models.Account(id="acc-own", name="Owned By Me Corp", assigned_csm_id="csm-user-id"))
+        db.add(models.Account(id="acc-other", name="Owned By Someone Else Corp", assigned_csm_id="some-other-csm"))
+        db.commit()
+
+        resp = client_as_csm.get("/api/search?q=Corp")
+        assert resp.status_code == 200
+        data = resp.json()
+        names = [a["name"] for a in data["accounts"]]
+        assert "Owned By Me Corp" in names
+        assert "Owned By Someone Else Corp" not in names
+
+    def test_sdr_search_returns_no_accounts(self, client_as_sdr, db):
+        """SDR has no account-portfolio concept — same reasoning as no users."""
+        db.add(models.Account(id="acc-sdr-test", name="SDRVisibleCorp"))
+        db.commit()
+        resp = client_as_sdr.get("/api/search?q=SDRVisibleCorp")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["accounts"] == []
+
+
 class TestSearchEdgeCases:
 
     def test_search_empty_query_rejected(self, client):

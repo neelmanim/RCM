@@ -361,31 +361,26 @@ test.describe('Super Admin Flow', () => {
     }
   });
 
-  // 22. Settings → RCM/Dialer tab renders
-  test('22. Settings RCM/Dialer tab renders', async ({ page, request }) => {
+  // 22. Settings → Alternate Messenger/Dialer tab renders
+  test('22. Settings Alternate Messenger/Dialer tab renders', async ({ page, request }) => {
     await loginAs(page, request, SUPER_ADMIN_EMAIL);
     await navigateTo(page, 'settings');
     await page.waitForTimeout(2000);
 
-    // Look for RCM or Dialer tab
-    const convTab = page.locator('.settings-tab[data-tab="rcm"]');
-    const dialerTab = page.locator('.settings-tab[data-tab="dialer"]');
+    // v11.10.1: Dialer + Alternate Messenger merged into one "Calling & Messaging" tab.
+    const convTab = page.locator('.settings-tab[data-tab="channels"]');
 
     let found = false;
     if (await convTab.count() > 0) {
       await convTab.click();
       await page.waitForTimeout(1500);
       const text = await page.locator(VC).textContent();
-      expect(text.toLowerCase()).toMatch(/rcm|dialer|contact center|messaging/);
-      found = true;
-    } else if (await dialerTab.count() > 0) {
-      await dialerTab.click();
-      await page.waitForTimeout(1500);
+      expect(text.toLowerCase()).toMatch(/messenger|dialer|contact center|messaging/);
       found = true;
     }
 
     if (found) {
-      console.log('  ✅ RCM/Dialer settings tab renders');
+      console.log('  ✅ Alternate Messenger/Dialer settings tab renders');
     } else {
       // Tab might be combined — check if dialer fields exist on Sync tab
       const syncTab = page.locator('.settings-tab[data-tab="sync"]');

@@ -185,7 +185,7 @@ class TestExport:
     def test_export_invalid_format_returns_422(self, client, db):
         """Invalid format should return 422."""
         from unittest.mock import patch
-        with patch("auth.decode_jwt", return_value=SUPER_ADMIN):
+        with patch("auth.authenticate", return_value=SUPER_ADMIN):
             resp = client.get("/api/admin/metrics/export", params={
                 "format": "pdf", "token": "fake-token"
             })
@@ -194,7 +194,7 @@ class TestExport:
     def test_export_csv_returns_streaming(self, client, db):
         """Valid CSV export should return streaming response."""
         from unittest.mock import patch
-        with patch("auth.decode_jwt", return_value=SUPER_ADMIN):
+        with patch("auth.authenticate", return_value=SUPER_ADMIN):
             resp = client.get("/api/admin/metrics/export", params={
                 "format": "csv", "token": "fake-token"
             })

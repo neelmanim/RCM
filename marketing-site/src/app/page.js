@@ -8,15 +8,15 @@ export default function Home() {
       {/* Navbar */}
       <nav className="relative z-10 flex items-center justify-between px-8 py-6 max-w-7xl mx-auto">
         <div className="text-2xl font-bold tracking-tighter bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-          RCM
+          Alternate CRM
         </div>
         <div className="hidden md:flex gap-8 text-sm font-medium text-slate-300">
           <a href="#features" className="hover:text-white transition-colors">Features</a>
           <a href="/blog" className="hover:text-white transition-colors">Blog</a>
           <a href="/status" className="hover:text-white transition-colors">Status</a>
-          <a href="https://frontend-beta-two-85.vercel.app/signup.html" className="hover:text-white transition-colors">Login</a>
+          <a href="https://app.alternatecrm.com" className="hover:text-white transition-colors">Login</a>
         </div>
-        <a href="https://frontend-beta-two-85.vercel.app/signup.html" className="px-5 py-2.5 text-sm font-medium rounded-full bg-white/10 border border-white/20 backdrop-blur-md hover:bg-white/20 transition-all">
+        <a href="https://app.alternatecrm.com" className="px-5 py-2.5 text-sm font-medium rounded-full bg-white/10 border border-white/20 backdrop-blur-md hover:bg-white/20 transition-all">
           Get Started
         </a>
       </nav>
@@ -25,25 +25,25 @@ export default function Home() {
       <main className="relative z-10 flex flex-col items-center justify-center pt-32 pb-24 px-6 text-center max-w-5xl mx-auto">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 backdrop-blur-sm text-xs font-medium text-slate-300 mb-8">
           <span className="flex h-2 w-2 rounded-full bg-blue-500"></span>
-          Now available for Real Estate & Insurance
+          Next-Gen AI & Multichannel CRM Platform
         </div>
         
         <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 leading-tight">
           The ultimate CRM for <br/>
           <span className="bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
-            top-producing agents
+            high-velocity sales teams
           </span>
         </h1>
         
         <p className="text-lg md:text-xl text-slate-400 max-w-2xl mb-12 leading-relaxed">
-          Close more deals, manage your pipeline, and automate your follow-ups with a stunning platform built exclusively for Real Estate and Insurance brokerages.
+          Accelerate your pipeline, streamline communications, and supercharge sales execution with Alternate CRM.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4">
-          <a href="https://frontend-beta-two-85.vercel.app/signup.html" className="px-8 py-4 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-all shadow-[0_0_40px_-10px_rgba(37,99,235,0.5)]">
+          <a href="https://app.alternatecrm.com" className="px-8 py-4 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-all shadow-[0_0_40px_-10px_rgba(37,99,235,0.5)]">
             Start Free Trial
           </a>
-          <a href="https://frontend-beta-two-85.vercel.app/sandbox.html" className="px-8 py-4 rounded-full bg-white/5 border border-white/10 backdrop-blur-md hover:bg-white/10 text-white font-semibold transition-all">
+          <a href="https://app.alternatecrm.com/sandbox.html" className="px-8 py-4 rounded-full bg-white/5 border border-white/10 backdrop-blur-md hover:bg-white/10 text-white font-semibold transition-all">
             Try Live Sandbox
           </a>
         </div>

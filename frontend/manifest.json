@@ -1,7 +1,7 @@
 {
-  "name": "RCM",
-  "short_name": "RCM",
-  "description": "RCM CRM · Powered by RCM. SDR-focused CRM with POD teams, enriched leads, and pipeline management.",
+  "name": "Alternate CRM",
+  "short_name": "Alternate CRM",
+  "description": "Alternate CRM CRM · Powered by Alternate Messenger. SDR-focused CRM with POD teams, enriched leads, and pipeline management.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0F172A",

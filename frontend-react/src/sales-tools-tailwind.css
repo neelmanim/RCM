@@ -1,0 +1,44 @@
+/*
+ * sales-tools-tailwind.css
+ *
+ * Tailwind entry point for the Sales Tools IIFE bundle ONLY. Mirrors
+ * control-center-tailwind.css exactly — omits @tailwind base to avoid
+ * leaking resets into the Vanilla JS shell, and reproduces just the
+ * border-reset half of Preflight, scoped to .salestools-hub. The embedded
+ * Sales Journey builder keeps its own .salesjourney-hub scoping unchanged
+ * (see sales-journey-tailwind.css) — the two just nest harmlessly.
+ */
+/*
+ * Radix (DropdownMenu/Popover) portals its content to document.body, so it
+ * renders as a sibling of .salestools-hub rather than a descendant. The
+ * shared Popover/DropdownMenu components (components/ui/Popover.jsx,
+ * DropdownMenu.jsx) hardcode the literal class "activitymonitor-portal" on
+ * their portaled content for exactly this reason — NOT a bundle-specific
+ * name, despite how it reads. Every bundle's reset must re-apply to that
+ * same literal selector or the reset silently never matches (this is why
+ * the Sales Tools Filters popover and Schedule pickers rendered with no
+ * border/button reset at all — bare native chrome bleeding through).
+ */
+.salestools-hub, .salestools-hub *, .salestools-hub *::before, .salestools-hub *::after,
+.activitymonitor-portal, .activitymonitor-portal *, .activitymonitor-portal *::before, .activitymonitor-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.salestools-hub, .activitymonitor-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+/* No Preflight: inputs would otherwise use the browser's default font. */
+:where(.salestools-hub, .activitymonitor-portal) :is(input, textarea) {
+  font-family: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

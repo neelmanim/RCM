@@ -1,5 +1,7 @@
 """Tests for routes/pod_routes.py — POD CRUD, member management."""
 import sys, os
+from datetime import datetime, timedelta, timezone
+import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from conftest import (
@@ -146,6 +148,27 @@ class TestRemovePodMember:
         assert resp.status_code == 404
 
 
+@pytest.mark.parametrize("action", ["add", "remove"])
+def test_pod_membership_change_busts_users_cache(client, db, action):
+    # RCA 2026-09-22: /api/admin/users caches for 120s "invalidated on any
+    # user write" per its own docstring, but add/remove-member never busted
+    # it — a POD reassignment stayed invisible in Control Center/Pods Hub
+    # until the cache naturally expired, which is what a hard refresh
+    # eventually caught by luck, not because it was actually fixed.
+    from unittest.mock import patch
+    pod = create_test_pod(db, f"Cache{action.title()}Pod")
+    if action == "add":
+        user = create_test_user(db, email=f"cache{action}@t.com")
+        call = lambda: client.post(f"/api/pods/{pod.id}/members", json={"user_id": user.id})
+    else:
+        user = create_test_user(db, email=f"cache{action}@t.com", pod_id=pod.id)
+        call = lambda: client.delete(f"/api/pods/{pod.id}/members/{user.id}")
+    with patch("cache.invalidate") as mock_invalidate:
+        resp = call()
+    assert resp.status_code == 200
+    mock_invalidate.assert_any_call("users")
+
+
 class TestAssignLeadsToPod:
 
     def test_assign_leads_to_pod(self, client, db):
@@ -166,3 +189,44 @@ class TestAssignLeadsToPod:
         pod = create_test_pod(db, "EmptyLeads")
         resp = client.post(f"/api/pods/{pod.id}/assign-leads", json={"lead_ids": []})
         assert resp.status_code == 400
+
+
+class TestRosterActivityStats:
+    """v11.5.7: each member dict now carries active_leads/stale_24h/stale_72h
+    for the Pod Management Team Roster drilldown."""
+
+    def test_active_and_stale_buckets(self, client, db):
+        pod = create_test_pod(db, "RosterPod")
+        sdr = create_test_user(db, email="rostersdr@t.com", role="SDR", pod_id=pod.id)
+
+        fresh = create_test_lead(db, email="fresh@t.com", status="Calling")
+        stale_24 = create_test_lead(db, email="stale24@t.com", status="Calling")
+        stale_72 = create_test_lead(db, email="stale72@t.com", status="Calling")
+        closed = create_test_lead(db, email="closed@t.com", status="Not Interested")
+
+        for lead in (fresh, stale_24, stale_72, closed):
+            models.assign_lead(sdr, lead)
+
+        now = datetime.now(timezone.utc)
+        stale_24.status_changed_at = now - timedelta(hours=30)
+        stale_72.status_changed_at = now - timedelta(hours=90)
+        closed.status_changed_at = now - timedelta(hours=200)
+        db.commit()
+
+        resp = client.get("/api/pods")
+        assert resp.status_code == 200
+        pod_data = next(p for p in resp.json() if p["id"] == pod.id)
+        member = next(m for m in pod_data["members"] if m["id"] == sdr.id)
+
+        # 3 active-status leads counted, terminal-status lead excluded
+        assert member["active_leads"] == 3
+        assert member["stale_24h"] == 1
+        assert member["stale_72h"] == 1
+        # assigned_leads (all-time, any status) is unchanged — still counts all 4
+        assert member["assigned_leads"] == 4
+
+    def test_no_members_returns_empty_stats(self, client, db):
+        pod = create_test_pod(db, "EmptyRosterPod")
+        resp = client.get("/api/pods")
+        pod_data = next(p for p in resp.json() if p["id"] == pod.id)
+        assert pod_data["members"] == []

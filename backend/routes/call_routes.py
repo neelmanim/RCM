@@ -15,8 +15,9 @@ from database import get_db
 from auth import get_current_user, require_admin
 
 logger = logging.getLogger(__name__)
-from salesforce import get_sf_client, push_lead_to_salesforce, push_sdr_metrics_to_salesforce, lead_push_info
-from routes.lead_helpers import _can_modify_lead
+from salesforce import get_sf_client, push_lead_to_salesforce, push_sdr_metrics_to_salesforce, lead_push_info, _is_sentinel_sf_id
+from routes.lead_helpers import _can_modify_lead, load_lead
+from services import lead_service
 
 router = APIRouter(prefix="/api", tags=["Calls"])
 
@@ -102,7 +103,7 @@ def _create_meeting_calendar_event(db, lead, user, mailbox, body):
         custom_title = (body.get("meeting_title") or "").strip()
         custom_agenda = (body.get("meeting_agenda") or "").strip()
         title = custom_title or f"Meeting: {full_name} ({lead.company or 'Unknown'})"
-        attribution = f"Booked via RCM by {user.get('name') or user.get('email')}"
+        attribution = f"Booked via Alternate CRM by {user.get('name') or user.get('email')}"
         description = f"{custom_agenda}\n\n— {attribution}" if custom_agenda else attribution
 
         event = create_event(
@@ -156,9 +157,9 @@ def _needs_call_update(c) -> bool:
 def _fetch_call_update_data(c, provider) -> Optional[dict]:
     """
     Hit the provider API for fresh call data, if this record needs it.
-    Deliberately takes no `db` — RCA 2026-07-27: RCM's 502-retry loop
+    Deliberately takes no `db` — RCA 2026-07-27: Alternate Messenger's 502-retry loop
     (`time.sleep(1)`, `time.sleep(2)`, ...) runs synchronously and can take
-    several seconds per call during a RCM brownout. The batch refresh
+    several seconds per call during a Alternate Messenger brownout. The batch refresh
     in activity_feed_routes.py used to hold a DB session (a pooled connection)
     for the whole loop while doing this, and under load that starved the pool
     enough to make unrelated requests (e.g. dashboard-stats) time out. Fetch
@@ -237,7 +238,7 @@ def _refresh_recording_url(c, provider, db) -> None:
     ended_at from the provider API when they are null (missed disconnect
     webhook). Commits to DB on change.
     Safe to call from any endpoint — catches all exceptions silently.
-    Works for both Aircall and RCM providers.
+    Works for both Aircall and Alternate Messenger providers.
 
     Convenience wrapper combining fetch + write. Fine for the low-volume,
     single-call sites (below). For a batch, prefer calling
@@ -256,9 +257,96 @@ def _refresh_recording_url(c, provider, db) -> None:
         _apply_call_update_data(c, call_data, db)
 
 
+# Only terminal calls are worth re-fetching — a call still in CALL_STARTED /
+# CALL_ANSWERED has nothing final to backfill and gets updated by webhook.
+_TERMINAL_CALL_STATUSES = {"CALL_ENDED", "CALL_FAILED", "FAILED", "completed",
+                           "failed", "cancelled", "no_answer", "busy"}
+
+
+def _refresh_calls_in_background(call_ids: list) -> None:
+    """Backfill recording URL / duration / ended_at / transcript for these
+    DialerCalls, off the request path, in ONE background thread.
+
+    RCA 2026-09-03 (self-inflicted staging outage, reproduced): get_lead_calls
+    used to spawn one thread per DialerCall on the lead, each opening its own
+    DB session and then making a provider API call *while holding it*. Opening
+    ~18 leads in quick succession was enough to exhaust the connection pool and
+    take the whole app down with platform 502s — an SDR opening the Calls tab on
+    a lead with many calls hits the same fan-out, and it degrades the app for
+    everyone, not just them. Aircall's own 429 backoff makes it far worse:
+    _get() sleeps 10s doubling to 60s over 5 attempts, so a throttled thread
+    could sit on a pooled connection for ~150s.
+
+    This is exactly the failure RCA 2026-07-27 already documented and solved for
+    activity_feed_routes' batch refresh, and _fetch_call_update_data's docstring
+    already prescribes the shape ("Fetch first with no connection held, write
+    later in a short-lived session") — this call site simply never adopted it.
+    So: bounded to the ids passed in (the requested page, not every call on the
+    lead), one thread, and two short-lived sessions with the slow provider calls
+    sandwiched between them holding no connection at all.
+    """
+    if not call_ids:
+        return
+    threading.Thread(target=_refresh_calls_now, args=(call_ids,), daemon=True).start()
+
+
+def _refresh_calls_now(call_ids: list) -> None:
+    """The actual three-phase refresh. Separate from the thread wrapper so it
+    can be tested directly — the property that matters (no DB connection held
+    across the provider call) is unobservable through a race with a real
+    thread."""
+    from database import SessionLocal
+    import dialer_service
+    try:
+        # 1. Short session: decide what to fetch, then release the connection.
+        targets = []   # (call_id, provider, provider_call_id)
+        db1 = SessionLocal()
+        try:
+            providers: dict = {}
+            for cid in call_ids:
+                c = db1.query(models.DialerCall).filter(models.DialerCall.id == cid).first()
+                if not c or not c.provider_call_id or not _needs_call_update(c):
+                    continue
+                pname = (c.provider or "").lower()
+                if pname not in providers:
+                    providers[pname] = dialer_service.get_provider_by_name(pname, db1)
+                if providers[pname]:
+                    targets.append((cid, providers[pname], c.provider_call_id))
+        finally:
+            db1.close()
+
+        # 2. The slow part — provider HTTP, including any 429 backoff — with
+        #    no DB connection held. This is the whole point of the split.
+        fetched = []
+        for cid, prov, provider_call_id in targets:
+            try:
+                data = prov.fetch_call(provider_call_id)
+            except Exception as e:
+                logger.warning(f"[CallRoutes] Background fetch_call failed for {cid}: {e}")
+                continue
+            if data:
+                fetched.append((cid, data))
+
+        # 3. Short session again: write only.
+        if fetched:
+            db2 = SessionLocal()
+            try:
+                for cid, data in fetched:
+                    c = db2.query(models.DialerCall).filter(models.DialerCall.id == cid).first()
+                    if c:
+                        _apply_call_update_data(c, data, db2)
+            finally:
+                db2.close()
+    except Exception as e:
+        # Best-effort backfill — must never take down the worker. But it is
+        # logged: the version of this that swallowed silently is precisely
+        # why nobody noticed the fan-out for as long as they didn't.
+        logger.warning(f"[CallRoutes] Background call refresh failed: {e}", exc_info=True)
+
+
 
 @router.get("/call-outcomes")
-def get_call_outcomes(db: Session = Depends(get_db)):
+def get_call_outcomes(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """Return configurable call outcome definitions for the frontend."""
     config = models.get_outcome_config(db)
     return {
@@ -322,20 +410,21 @@ def log_call(lead_id: str, body: dict, bg_tasks: BackgroundTasks, user: dict = D
     recent_dialer_call = None
 
     if dialer_call_id_hint:
-        # Exact lookup — the frontend tells us which DialerCall to update
+        # Exact lookup — the frontend tells us which DialerCall to update.
+        # Always attach here, even to correct an outcome that's already set:
+        # this is a deliberate, explicit SDR action against one specific call,
+        # which must always be able to override an automated guess (e.g. an
+        # Aircall AutoLog tag mapping). RCA 2026-08-19: the previous guard
+        # ("only attach if outcome is still None") silently created a duplicate
+        # CallLog instead of overwriting — corrections never reached
+        # DialerCall.outcome, which is what connect-rate/analytics actually read.
         exact = db.query(models.DialerCall).filter(
             models.DialerCall.id == dialer_call_id_hint,
             models.DialerCall.lead_id == lead_id,
         ).first()
-        if exact and exact.outcome is None:
-            # Only attach if outcome hasn't been set yet (idempotency guard)
+        if exact:
             recent_dialer_call = exact
             logger.info(f"[CallLog] Exact DialerCall match via dialer_call_id hint: {dialer_call_id_hint}")
-        elif exact and exact.outcome is not None:
-            logger.warning(
-                f"[CallLog] DialerCall {dialer_call_id_hint} already has outcome '{exact.outcome}' — "
-                "creating manual CallLog to avoid overwrite."
-            )
 
     if recent_dialer_call is None:
         # Fallback: find an unlogged dialer call for this lead within 30 min
@@ -350,13 +439,32 @@ def log_call(lead_id: str, body: dict, bg_tasks: BackgroundTasks, user: dict = D
         ).order_by(models.DialerCall.created_at.desc()).first()
 
     attached_to_dialer = False
+    is_correction = False
     if recent_dialer_call:
+        is_correction = recent_dialer_call.outcome is not None
         # Attach outcome + notes to the existing Aircall record
         recent_dialer_call.outcome = outcome_str
         recent_dialer_call.notes = notes
         attached_to_dialer = True
         call = recent_dialer_call  # use for response
-        logger.info(f"[CallLog] Attached outcome '{outcome_str}' to DialerCall {recent_dialer_call.id}")
+        if is_correction:
+            # Keep the paired AutoLog CallLog (if any) in sync — several
+            # analytics queries dedup CallLog against DialerCall for the same
+            # physical call by matching user/lead/date, so leaving the old
+            # (wrong) outcome on that row would surface it inconsistently
+            # alongside the now-corrected DialerCall.
+            paired_call_log = db.query(models.CallLog).filter(
+                models.CallLog.dialer_call_id == recent_dialer_call.id
+            ).first()
+            if paired_call_log:
+                paired_call_log.outcome = outcome_str
+                paired_call_log.notes = notes
+            logger.info(
+                f"[CallLog] Corrected outcome to '{outcome_str}' on DialerCall "
+                f"{recent_dialer_call.id} (previously auto/manually logged)"
+            )
+        else:
+            logger.info(f"[CallLog] Attached outcome '{outcome_str}' to DialerCall {recent_dialer_call.id}")
     else:
         # No recent Aircall call — create a standard manual CallLog
         # Use CallOutcome enum if available, fall back to raw string for custom outcomes
@@ -375,14 +483,20 @@ def log_call(lead_id: str, body: dict, bg_tasks: BackgroundTasks, user: dict = D
     # Update last_call_timestamp on the lead
     lead.last_call_timestamp = datetime.now(timezone.utc)
 
+    # Wrong Number is about the phone, not the lead: flag it so cadence call/text
+    # steps skip (no status change — email still works).
+    if outcome_str == "Wrong Number":
+        lead_service.mark_phone_invalid(db, lead, user.get("name") or user.get("email") or "a teammate")
+
     # EC-13: Only increment call_attempt_count if this is a manual call OR if the
-    # DialerCall record has NOT yet been finalized by a webhook (ended_at is None).
+    # DialerCall record has NOT yet been finalized by a webhook.
     # When the Aircall webhook fires CALL_ENDED it already increments the counter
     # in dialer_service.handle_webhook → double-counting is prevented here.
+    # Status counts too: Aircall's call.hungup finishes the call with no ended_at.
     already_counted_by_webhook = (
         attached_to_dialer
         and recent_dialer_call is not None
-        and recent_dialer_call.ended_at is not None  # webhook already fired + set ended_at
+        and (recent_dialer_call.ended_at is not None or recent_dialer_call.status == "CALL_ENDED")
     )
     if outcome_str in ATTEMPT_OUTCOMES and not already_counted_by_webhook:
         lead.call_attempt_count = (lead.call_attempt_count or 0) + 1
@@ -391,8 +505,36 @@ def log_call(lead_id: str, body: dict, bg_tasks: BackgroundTasks, user: dict = D
             f"(attached_to_dialer={attached_to_dialer}, already_counted={already_counted_by_webhook})"
         )
 
-    # Always increment times_called for any outbound RCM call (EC-9: unified counter)
-    lead.times_called = (lead.times_called or 0) + 1
+    # Always increment times_called for any outbound Alternate CRM call (EC-9: unified
+    # counter) — but never for a correction (the call itself already happened once,
+    # this invocation is just fixing its recorded outcome), and never when the
+    # Aircall webhook already counted it (RCA 2026-08-21, live: dialer_service.
+    # handle_webhook increments times_called on every outbound CALL_ENDED —
+    # unconditionally, unlike call_attempt_count two lines above, which already
+    # had this exact guard. Once the outcome-modal SSE fix made the webhook→
+    # outcome-submit sequence complete reliably for Aircall calls, this counted
+    # every such call twice.).
+    if not is_correction and not already_counted_by_webhook:
+        lead.times_called = (lead.times_called or 0) + 1
+
+    # RCA 2026-09-01: initiate_call's "you already have an active call" guard
+    # (dialer_service._get_active_call_for_user) keys purely on DialerCall.status
+    # — it is cleared ONLY by an Aircall/Alternate Messenger webhook (or a 5-15min
+    # staleness timeout), never by the SDR finishing this outcome-log step.
+    # An SDR logging outcome via this exact endpoint is the one guaranteed-
+    # to-happen signal that the call is over, regardless of whether the
+    # provider's own webhook ever lands on this row (confirmed: Aircall
+    # Everywhere's embedded-window webhook-matching race can leave a row
+    # permanently orphaned at CALL_STARTED with no provider_call_id, which
+    # also blocks the existing self-heal). Closing the call out here — after
+    # the counters above, which read the call's ORIGINAL ended_at to decide
+    # "did a webhook already count this" — means the next dial is never
+    # blocked on a webhook that may never arrive. A later webhook for the
+    # same row still idempotently backfills duration/recording/tags (EC-17
+    # terminal-state guard in dialer_service.py already prevents downgrade).
+    if attached_to_dialer and recent_dialer_call.status not in ("CALL_ENDED", "CALL_FAILED"):
+        recent_dialer_call.status = "CALL_ENDED"
+        recent_dialer_call.ended_at = recent_dialer_call.ended_at or datetime.now(timezone.utc)
 
     # ── Auto-deprioritisation (V22) ───────────────────────────────────────
     # Count how many times this lead has been called today (across CallLog + DialerCall).
@@ -421,6 +563,14 @@ def log_call(lead_id: str, body: dict, bg_tasks: BackgroundTasks, user: dict = D
     db.commit()
     db.refresh(call)
     db.refresh(lead)
+
+    # RCA 2026-08-25: this route mutates call_attempt_count/times_called/
+    # priority_score/status on every call log but never busted the my_leads/
+    # leads_count caches — the SDR's own "My Leads" view (and the admin "All
+    # Leads" view) could keep showing the pre-call snapshot (0 calls) for up
+    # to the cache's TTL after logging a real call.
+    from cache import invalidate
+    invalidate('my_leads'); invalidate('leads_count'); invalidate('leads_page')
 
     # ── Config-driven auto-status transitions based on outcome ────────────
     # (outcome_action already resolved above, alongside the mailbox hard-block)
@@ -454,7 +604,15 @@ def log_call(lead_id: str, body: dict, bg_tasks: BackgroundTasks, user: dict = D
         old_status = lead.status
         lead.status = new_status
         lead.status_changed_at = datetime.now(timezone.utc)
-        models.log_status_change(db, lead.id, old_status, new_status, user.get("name") or user.get("email", "unknown"))
+        models.log_status_change(db, lead.id, old_status, new_status, user.get("name") or user.get("email", "unknown"),
+                                 changed_by_user_id=user["sub"])
+
+        # Analytics Hub's meetings_scheduled metric keys off meeting_scheduled_at,
+        # not current status (the Leaderboard's metric) — stamp it on every
+        # meeting-reached transition so the two stop disagreeing. Overwritten
+        # below with the SDR's real meeting_datetime when one is provided.
+        if new_status in ("Meeting Scheduled", "1st Discovery Meeting") and lead.meeting_scheduled_at is None:
+            lead.meeting_scheduled_at = lead.status_changed_at
 
         # Unified calendar: capture the real meeting date/time the SDR entered.
         # Optional field — omitted/absent is a no-op so existing callers (e.g.
@@ -472,6 +630,8 @@ def log_call(lead_id: str, body: dict, bg_tasks: BackgroundTasks, user: dict = D
             except (ValueError, TypeError):
                 logger.warning(f"[CallLog] Invalid meeting_datetime for lead {lead_id}: {body.get('meeting_datetime')!r}")
             else:
+                import meeting_log
+                meeting_log.set_meeting_time(db, lead)   # the booking row was written with the stamped time
                 # `mailbox` was already resolved (and hard-blocked-on-missing) above.
                 calendar_event_created, calendar_error = _create_meeting_calendar_event(
                     db, lead, user, mailbox, body
@@ -563,7 +723,7 @@ def log_call(lead_id: str, body: dict, bg_tasks: BackgroundTasks, user: dict = D
 def _push_sf_status(lead, status, db=None):
     """Push status update to SF for existing leads (background thread)."""
     sf_lead_id = lead.sf_lead_id
-    if sf_lead_id and not sf_lead_id.startswith("upload-") and not sf_lead_id.startswith("manual-"):
+    if not _is_sentinel_sf_id(sf_lead_id):
         lead_info = lead_push_info(lead, db)
         def _sf_push():
             try:
@@ -579,7 +739,7 @@ def _push_sf_status(lead, status, db=None):
 def _push_sf_disqualification(lead, reason, db=None):
     """Push disqualification to SF for existing leads (background thread)."""
     sf_lead_id = lead.sf_lead_id
-    if sf_lead_id and not sf_lead_id.startswith("upload-") and not sf_lead_id.startswith("manual-"):
+    if not _is_sentinel_sf_id(sf_lead_id):
         lead_info = lead_push_info(lead, db)
         def _sf_push():
             try:
@@ -656,7 +816,7 @@ def add_discovery_meeting(lead_id: str, user: dict = Depends(get_current_user), 
             models.CallLog.called_at >= since,
         ).first()
 
-        # Check Aircall / RCM DialerCall entries with a resolved outcome (EC-3)
+        # Check Aircall / Alternate Messenger DialerCall entries with a resolved outcome (EC-3)
         if not has_call_outcome:
             has_call_outcome = db.query(models.DialerCall).filter(
                 models.DialerCall.lead_id == lead_id,
@@ -681,7 +841,7 @@ def add_discovery_meeting(lead_id: str, user: dict = Depends(get_current_user), 
         lead.status = "1st Discovery Meeting"
         lead.status_changed_at = datetime.now(timezone.utc)
         models.log_status_change(db, lead.id, old_status, "1st Discovery Meeting",
-                                 user.get("name") or user.get("email", "unknown"))
+                                 user.get("name") or user.get("email", "unknown"), changed_by_user_id=user["sub"])
 
     db.commit()
     db.refresh(lead)
@@ -716,15 +876,43 @@ def close_lead(lead_id: str, body: dict, user: dict = Depends(get_current_user),
     config = models.get_outcome_config(db)
     VALID_REASONS = {o["value"] for o in config if o["group"] == "terminal"}
     VALID_REASONS.update({"No Phone Number", "Other"})  # Always-valid extras
-    if reason not in VALID_REASONS:
+    # "Other: <explanation>" carries the SDR's free-text reason — still a
+    # valid selection of the "Other" option, just with detail attached.
+    is_other_with_note = reason.startswith("Other: ") and len(reason) > len("Other: ")
+    if reason not in VALID_REASONS and not is_other_with_note:
         raise HTTPException(status_code=400, detail=f"Invalid reason. Must be one of: {sorted(VALID_REASONS)}")
 
-    if lead.status != "Calling":
-        raise HTTPException(status_code=422, detail=f"Lead must be in 'Calling' status to close. Current status: {lead.status}")
+    # RCA 2026-08-17: lead_detail.js offers "Disqualify Lead" (incl. "Wrong
+    # Number") across DISQUALIFIABLE_STATUSES, not just "Calling" — the old
+    # Calling-only gate 422'd for any lead already past that stage.
+    if lead.status not in models.DISQUALIFIABLE_STATUSES:
+        raise HTTPException(status_code=422, detail=f"Lead cannot be closed from '{lead.status}' status.")
 
-    # Bypass call-attempt validation for leads with no phone number
+    # Derive definitive outcomes from config: all terminal group outcomes
+    DEFINITIVE_OUTCOMES = {o["value"] for o in config if o["group"] == "terminal"}
+
+    # Bypass call-attempt validation for leads with no phone number, or when
+    # the SDR is explicitly choosing a terminal reason (e.g. "Wrong Number")
+    # through this selector — that choice is itself the definitive outcome,
+    # same as if it had already been logged via CallLog/DialerCall (RCA
+    # 2026-08-17: requiring a *separate* matching call-log entry on top of an
+    # explicit terminal reason was the second half of the "wrong-number
+    # disqualify not working" report).
     lead_has_phone = bool((lead.phone or "").strip()) or bool((getattr(lead, 'phone_secondary', None) or "").strip())
-    skip_call_check = (reason == "No Phone Number" and not lead_has_phone)
+    # A bare "Other" (no explanation) deliberately still needs the
+    # call-attempt gate below — same as before — so it can't be used as a
+    # zero-effort disqualify shortcut the way an SDR just picking a terminal
+    # outcome can't either. RCA 2026-08-31: a rep explaining WHY via
+    # "Other: <note>" is the equivalent of choosing a genuine terminal
+    # reason (same rationale as "Wrong Number" above) and bypasses it — the
+    # actual reported bug was that there was no way to attach that note at
+    # all (QuickActions.jsx had no free-text field for "Other"), not that
+    # the gate itself was wrong.
+    skip_call_check = (
+        (reason == "No Phone Number" and not lead_has_phone)
+        or (reason in DEFINITIVE_OUTCOMES)
+        or is_other_with_note
+    )
 
     if reason == "No Phone Number" and lead_has_phone:
         raise HTTPException(status_code=422, detail="Cannot use 'No Phone Number' reason — this lead has a phone number on file.")
@@ -735,8 +923,6 @@ def close_lead(lead_id: str, body: dict, user: dict = Depends(get_current_user),
         max_attempts = settings.max_call_attempts or 5
 
         # Allow closure if: (1) max attempts reached, OR (2) a definitive outcome was logged
-        # Derive definitive outcomes from config: all terminal group outcomes
-        DEFINITIVE_OUTCOMES = {o["value"] for o in config if o["group"] == "terminal"}
         has_definitive = db.query(models.CallLog).filter(
             models.CallLog.lead_id == lead_id,
             models.CallLog.outcome.in_(DEFINITIVE_OUTCOMES)
@@ -767,7 +953,9 @@ def close_lead(lead_id: str, body: dict, user: dict = Depends(get_current_user),
 
 
 @router.delete("/leads/{lead_id}/calls/{call_id}")
-def delete_call_log(lead_id: str, call_id: str, db: Session = Depends(get_db)):
+def delete_call_log(lead_id: str, call_id: str, db: Session = Depends(get_db),
+                    user: dict = Depends(get_current_user)):
+    load_lead(db, user, lead_id, edit=True)
     call = db.query(models.CallLog).filter(
         models.CallLog.id == call_id, models.CallLog.lead_id == lead_id
     ).first()
@@ -784,6 +972,7 @@ def get_lead_calls(
     page:  int = 1,
     limit: int = 10,
     db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     """
     Return call logs for a lead — merging manual CallLog records and
@@ -793,9 +982,7 @@ def get_lead_calls(
     Stats (total, connected, avg_duration, last_called) are always
     computed from the full dataset regardless of page.
     """
-    lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    lead = load_lead(db, user, lead_id)
 
     # ── Manual call logs ─────────────────────────────────────────────────
     manual = db.query(models.CallLog).filter(models.CallLog.lead_id == lead_id).all()
@@ -820,78 +1007,44 @@ def get_lead_calls(
         for c in manual
     ]
 
-    # ── Dialer calls — refresh recording URLs using the correct per-call provider ──
-    # Each DialerCall.provider may be 'aircall' or 'rcm'. Using a single
-    # global provider (get_active_provider) caused RCM calls to silently
-    # use the Aircall client — their recording_url was never fetched. We now build
-    # a per-provider cache so each call uses its own matching provider instance.
+    # ── Dialer calls ─────────────────────────────────────────────────────
+    # Each DialerCall.provider may be 'aircall' or 'messenger', and each must
+    # be refreshed through its own provider client — a single global provider
+    # silently used the Aircall client for Alternate Messenger calls, so their
+    # recording_url was never fetched. That per-call provider resolution now
+    # happens inside _refresh_calls_in_background, in its own session.
     #
-    # PERF FIX (v8.9.9): _refresh_recording_url is now fire-and-forget in background threads.
-    # When RCM has upstream issues (502s), the retry loop previously blocked
-    # the response for 3–4 seconds. Now we return DB-cached state immediately and
-    # let recording URLs update in the background (visible on next page load).
+    # PERF (v8.9.9, reworked 2026-09-03): the response returns DB-cached state
+    # immediately and the provider refresh happens off the request path, so a
+    # Alternate Messenger brownout can't add seconds to this endpoint. It is now one
+    # bounded background thread for the requested page rather than one thread
+    # (and one held DB connection) per call row — see the RCA on
+    # _refresh_calls_in_background.
     dialer_rows = []
+    # Ids worth re-fetching from the provider. The refresh itself is kicked off
+    # AFTER pagination, for the returned page only — refreshing every call on the
+    # lead is what made this endpoint able to take the app down (see
+    # _refresh_calls_in_background). Provider instances are resolved in that
+    # background thread's own session, not here.
+    refreshable_ids = []
     try:
-        import dialer_service
-        _provider_cache: dict = {}
         dialer = db.query(models.DialerCall).filter(models.DialerCall.lead_id == lead_id).all()
-        for c in dialer:
-            pname = (c.provider or "").lower()
-            if pname and pname not in _provider_cache:
-                _provider_cache[pname] = dialer_service.get_provider_by_name(pname, db)
 
-        # Kick off recording URL refresh in the background — truly fire-and-forget.
-        # Each thread opens its OWN DB session to avoid SQLAlchemy thread-safety violations.
-        # The main request thread reads c.recording_url from the already-committed row
-        # and returns immediately. Fresh URLs are committed by background threads and
-        # visible on the NEXT page load (acceptable UX — avoids 3-4s RCM 502 hangs).
-        def _refresh_in_own_session(call_id: str, provider) -> None:
-            """Open a fresh DB session, re-fetch the DialerCall, refresh URL, commit, close."""
-            try:
-                from database import SessionLocal
-                _db = SessionLocal()
-                try:
-                    _call = _db.query(models.DialerCall).filter(models.DialerCall.id == call_id).first()
-                    if _call:
-                        _refresh_recording_url(_call, provider, _db)
-                finally:
-                    _db.close()
-            except Exception:
-                pass  # Best-effort — never crash the request
+        # One query for every caller's name, not one per call row.
+        _user_ids = {c.user_id for c in dialer if c.user_id}
+        _user_names = dict(
+            db.query(models.User.id, models.User.name)
+              .filter(models.User.id.in_(_user_ids)).all()
+        ) if _user_ids else {}
 
         for c in dialer:
-            pname = (c.provider or "").lower()
-            prov = _provider_cache.get(pname)
-            # Only spawn a thread if there's a provider + a provider_call_id to refresh from.
-            # EC-17: Skip refresh if call already has all data — avoids 502 log storms
-            # from RCM when SDRs open the Calls tab on leads with many call records.
-            # _refresh_recording_url already checks this internally, but checking here
-            # avoids spawning a thread + DB session + API hit entirely.
-            if prov and c.provider_call_id:
-                url_needs_refresh = (
-                    not c.recording_url
-                    or _is_signed_url_expired(c.recording_url)
-                )
-                data_needs_refresh = (c.duration is None or c.ended_at is None)
-                transcript_needs_refresh = _transcript_eligible(c)
-                # Only refresh terminal calls — non-terminal calls aren't ready yet
-                # (CALL_STARTED / CALL_ANSWERED) and will be updated via webhook.
-                _TERMINAL = {"CALL_ENDED", "CALL_FAILED", "FAILED", "completed",
-                             "failed", "cancelled", "no_answer", "busy"}
-                is_terminal = c.status in _TERMINAL
-                if is_terminal and (url_needs_refresh or data_needs_refresh or transcript_needs_refresh):
-                    threading.Thread(
-                        target=_refresh_in_own_session,
-                        args=(c.id, prov),
-                        daemon=True,
-                    ).start()
+            # EC-17: skip calls that already have everything — avoids a pointless
+            # provider hit (and, for Alternate Messenger, a 502 log storm) per call row.
+            if (c.provider_call_id
+                    and c.status in _TERMINAL_CALL_STATUSES
+                    and _needs_call_update(c)):
+                refreshable_ids.append(c.id)
 
-        for c in dialer:
-            user_name = None
-            if c.user_id:
-                u = db.query(models.User).filter(models.User.id == c.user_id).first()
-                if u:
-                    user_name = u.name
             dialer_rows.append({
                 "id":            c.id,
                 "source":        "dialer",
@@ -906,7 +1059,7 @@ def get_lead_calls(
                 "status":        c.status,
                 "called_at":     c.started_at.isoformat() if c.started_at else (c.created_at.isoformat() if c.created_at else None),
                 "created_at":    c.created_at.isoformat() if c.created_at else None,
-                "user_name":     user_name,
+                "user_name":     _user_names.get(c.user_id),
                 "_sort_ts":      c.started_at or c.created_at,
             })
     except Exception:
@@ -938,6 +1091,11 @@ def get_lead_calls(
     offset  = (page - 1) * limit
     page_calls = all_calls[offset: offset + limit]
     has_more   = (offset + limit) < total
+
+    # Backfill only what this page actually shows, off the request path. Bounds
+    # the work to `limit` (≤100) instead of every call ever made to this lead.
+    _page_ids = {c["id"] for c in page_calls if c.get("source") == "dialer"}
+    _refresh_calls_in_background([cid for cid in refreshable_ids if cid in _page_ids])
 
     return {
         "calls":       page_calls,
@@ -1039,7 +1197,7 @@ def get_my_today_calls(
             **info,
         })
 
-    # ── Dialer calls (Aircall / RCM) ──────────────────────────────────
+    # ── Dialer calls (Aircall / Alternate Messenger) ──────────────────────────────────
     dialer_calls = (
         db.query(models.DialerCall)
         .options(joinedload(models.DialerCall.lead), joinedload(models.DialerCall.user))
@@ -1105,7 +1263,7 @@ def get_sdr_call_summary(user: dict = Depends(get_current_user), db: Session = D
     """Returns today's call statistics for the logged-in SDR.
 
     Fix (v9.7.3): Previously only counted CallLog (manual calls), missing all
-    DialerCall records from RCM/Aircall. Now uses the same UNION pattern
+    DialerCall records from Alternate Messenger/Aircall. Now uses the same UNION pattern
     as analytics — both sources merged, outcomes grouped by value.
     Also switched to UTC-aware today_start (consistent with the rest of the codebase).
     """
@@ -1143,7 +1301,7 @@ def get_sdr_call_summary(user: dict = Depends(get_current_user), db: Session = D
         models.CallLog.user_id == uid,
     ).scalar() or 0
 
-    # ── B) Dialer calls today (RCM / Aircall) ───────────────────────
+    # ── B) Dialer calls today (Alternate Messenger / Aircall) ───────────────────────
     dc_today = (
         db.query(models.DialerCall.outcome, func.count(models.DialerCall.id).label("cnt"))
         .filter(

@@ -19,6 +19,7 @@ def log_sf_operation(
     request_payload: dict = None,
     response_payload: dict = None,
     source_system: str = "api",
+    direction: str = "outbound",
 ):
     """
     Create a log entry for a Salesforce API operation.
@@ -46,6 +47,7 @@ def log_sf_operation(
         request_payload=_safe_json(request_payload),
         response_payload=_safe_json(response_payload),
         source_system=source_system,
+        direction=direction,
     )
 
     try:

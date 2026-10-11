@@ -17,7 +17,7 @@ vi.mock('../../features/aircall-everywhere/useAircallEverywhere', () => ({
 describe('NavTopbar — Aircall Everywhere / legacy Dial button gating', () => {
   const noop = () => {};
 
-  it('shows the manual Dial button for a RCM/ineligible SDR (their only way to dial an ad-hoc number)', () => {
+  it('shows the manual Dial button for a Alternate Messenger/ineligible SDR (their only way to dial an ad-hoc number)', () => {
     mockStatus = 'ineligible';
     render(<NavTopbar onNavigate={noop} onAction={noop} onSearch={noop} />);
     expect(document.getElementById('nh-manual-dial-btn')).toBeInTheDocument();

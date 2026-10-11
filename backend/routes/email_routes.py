@@ -7,20 +7,25 @@ import json
 import logging
 import hashlib
 import hmac
+import threading
 import urllib.parse
 from datetime import datetime, timezone
 
-from email_utils import sanitize_preview as _sanitize_preview
+from email_utils import sanitize_preview as _sanitize_preview, is_auto_reply as _is_auto_reply, is_system_message, internal_domains, is_internal_sender
 from config import BRAND_TAGLINE
 from routes._admin_helpers import _is_valid_email
 
+from pathlib import Path
+
 import httpx
 import bleach
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
-from auth import get_current_user, require_super_admin
+from auth import get_current_user, require_super_admin, public_endpoint
+from routes.lead_helpers import load_lead
 from crypto import encrypt_token, decrypt_token
 import models
 
@@ -80,21 +85,33 @@ def _compose_body_to_html(raw_body: str, hide_branding: bool = False, signature_
     honored for backward compatibility.
 
     Appends the sending user's signature (already sanitized at save time,
-    see the /signature endpoints) and a subtle RCM origin footer,
+    see the /signature endpoints) and a subtle Alternate CRM origin footer,
     unless the user opted out (User.hide_branding_in_email).
     """
     html_body = _sanitize_preview(raw_body or "").replace("\n", "<br>")
     return _wrap_email_body(html_body, hide_branding, signature_html)
 
 
-def _plain_text_to_html(plain_body: str, hide_branding: bool = False) -> str:
+def _plain_text_to_html(plain_body: str, hide_branding: bool = False, signature_html: str = "") -> str:
     """Convert a genuinely plain-text body (e.g. Sales Journey's templated
     cadence emails — see journey_engine/channels/email_channel.py) to HTML.
     Kept separate from _compose_body_to_html: that path's input is already
     real HTML from a rich-text editor and must not be re-escaped."""
     import html as html_mod
-    html_body = html_mod.escape(plain_body or "").replace("\n", "<br>")
-    return _wrap_email_body(html_body, hide_branding)
+    import re as _re
+    # A bare URL in a plain-text body must become a real <a href>: Nylas link tracking only
+    # rewrites anchors, so a pasted URL was sent unlinked (or auto-linked by the recipient's
+    # client) and its clicks were never tracked.
+    parts = _re.split(r'(https?://[^\s<>"]+)', plain_body or "")
+    out = []
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            out.append(html_mod.escape(part))
+            continue
+        url = part.rstrip(".,;:!?)")
+        out.append(f'<a href="{html_mod.escape(url, quote=True)}">{html_mod.escape(url)}</a>{html_mod.escape(part[len(url):])}')
+    html_body = "".join(out).replace("\n", "<br>")
+    return _wrap_email_body(html_body, hide_branding, signature_html)
 
 
 # _sanitize_preview is now imported from email_utils (see top of file).
@@ -118,8 +135,8 @@ def _parse_recipient_list(raw: str) -> list:
 
 @router.patch("/toggle-branding")
 def toggle_my_email_branding(body: dict, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Allow any authenticated user to opt out of the "RCM · Powered by
-    RCM" footer on their own sent mail. Mirrors /api/dialer/toggle's
+    """Allow any authenticated user to opt out of the "Alternate CRM · Powered by
+    Alternate Messenger" footer on their own sent mail. Mirrors /api/dialer/toggle's
     self-service pattern (dialer_routes.py)."""
     db_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
     if not db_user:
@@ -164,6 +181,55 @@ def save_my_signature(body: dict, user: dict = Depends(get_current_user), db: Se
     return {"signature_html": db_user.email_signature_html}
 
 
+# ── Signature logo (v11.3.0) ─────────────────────────────────────────────────
+# "Insert Image" in the signature editor already accepted any hosted image
+# URL (sig-image button, sdr_settings.js) — the gap was a company logo being
+# a FILE on someone's computer, not a URL. This gives it one: upload once,
+# get back a hosted URL, insert that exactly like any other image URL.
+# Same local-disk storage convention as attachment_routes.py's lead
+# attachments — one file per user, overwritten on re-upload.
+_SIGNATURE_LOGO_DIR = Path(__file__).parent.parent / "uploads" / "signature_logos"
+_ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+_MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024  # 2MB — a logo, not a photo album
+
+
+@router.post("/signature/logo")
+async def upload_signature_logo(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in _ALLOWED_LOGO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Logo must be a PNG, JPG, GIF, or WebP image")
+    content = await file.read()
+    if len(content) > _MAX_LOGO_SIZE_BYTES:
+        raise HTTPException(status_code=400, detail="Logo must be under 2MB")
+
+    _SIGNATURE_LOGO_DIR.mkdir(parents=True, exist_ok=True)
+    for old in _SIGNATURE_LOGO_DIR.glob(f"{user['sub']}.*"):
+        old.unlink(missing_ok=True)  # drop a stale extension from a previous upload
+    dest = _SIGNATURE_LOGO_DIR / f"{user['sub']}{ext}"
+    dest.write_bytes(content)
+
+    # Must be an absolute, publicly reachable URL — an outbound email's <img>
+    # is fetched by the recipient's mail client, which can't resolve a
+    # relative path and sends no auth header (see get_signature_logo below,
+    # deliberately unauthenticated for exactly that reason).
+    from config import backend_base_url
+    base_url = backend_base_url()
+    logo_url = f"{base_url}/api/email/signature/logo/{user['sub']}?v={int(dest.stat().st_mtime)}"
+    return {"url": logo_url}
+
+
+@router.get("/signature/logo/{user_id}", dependencies=[Depends(public_endpoint)])
+def get_signature_logo(user_id: str):
+    """No auth — a recipient's mail client fetching this <img src> can't send
+    a Alternate CRM JWT. Low sensitivity (a logo image, keyed by an opaque user
+    id) is an acceptable trade-off for images actually rendering in sent mail."""
+    for ext in _ALLOWED_LOGO_EXTENSIONS:
+        candidate = _SIGNATURE_LOGO_DIR / f"{user_id}{ext}"
+        if candidate.exists():
+            return FileResponse(candidate)
+    raise HTTPException(status_code=404, detail="No logo uploaded for this user")
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 1. Nylas Config — Super Admin
 # ═════════════════════════════════════════════════════════════════════════════
@@ -182,7 +248,7 @@ def get_nylas_config(db: Session = Depends(get_db), admin: dict = Depends(requir
         "has_api_key": bool(config.api_key_encrypted),
         "has_webhook_secret": bool(config.webhook_secret_encrypted),
         "configured_by": config.configured_by_name,
-        "configured_at": str(config.configured_at) if config.configured_at else None,
+        "configured_at": config.configured_at.isoformat() if config.configured_at else None,
     }
 
 
@@ -278,7 +344,7 @@ def get_auth_url(db: Session = Depends(get_db), user: dict = Depends(get_current
     return {"auth_url": auth_url}
 
 
-@router.get("/callback")
+@router.get("/callback", dependencies=[Depends(public_endpoint)])
 async def nylas_callback(code: str, state: str = "", db: Session = Depends(get_db)):
     """
     Handle Nylas OAuth callback.
@@ -386,9 +452,13 @@ def get_mailbox_status(db: Session = Depends(get_db), user: dict = Depends(get_c
     return {
         "nylas_configured": bool(config),
         "connected": bool(mailbox and mailbox.status == "connected"),
+        # Linked-but-unhealthy ("error" from a 401/403 send, or
+        # "disconnected") needs different words from never-connected:
+        # re-authorise, not connect. Both used to collapse into the latter.
+        "needs_reconnect": bool(mailbox and mailbox.status != "connected"),
         "email": mailbox.email_address if mailbox else None,
         "provider": mailbox.provider if mailbox else None,
-        "connected_at": str(mailbox.connected_at) if mailbox and mailbox.connected_at else None,
+        "connected_at": mailbox.connected_at.isoformat() if mailbox and mailbox.connected_at else None,
         "hide_branding_in_email": bool(db_user and db_user.hide_branding_in_email),
     }
 
@@ -501,10 +571,16 @@ async def send_email(request: Request, db: Session = Depends(get_db), user: dict
     if not subject and not email_body:
         raise HTTPException(status_code=422, detail="Subject or body is required")
 
-    # Get lead
-    lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    # Get lead — emailing a lead is a change to it (RCA 2026-09-29: any user
+    # could email any lead and log it onto that lead's history).
+    lead = load_lead(db, user, lead_id, edit=True)
+    # A reply must stay on its own lead's thread, or inbound replies get
+    # routed onto this lead (EmailThread maps thread → lead).
+    if thread_id_param:
+        owner = db.query(models.EmailThread.lead_id).filter(
+            models.EmailThread.nylas_thread_id == thread_id_param).first()
+        if owner and owner[0] != lead_id:
+            raise HTTPException(status_code=400, detail="That email thread belongs to a different lead.")
     if not lead.email:
         raise HTTPException(status_code=400, detail="Lead has no email address")
 
@@ -532,7 +608,7 @@ async def send_email(request: Request, db: Session = Depends(get_db), user: dict
         "subject": subject,
         "body": html_body,
         "custom_headers": [
-            {"name": "X-Mailer", "value": "RCM CRM / RCM"},
+            {"name": "X-Mailer", "value": "Alternate CRM CRM / Alternate Messenger"},
         ],
         "tracking_options": {
             "opens": True,
@@ -583,6 +659,21 @@ async def send_email(request: Request, db: Session = Depends(get_db), user: dict
                 raise HTTPException(
                     status_code=401,
                     detail="Email connection expired. Please reconnect your email."
+                )
+
+            if resp.status_code == 403:
+                # Grant exists and reads may still work, but send is
+                # forbidden (commonly: the Nylas connector's OAuth scopes
+                # don't include send permission) — previously this fell
+                # through to the generic 502 branch below and mailbox.status
+                # stayed "connected" forever, so the UI kept lying that the
+                # mailbox was fine with no path to notice or reconnect.
+                mailbox.status = "error"
+                db.commit()
+                logger.error(f"Nylas send forbidden (403) for mailbox {mailbox.id}: {resp.text}")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Email account is connected but not authorized to send. Please reconnect your email or contact your admin."
                 )
 
             if resp.status_code not in (200, 202):
@@ -644,6 +735,11 @@ async def send_email(request: Request, db: Session = Depends(get_db), user: dict
 # 4. Lead Email Activity
 # ═════════════════════════════════════════════════════════════════════════════
 
+# Longest body an older release stored (500-char cap, plus "..."), so the
+# longest one that can still need repairing.
+_LEGACY_PREVIEW_MAX = 503
+
+
 def _sync_thread_messages(lead_id: str, db: Session):
     """
     Poll Nylas API for new messages in threads linked to this lead.
@@ -688,19 +784,24 @@ def _sync_thread_messages(lead_id: str, db: Session):
     if not mailbox:
         return
 
-    # Pre-fetch existing message IDs and connected emails once (not per-thread)
-    existing_ids = set(
-        r[0] for r in db.query(models.LeadEmailActivity.nylas_message_id).filter(
+    # Pre-fetch existing message IDs (and how much body each has stored) and
+    # connected emails once (not per-thread)
+    stored_len = {
+        mid: len(body or "") for mid, body in db.query(
+            models.LeadEmailActivity.nylas_message_id, models.LeadEmailActivity.body_preview,
+        ).filter(
             models.LeadEmailActivity.lead_id == lead_id,
             models.LeadEmailActivity.nylas_message_id.isnot(None)
         ).all()
-    )
+    }
+    existing_ids = set(stored_len)
     connected_emails = set(
         r[0].lower() for r in db.query(models.UserMailbox.email_address).filter(
             models.UserMailbox.status == "connected"
         ).all()
     )
 
+    internal = internal_domains(db)
     # Fetch messages from each thread using sync httpx
     for tm in thread_mappings:
         try:
@@ -722,24 +823,20 @@ def _sync_thread_messages(lead_id: str, db: Session):
         for msg in messages:
             msg_id = msg.get("id", "")
             if msg_id in existing_ids:
-                # Repair: if existing body was truncated (old 500-char limit), update with full body
+                # Repair only a body an older release cut short: they stored at
+                # most 200, later 500, chars of stripped text. Anything longer was
+                # stored in full already, so re-sanitizing it every 5-minute tick
+                # was pure churn (RCA 2026-10-06 staging OOM): bleach + a DB
+                # lookup per message.
                 snippet = msg.get("body", msg.get("snippet", ""))
-                if snippet:
+                if snippet and stored_len.get(msg_id, 0) <= _LEGACY_PREVIEW_MAX:
                     existing = db.query(models.LeadEmailActivity).filter(
                         models.LeadEmailActivity.nylas_message_id == msg_id
                     ).first()
-                    if existing:
-                        new_body = _sanitize_preview(snippet)
-                        # Repair if: body is missing, looks truncated (<= 200 chars old limit),
-                        # or the new sanitized version is meaningfully longer (HTML now preserved)
-                        should_repair = (
-                            not existing.body_preview
-                            or len(existing.body_preview) <= 200
-                            or len(new_body) > len(existing.body_preview) + 50
-                        )
-                        if should_repair and new_body:
-                            existing.body_preview = new_body
-                            logger.debug(f"Repaired body: msg_id={msg_id[:12]}, old={len(existing.body_preview or '')}→new={len(new_body)}")
+                    new_body = _sanitize_preview(snippet)
+                    if existing and len(new_body) > stored_len[msg_id]:
+                        existing.body_preview = new_body
+                        stored_len[msg_id] = len(new_body)
                 continue
 
             from_list = msg.get("from", [])
@@ -751,6 +848,8 @@ def _sync_thread_messages(lead_id: str, db: Session):
             # this same case on the happy path; this poller is the fallback
             # when that call fails, so it needs the same handling, not a skip.
             direction = "outbound" if from_email.lower() in connected_emails else "inbound"
+            if direction == "inbound" and is_internal_sender(from_email, internal):
+                continue   # a colleague writing to the rep is not a lead reply
 
             to_list = msg.get("to", [])
             to_email = to_list[0].get("email", "") if to_list else ""
@@ -812,11 +911,21 @@ def _sync_thread_messages(lead_id: str, db: Session):
 def get_lead_emails(lead_id: str, background_tasks: BackgroundTasks,
                     db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """Get all email activity for a lead. Syncs new messages from Nylas in background."""
+    load_lead(db, user, lead_id)
 
     # Return cached emails immediately — no blocking on external API calls
     activities = db.query(models.LeadEmailActivity).filter(
         models.LeadEmailActivity.lead_id == lead_id
     ).order_by(models.LeadEmailActivity.timestamp.asc()).all()
+
+    # Opening the thread is the "seen it" signal for the reply-notification
+    # bell (get_pending_replies in task_routes.py) — no separate ack step.
+    now = datetime.now(timezone.utc)
+    unread = [a for a in activities if a.direction == "inbound" and a.read_at is None]
+    if unread:
+        for a in unread:
+            a.read_at = now
+        db.commit()
 
     # Schedule Nylas sync to run AFTER the response is sent
     # Uses its own DB session to avoid session lifecycle issues
@@ -831,12 +940,18 @@ def get_lead_emails(lead_id: str, background_tasks: BackgroundTasks,
                 "body_preview": a.body_preview,
                 "from_email": a.from_email,
                 "to_email": a.to_email,
-                "timestamp": str(a.timestamp) if a.timestamp else None,
+                "timestamp": a.timestamp.isoformat() if a.timestamp else None,
                 "user_id": a.user_id,
                 "user_name": a.user.name if a.user else None,
                 "nylas_message_id": a.nylas_message_id,
-                "opened_at": str(a.opened_at) if a.opened_at else None,
+                "nylas_thread_id": a.nylas_thread_id,
+                "opened_at": a.opened_at.isoformat() if a.opened_at else None,
                 "open_count": a.open_count or 0,
+                "clicked_at": a.clicked_at.isoformat() if a.clicked_at else None,
+                "click_count": a.click_count or 0,
+                "is_auto_reply": bool(a.is_auto_reply),
+                "source": "cadence" if a.journey_id else "campaign" if a.campaign_id else "manual",
+                "provider": a.source,  # "nylas" | "instantly" — which system this row came from
                 "attachments": json.loads(a.attachments_json) if a.attachments_json else [],
             }
             for a in activities
@@ -948,7 +1063,7 @@ def _sync_full_mailbox(lead_id: str, db: Session):
             params={
                 "any_email": lead.email,
                 "limit": 100,
-                "start_after": lookback_secs,
+                "received_after": lookback_secs,   # not start_after: Nylas 400s on unknown params
                 "select": "id,body,snippet,from,to,subject,date,attachments,thread_id",
             },
             headers={"Authorization": f"Bearer {api_key}"},
@@ -970,14 +1085,16 @@ def _sync_full_mailbox(lead_id: str, db: Session):
         return
 
     if resp.status_code != 200:
-        logger.debug(f"[FullMailboxSync] Nylas returned {resp.status_code} for lead={lead_id}")
+        logger.warning(f"[FullMailboxSync] Nylas returned {resp.status_code} for lead={lead_id}: {resp.text[:300]}")
         _sync_thread_messages(lead_id, db)
         return
 
     messages = resp.json().get("data", [])
     new_outbound = 0
     new_inbound = 0
+    inbound_received = []   # new inbound messages (timestamp, auto flag, id, thread, from, subject), for the cadence signal
 
+    internal = internal_domains(db)
     for msg in messages:
         msg_id = msg.get("id", "")
         if not msg_id or msg_id in existing_ids:
@@ -985,6 +1102,8 @@ def _sync_full_mailbox(lead_id: str, db: Session):
 
         from_list = msg.get("from", [])
         from_email_addr = from_list[0].get("email", "").lower() if from_list else ""
+        if from_email_addr not in connected_emails and is_internal_sender(from_email_addr, internal):
+            continue   # a colleague writing to the rep is not a lead reply
         to_list = msg.get("to", [])
         to_email_addr = to_list[0].get("email", "").lower() if to_list else ""
         subject = msg.get("subject", "")
@@ -993,6 +1112,8 @@ def _sync_full_mailbox(lead_id: str, db: Session):
 
         is_outbound = from_email_addr in connected_emails
         direction = "outbound" if is_outbound else "inbound"
+        # no headers in this select: subject rules, plus receipts/bounces/no-reply senders
+        auto_reply = not is_outbound and (_is_auto_reply([], subject) or is_system_message(from_email_addr, subject))
 
         msg_date = msg.get("date")
         timestamp = None
@@ -1041,6 +1162,7 @@ def _sync_full_mailbox(lead_id: str, db: Session):
             nylas_thread_id=nylas_thread_id or None,
             timestamp=timestamp,
             attachments_json=attachments_meta,
+            is_auto_reply=auto_reply,
         )
         db.add(activity)
         existing_ids.add(msg_id)
@@ -1049,6 +1171,8 @@ def _sync_full_mailbox(lead_id: str, db: Session):
             new_outbound += 1
         else:
             new_inbound += 1
+            inbound_received.append({"timestamp": timestamp, "auto": auto_reply, "id": msg_id,
+                                     "thread_id": nylas_thread_id, "from": from_email_addr, "subject": subject})
 
     try:
         db.commit()
@@ -1062,20 +1186,73 @@ def _sync_full_mailbox(lead_id: str, db: Session):
         logger.error(f"[FullMailboxSync] Commit failed for lead={lead_id}: {e}")
         return
 
-    # Also run thread-level sync for body repair on existing threads
+    if new_outbound:
+        seen = {m["id"] for m in inbound_received}
+        for r in db.query(models.LeadEmailActivity).filter(
+                models.LeadEmailActivity.lead_id == lead_id, models.LeadEmailActivity.direction == "inbound",
+                models.LeadEmailActivity.is_auto_reply.isnot(True)).all():
+            if r.nylas_message_id not in seen:
+                inbound_received.append({"timestamp": r.timestamp, "auto": False, "id": r.nylas_message_id,
+                                         "thread_id": r.nylas_thread_id, "from": r.from_email, "subject": r.subject})
+    _signal_cadence_reply(db, lead, inbound_received)
+
+    # Thread-level pass: picks up messages on known threads that the
+    # any_email search can't see (a colleague replying without the lead's
+    # address, older than 30 days, past the 100 limit) and repairs legacy
+    # truncated bodies.
     _sync_thread_messages(lead_id, db)
+
+
+def _signal_cadence_reply(db, lead, inbound_received):
+    """A reply this sync found must move the lead's cadence like the Nylas
+    webhook would — staging gets no Nylas webhooks (the one webhook URL
+    points at prod) and prod can miss one. Only mail received after the lead's
+    latest active enrolment counts: older mail is history, not a reply to it."""
+    if not inbound_received:
+        return
+    from sqlalchemy import func
+    from journey_engine.engine import notify_inbound_email
+    since = db.query(func.max(models.JourneyEnrollment.enrolled_at)).filter(
+        models.JourneyEnrollment.lead_id == lead.id,
+        models.JourneyEnrollment.status == "active",
+    ).scalar()
+    if since is None:
+        return
+    aware = lambda d: d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    fresh = [m for m in inbound_received if m["timestamp"] and aware(m["timestamp"]) >= aware(since)]
+    for m in sorted(fresh, key=lambda m: aware(m["timestamp"])):
+        try:
+            notify_inbound_email(db, lead, auto_reply=m["auto"], message={**m, "source": "mailbox_sync"})
+        except Exception as e:
+            logger.error(f"[FullMailboxSync] cadence reply signal failed for lead={lead.id}: {e}")
+
+
+# RCA 2026-08-24 (staging OOM investigation): every GET .../emails view fires
+# this in the background, and each run holds up to 100 full message bodies
+# (64KB cap each, pre-sanitize) in memory at once. Not a leak on its own, but
+# with no concurrency cap a burst of lead-detail views (e.g. E2E test traffic)
+# could run dozens of these at once — a real contributing factor to how fast
+# the 512Mi staging box ran out of memory. Bounded here; skips (rather than
+# queues) over the cap since this is best-effort catch-up, not user-facing.
+_full_mailbox_sync_semaphore = threading.Semaphore(4)
 
 
 def _sync_full_mailbox_background(lead_id: str):
     """Wrapper that creates its own DB session for full mailbox background sync."""
-    from database import SessionLocal
-    db = SessionLocal()
+    if not _full_mailbox_sync_semaphore.acquire(blocking=False):
+        logger.info(f"[FullMailboxSync] Skipped lead={lead_id} — too many syncs already running")
+        return
     try:
-        _sync_full_mailbox(lead_id, db)
-    except Exception as e:
-        logger.error(f"[Email] Full mailbox sync failed for lead {lead_id}: {e}")
+        from database import SessionLocal
+        db = SessionLocal()
+        try:
+            _sync_full_mailbox(lead_id, db)
+        except Exception as e:
+            logger.error(f"[Email] Full mailbox sync failed for lead {lead_id}: {e}")
+        finally:
+            db.close()
     finally:
-        db.close()
+        _full_mailbox_sync_semaphore.release()
 
 
 

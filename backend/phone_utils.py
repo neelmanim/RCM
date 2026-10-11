@@ -2,7 +2,7 @@
 phone_utils.py — Shared phone number utilities for all dialer providers.
 
 Centralises extension stripping and E.164 dialability validation so both
-the Aircall and RCM providers share identical rules without duplication.
+the Aircall and Alternate Messenger providers share identical rules without duplication.
 
 Usage:
     from phone_utils import strip_extension, validate_phone_dialable

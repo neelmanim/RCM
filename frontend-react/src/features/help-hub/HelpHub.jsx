@@ -1,8 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { BookOpen } from 'lucide-react';
+import { BookOpen, Compass } from 'lucide-react';
 import { Section } from './Section';
 import { SearchBar } from './SearchBar';
 import { ReleaseNotesSection } from './ReleaseNotesSection';
+import { GuidedToursSection } from './GuidedToursSection';
+import { toursFor } from './data/tours';
+import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { SECTIONS } from './data/sections';
 import releases from './data/releases.json';
 import { SECTION_ICONS_BY_TITLE, RELEASE_NOTES_ICON } from './icons';
@@ -11,11 +15,14 @@ import { stripLeadingEmoji } from './text';
 import { APP_VERSION, BRAND_TAGLINE } from '../../generated/version';
 
 const RELEASE_NOTES_ID = 'release-notes';
+const TOURS_ID = 'guided-tours';
 const RELEASES_PAGE_SIZE = 15;
 
 function roleBucketFor(userRole) {
   if (userRole === 'Super Admin' || userRole === 'Admin') return 'super_admin';
   if (userRole === 'Pod Admin') return 'pod_admin';
+  if (userRole === 'AE') return 'ae';
+  if (userRole === 'CSM') return 'csm';
   return 'sdr';
 }
 
@@ -102,7 +109,7 @@ export const HelpHub = ({ userRole = 'SDR' }) => {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800 m-0">Help & User Guide</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Everything you need to know about RCM · Showing guide for <strong className="text-slate-700">{roleName}</strong>
+            Everything you need to know about Alternate CRM · Showing guide for <strong className="text-slate-700">{roleName}</strong>
           </p>
         </div>
       </div>
@@ -121,15 +128,21 @@ export const HelpHub = ({ userRole = 'SDR' }) => {
           >
             <ReleaseNotesSection releases={pagedReleases} />
             {hasMoreReleases && (
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setVisibleCount(c => c + RELEASES_PAGE_SIZE)}
-                className="w-full mt-2 py-2 rounded-lg text-sm font-semibold text-blue-600
-                  border border-slate-200 hover:bg-slate-50 transition-colors"
+                className="w-full mt-2 text-blue-600"
               >
                 Load more ({matchedReleases.length - visibleCount} more)
-              </button>
+              </Button>
             )}
+          </Section>
+        )}
+
+        {(!q || 'guided tours show me around walkthrough'.includes(q) || toursFor(userRole).some((t) => t.title.toLowerCase().includes(q))) && (
+          <Section title="Guided tours" Icon={Compass} open={isOpen(TOURS_ID)} onToggle={() => toggle(TOURS_ID)}>
+            <GuidedToursSection role={userRole} />
           </Section>
         )}
 
@@ -140,7 +153,7 @@ export const HelpHub = ({ userRole = 'SDR' }) => {
         ))}
 
         {q && matchedSections.length === 0 && !releaseNotesMatch && (
-          <p className="text-sm text-slate-400 text-center py-10">No results for "{query}".</p>
+          <EmptyState message={`No results for "${query}".`} />
         )}
       </div>
 

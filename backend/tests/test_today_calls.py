@@ -10,7 +10,7 @@ Covers:
   - TC-06: Date boundary — yesterday's calls excluded
   - TC-07: ?date=YYYY-MM-DD param returns the right day
   - TC-08: Mixed sources — manual + dialer both returned
-  - TC-09: Multi-provider — aircall and rcm in same response
+  - TC-09: Multi-provider — aircall and messenger in same response
   - TC-10: Empty state — no calls today → calls=[], summary all zeros
   - TC-11: Invalid date format → 400
   - TC-12: DialerCall with started_at=None → excluded (not in today's window)
@@ -196,7 +196,7 @@ class TestTodayCallsRecordingUrl:
         c = _make_sdr_client(db, sdr.id, sdr.email)
         data = c.get("/api/my/today-calls").json()
 
-        item = next(i for i in data["calls"] if i["source"] in ("aircall", "rcm", "dialer"))
+        item = next(i for i in data["calls"] if i["source"] in ("aircall", "messenger", "dialer"))
         assert "recording_url" in item, "recording_url key must be present even when null"
         assert item["recording_url"] is None
 
@@ -321,22 +321,22 @@ class TestTodayCallsMixedSources:
         assert data["summary"]["total"] == 2
 
     def test_tc09_multi_provider_both_returned(self, db):
-        """TC-09: Aircall and RCM calls must both appear in the same response."""
+        """TC-09: Aircall and Alternate Messenger calls must both appear in the same response."""
         sdr = create_test_user(db, email="sdr_mp09@tc.com", role="SDR")
         aircall   = _make_dialer_call_today(db, sdr.id, provider="aircall",
                                             recording_url="https://aircall.mp3")
-        rcm = _make_dialer_call_today(db, sdr.id, provider="rcm",
-                                             recording_url="https://rcm.mp3")
+        messenger = _make_dialer_call_today(db, sdr.id, provider="messenger",
+                                             recording_url="https://messenger.mp3")
         c = _make_sdr_client(db, sdr.id, sdr.email)
         data = c.get("/api/my/today-calls").json()
 
         ids = [i["id"] for i in data["calls"]]
         assert aircall.id in ids,    "Aircall call must appear"
-        assert rcm.id in ids, "RCM call must appear"
+        assert messenger.id in ids, "Alternate Messenger call must appear"
         # Both recording_urls must be present
         urls = {i["recording_url"] for i in data["calls"] if i["recording_url"]}
         assert "https://aircall.mp3" in urls
-        assert "https://rcm.mp3" in urls
+        assert "https://messenger.mp3" in urls
 
 
 # ── TC-10: Empty State ────────────────────────────────────────────────────────

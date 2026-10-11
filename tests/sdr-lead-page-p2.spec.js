@@ -3,7 +3,7 @@
 
 const { test, expect } = require('@playwright/test');
 
-const BASE = process.env.CRM_URL || 'https://rcm-frontend-staging.onrender.com';
+const BASE = process.env.CRM_URL || 'https://messenger-frontend-staging.onrender.com';
 const SDR_TOKEN = process.env.SDR_TOKEN || '';
 const LEAD_IN_CALLING    = process.env.LEAD_CALLING_ID || '';
 const LEAD_IN_MEETING    = process.env.LEAD_MEETING_ID || '';
@@ -12,7 +12,9 @@ const LEAD_IN_DEMO       = process.env.LEAD_DEMO_ID || '';
 
 async function goToLead(page, token, leadId) {
     await page.goto(`${BASE}/?token=${token}`);
-    await page.waitForSelector('#app-sidebar', { timeout: 30000 });
+    // RCA 2026-08-24 (see tests/helpers/auth.js's loginAs): #app-sidebar is
+    // stale — the app loads fine, wait on the sidebar's "Dashboard" link.
+    await page.waitForSelector('nav >> text=Dashboard', { timeout: 30000 });
     await page.evaluate((id) => { window.location.hash = `#lead-detail/${id}`; }, leadId);
     await page.waitForSelector('.pipeline-v2-card, #log-call-btn, #add-note-btn', { timeout: 30000 });
     await page.waitForTimeout(500);

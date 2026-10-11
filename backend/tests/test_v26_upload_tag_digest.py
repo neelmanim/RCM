@@ -144,6 +144,14 @@ class TestUploadTag:
         assert len(no_tag) == 1
         assert no_tag[0]["tag"] is None
 
+    def test_sort_by_filename(self, client, db):
+        _create_upload_log(db, filename="zeta.csv")
+        _create_upload_log(db, filename="alpha.csv")
+
+        res = client.get("/api/admin/leads/upload-logs?sort_by=filename")
+        filenames = [l["filename"] for l in res.json()["logs"]]
+        assert filenames == sorted(filenames)
+
     def test_tag_in_batch_metrics(self, client, db):
         """Tag should also be present in the upload-batch-metrics response."""
         _create_upload_log(db, filename="metrics_tag.csv", tag="Lusha")

@@ -15,7 +15,7 @@
  * Prerequisites
  * ─────────────
  *   ADMIN_TOKEN  env var: a valid Super Admin JWT for the staging environment
- *   STAGING_URL  env var: defaults to https://rcm-crm-staging.onrender.com
+ *   STAGING_URL  env var: defaults to https://messenger-crm-staging.onrender.com
  *
  * Run:
  *   ADMIN_TOKEN=<token> npx playwright test tests/task-and-outcome-filter.spec.js
@@ -69,8 +69,9 @@ async function logCallOutcome(request, adminToken, leadId, outcome) {
 
 /** Delete a lead via API (cleanup) */
 async function deleteLead(request, adminToken, leadId) {
-  await request.delete(`${BASE_URL}/api/leads/${leadId}`, {
-    headers: { Authorization: `Bearer ${adminToken}` },
+  // DELETE /api/leads/{id} is 405; bulk-delete is the real route
+  await request.post(`${BASE_URL}/api/admin/leads/bulk-delete`, {
+    headers: { Authorization: `Bearer ${adminToken}` }, data: { lead_ids: [leadId] },
   })
   .catch(() => {/* best-effort */});
 }

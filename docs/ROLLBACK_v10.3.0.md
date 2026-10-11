@@ -29,10 +29,10 @@ git log main -1 --format="%H %s"
 # Save this SHA somewhere safe
 
 # 2. Verify staging is healthy
-curl https://rcm-crm-staging.onrender.com/api/health/deep
+curl https://messenger-crm-staging.onrender.com/api/health/deep
 
 # 3. Check Render prod DB backup exists
-# → Render Dashboard → rcm-db-prod → Backups tab
+# → Render Dashboard → messenger-db-prod → Backups tab
 # → Confirm backup from today exists
 
 # 4. Deploy during low-traffic window (recommended: before 8am IST)
@@ -61,10 +61,10 @@ git push origin main
 
 **Post-deploy smoke test (within 5 min):**
 ```bash
-curl https://rcm-crm-prod.onrender.com/api/health/deep
+curl https://messenger-crm-prod.onrender.com/api/health/deep
 # Expect: {"status":"ok","db_connected":true,"startup_complete":true}
 
-curl -H "Authorization: Bearer <token>" https://rcm-crm-prod.onrender.com/api/pods
+curl -H "Authorization: Bearer <token>" https://messenger-crm-prod.onrender.com/api/pods
 # Expect: pods array, each with "admins": [...] field
 ```
 
@@ -132,7 +132,7 @@ git push origin main
 
 ### Step 3: Verify
 ```bash
-curl https://rcm-crm-prod.onrender.com/api/health/deep
+curl https://messenger-crm-prod.onrender.com/api/health/deep
 ```
 
 ---
@@ -140,7 +140,7 @@ curl https://rcm-crm-prod.onrender.com/api/health/deep
 ## Rollback Tier 3 — Full DB Restore (Last Resort)
 
 ```
-Render Dashboard → rcm-db-prod → Backups
+Render Dashboard → messenger-db-prod → Backups
 → Select latest backup (before v10.3.0 deploy)
 → Click Restore → Confirm
 → Then redeploy with pre-v10 code (git revert)
@@ -168,8 +168,8 @@ Render Dashboard → rcm-db-prod → Backups
 
 | Item | Value |
 |------|-------|
-| Staging backend | https://rcm-crm-staging.onrender.com |
-| Prod backend | https://rcm-crm-prod.onrender.com |
+| Staging backend | https://messenger-crm-staging.onrender.com |
+| Prod backend | https://messenger-crm-prod.onrender.com |
 | Prod DB ID | `dpg-d6ncblh5pdvs73aacnhg-a` |
 | Staging DB ID | `dpg-d6ncblh5pdvs73aacni0-a` |
 | v10.3.0 staging commit | `72b9cee` |

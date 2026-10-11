@@ -9,7 +9,7 @@ from sqlalchemy import desc
 
 import models
 from database import get_db
-from auth import require_admin
+from auth import require_admin, require_export_access
 
 router = APIRouter(prefix="/api/admin", tags=["SF Logs"])
 
@@ -21,6 +21,7 @@ def list_sf_logs(
     status: str = None,
     operation_type: str = None,
     sf_object: str = None,
+    direction: str = None,
     date_from: str = None,
     date_to: str = None,
     search: str = None,
@@ -38,6 +39,8 @@ def list_sf_logs(
         query = query.filter(models.SalesforceIntegrationLog.operation_type == operation_type)
     if sf_object:
         query = query.filter(models.SalesforceIntegrationLog.sf_object == sf_object)
+    if direction:
+        query = query.filter(models.SalesforceIntegrationLog.direction == direction)
     if date_from:
         query = query.filter(models.SalesforceIntegrationLog.timestamp >= date_from)
     if date_to:
@@ -63,11 +66,12 @@ def list_sf_logs(
     }
 
 
-@router.get("/sf-logs/export")
+@router.get("/sf-logs/export", dependencies=[Depends(require_export_access)])
 def export_sf_logs_csv(
     status: str = None,
     operation_type: str = None,
     sf_object: str = None,
+    direction: str = None,
     date_from: str = None,
     date_to: str = None,
     search: str = None,
@@ -85,6 +89,8 @@ def export_sf_logs_csv(
         query = query.filter(models.SalesforceIntegrationLog.operation_type == operation_type)
     if sf_object:
         query = query.filter(models.SalesforceIntegrationLog.sf_object == sf_object)
+    if direction:
+        query = query.filter(models.SalesforceIntegrationLog.direction == direction)
     if date_from:
         query = query.filter(models.SalesforceIntegrationLog.timestamp >= date_from)
     if date_to:
@@ -100,12 +106,12 @@ def export_sf_logs_csv(
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Timestamp", "Operation", "Object", "Record ID", "First Name", "Last Name", "Email",
+    writer.writerow(["Timestamp", "Operation", "Direction", "Object", "Record ID", "First Name", "Last Name", "Email",
                      "Fields Updated", "Status", "Error Message", "Source", "Request Payload", "Response Payload"])
     for log in logs:
         writer.writerow([
             str(log.timestamp) if log.timestamp else "",
-            log.operation_type, log.sf_object, log.record_identifier,
+            log.operation_type, log.direction, log.sf_object, log.record_identifier,
             log.first_name, log.last_name, log.email,
             log.fields_updated, log.status, log.error_message or "",
             log.source_system, log.request_payload, log.response_payload,
@@ -141,6 +147,7 @@ def _log_to_summary(log):
         "timestamp": str(log.timestamp) if log.timestamp else None,
         "operation_type": log.operation_type,
         "sf_object": log.sf_object,
+        "direction": log.direction,
         "record_identifier": log.record_identifier,
         "first_name": log.first_name,
         "last_name": log.last_name,
@@ -167,6 +174,7 @@ def _log_to_detail(log):
         "timestamp": str(log.timestamp) if log.timestamp else None,
         "operation_type": log.operation_type,
         "sf_object": log.sf_object,
+        "direction": log.direction,
         "record_identifier": log.record_identifier,
         "first_name": log.first_name,
         "last_name": log.last_name,

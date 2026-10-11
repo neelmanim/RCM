@@ -17,7 +17,7 @@ const HINT = {
 /** Live local time for a lead's phone number, same 🟢🟡🔴 business-hours
  * convention as the classic Lead Detail page's phone badge — a power dialer
  * is exactly where "don't cold-call this person at 3am their time" matters. */
-export function LocalTimeBadge({ phone }) {
+export function LocalTimeBadge({ phone, country }) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -25,11 +25,20 @@ export function LocalTimeBadge({ phone }) {
     return () => clearInterval(id);
   }, []);
 
-  const info = getPhoneTimezone(phone);
+  const info = getPhoneTimezone(phone, country);
   if (!info) return null;
 
-  const time = now.toLocaleTimeString('en-US', { timeZone: info.tz, hour: '2-digit', minute: '2-digit', hour12: true });
-  const hour = parseInt(now.toLocaleString('en-US', { timeZone: info.tz, hour: 'numeric', hour12: false }), 10);
+  // RCA 2026-08-31: an unsupported/bad IANA zone throws from Intl here with
+  // no error boundary that would catch it gracefully (blank-screen report)
+  // — phone_timezone.js's own vanilla renderer already guards the identical
+  // calls for this exact reason, this port of it never picked that up.
+  let time, hour;
+  try {
+    time = now.toLocaleTimeString('en-US', { timeZone: info.tz, hour: '2-digit', minute: '2-digit', hour12: true });
+    hour = parseInt(now.toLocaleString('en-US', { timeZone: info.tz, hour: 'numeric', hour12: false }), 10);
+  } catch {
+    return null;
+  }
   const bucket = _bucket(hour);
 
   return (

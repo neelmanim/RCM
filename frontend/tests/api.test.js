@@ -5,7 +5,7 @@
  * in isolation, verifying correct URLs, HTTP methods, headers, and
  * response handling.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // ── Mock auth.js BEFORE importing api.js ─────────────────────────────────────
 vi.mock('../js/auth.js', () => ({
@@ -71,23 +71,6 @@ describe('fetchLeads', () => {
         await api.fetchLeads();
         const opts = fetch.mock.calls[0][1];
         expect(opts.headers).toHaveProperty('Authorization', 'Bearer test-token');
-    });
-});
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// fetchKanbanLeads
-// ═══════════════════════════════════════════════════════════════════════════════
-describe('fetchKanbanLeads', () => {
-    it('calls GET /api/leads/kanban', async () => {
-        mockFetch([]);
-        await api.fetchKanbanLeads();
-        expect(fetch.mock.calls[0][0]).toContain('/api/leads/kanban');
-    });
-
-    it('throws on non-ok response', async () => {
-        mockFetch({}, false);
-        await expect(api.fetchKanbanLeads()).rejects.toThrow();
     });
 });
 
@@ -408,5 +391,45 @@ describe('patchSyncSettings', () => {
         const [url, opts] = fetch.mock.calls[0];
         expect(url).toContain('/api/admin/sync-settings');
         expect(opts.method).toBe('PATCH');
+    });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// startDialerCall — RCA 2026-08-18 (LIVE, prod): "Blocked concurrent call"
+// fired 111 times in one evening. Checked every blocking row afterward —
+// every one reached CALL_ENDED within seconds on its own; none were
+// permanently stuck. Real webhook latency, not a stale lock, so a short
+// bounded retry on this exact error absorbs the race transparently.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe('startDialerCall', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('succeeds immediately when there is no conflict', async () => {
+        mockFetch({ call_id: 'c1', success: true });
+        const result = await api.startDialerCall('lead-1', '+1234567890', 'bridge');
+        expect(result.call_id).toBe('c1');
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries on "already have an active call" and succeeds once it clears', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce({ ok: false, json: () => Promise.resolve({ detail: 'You already have an active call in progress. Please hang up the current call before starting a new one.' }) })
+            .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ call_id: 'c2', success: true }) });
+        global.fetch = fetchMock;
+
+        const promise = api.startDialerCall('lead-2', '+1234567890', 'bridge');
+        await vi.advanceTimersByTimeAsync(1500); // first retry delay
+        const result = await promise;
+
+        expect(result.call_id).toBe('c2');
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retry a different error (e.g. no provider configured)', async () => {
+        mockFetch({ detail: 'No dialer provider configured for your account.' }, false);
+        await expect(api.startDialerCall('lead-3', '+1234567890', 'bridge')).rejects.toThrow('No dialer provider configured');
+        expect(fetch).toHaveBeenCalledTimes(1); // no wasted retries on a non-transient error
     });
 });

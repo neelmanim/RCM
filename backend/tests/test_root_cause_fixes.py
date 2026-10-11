@@ -633,11 +633,11 @@ class TestGetLeadEmailsEndpoint:
         assert data["emails"][1]["body_preview"] == "Thanks!"
 
     @patch("routes.email_routes._sync_thread_messages_background")
-    def test_nonexistent_lead_returns_empty(self, mock_bg, client, db):
-        """Requesting emails for a nonexistent lead should return empty, not 404."""
+    def test_nonexistent_lead_returns_404(self, mock_bg, client, db):
+        """2026-09-29: the endpoint now checks lead access first, so an unknown
+        lead is a 404 — same as a lead the caller may not see."""
         resp = client.get("/api/email/lead/nonexistent-id/emails")
-        assert resp.status_code == 200
-        assert resp.json()["total"] == 0
+        assert resp.status_code == 404
 
     @patch("routes.email_routes._sync_thread_messages_background")
     def test_user_name_included(self, mock_bg, client, db):
@@ -653,6 +653,20 @@ class TestGetLeadEmailsEndpoint:
         resp = client.get(f"/api/email/lead/{lead.id}/emails")
         data = resp.json()
         assert data["emails"][0]["user_name"] == "John Smith"
+
+    @patch("routes.email_routes._sync_thread_messages_background")
+    def test_click_and_auto_reply_stats_included(self, mock_bg, client, db):
+        """RCA 2026-09-29: the Lead Detail email stats need clicks + auto-reply flag."""
+        lead = create_test_lead(db, email="lead@test.com")
+        a = create_email_activity(db, lead.id, None, "outbound", subject="Hi")
+        a.click_count = 3
+        b = create_email_activity(db, lead.id, None, "inbound", subject="OOO")
+        b.is_auto_reply = True
+        db.commit()
+
+        emails = client.get(f"/api/email/lead/{lead.id}/emails").json()["emails"]
+        assert emails[0]["click_count"] == 3 and emails[0]["source"] == "manual"
+        assert emails[1]["is_auto_reply"] is True
 
 
 # ═════════════════════════════════════════════════════════════════════════════

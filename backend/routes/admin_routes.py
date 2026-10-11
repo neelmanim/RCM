@@ -15,11 +15,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+import ownership_history as oh
 import models
 import access_db
 from database import get_db
 from auth import (
-    create_jwt, require_admin, require_super_admin
+    require_admin, require_super_admin
 )
 from salesforce import (
     get_sf_client, sync_leads_from_salesforce,
@@ -28,7 +29,7 @@ from salesforce import (
     push_pending_leads_to_salesforce
 )
 from models import TERMINAL_STATUSES, ACTIVE_STATUSES
-from routes.lead_helpers import _lead_to_dict, _lead_to_summary
+from routes.lead_helpers import _lead_to_dict, _lead_to_summary, lead_search_clause
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
@@ -39,7 +40,7 @@ router = APIRouter(prefix="/api/admin", tags=["Admin"])
 # Sync routes → admin_sync_routes.py
 # Upload/GSheet/Log routes → admin_upload_routes.py
 
-from routes._admin_helpers import _get_or_create_sync_settings
+from routes._admin_helpers import _get_or_create_sync_settings, get_conversation_min_seconds, resolve_sort
 
 # ── Seed Test Data ───────────────────────────────────────────────────────────
 
@@ -94,23 +95,23 @@ def seed_test_data(db: Session = Depends(get_db), admin: dict = Depends(require_
         results.append("⏭️ Pod 'Beta Team' exists")
 
     # Pod Admins
-    alpha_admin = ensure_user("alpha.admin@test.rcm.com", "Riya Sharma (Alpha Lead)", "Pod Admin", pod_alpha.id)
+    alpha_admin = ensure_user("alpha.admin@test.messenger.com", "Riya Sharma (Alpha Lead)", "Pod Admin", pod_alpha.id)
     pod_alpha.admin_id = alpha_admin.id
     db.commit()
 
-    beta_admin = ensure_user("beta.admin@test.rcm.com", "Arjun Patel (Beta Lead)", "Pod Admin", pod_beta.id)
+    beta_admin = ensure_user("beta.admin@test.messenger.com", "Arjun Patel (Beta Lead)", "Pod Admin", pod_beta.id)
     pod_beta.admin_id = beta_admin.id
     db.commit()
 
     # SDRs for Alpha
-    ensure_user("priya.alpha@test.rcm.com", "Priya Verma", "SDR", pod_alpha.id)
-    ensure_user("rahul.alpha@test.rcm.com", "Rahul Singh", "SDR", pod_alpha.id)
-    ensure_user("ananya.alpha@test.rcm.com", "Ananya Gupta", "SDR", pod_alpha.id)
+    ensure_user("priya.alpha@test.messenger.com", "Priya Verma", "SDR", pod_alpha.id)
+    ensure_user("rahul.alpha@test.messenger.com", "Rahul Singh", "SDR", pod_alpha.id)
+    ensure_user("ananya.alpha@test.messenger.com", "Ananya Gupta", "SDR", pod_alpha.id)
 
     # SDRs for Beta
-    ensure_user("karan.beta@test.rcm.com", "Karan Mehta", "SDR", pod_beta.id)
-    ensure_user("sneha.beta@test.rcm.com", "Sneha Joshi", "SDR", pod_beta.id)
-    ensure_user("dev.beta@test.rcm.com", "Dev Kapoor", "SDR", pod_beta.id)
+    ensure_user("karan.beta@test.messenger.com", "Karan Mehta", "SDR", pod_beta.id)
+    ensure_user("sneha.beta@test.messenger.com", "Sneha Joshi", "SDR", pod_beta.id)
+    ensure_user("dev.beta@test.messenger.com", "Dev Kapoor", "SDR", pod_beta.id)
 
     # ── Seed lead assignments + status history ──────────────────────────────
     from datetime import datetime, timezone, timedelta
@@ -129,7 +130,7 @@ def seed_test_data(db: Session = Depends(get_db), admin: dict = Depends(require_
             active = len([l for l in sdr.assigned_leads if l.status != "Meeting Scheduled"])
             if active >= 5:
                 continue
-            if models.assign_lead(sdr, lead):
+            if models.assign_lead(sdr, lead, reason=oh.R_ADMIN):
                 assigned_count += 1
         db.commit()
         results.append(f"📌 Assigned {assigned_count} leads to {len(all_sdrs)} SDRs")
@@ -175,7 +176,7 @@ def seed_test_data(db: Session = Depends(get_db), admin: dict = Depends(require_
 
 
 @router.get("/debug-lead/{email}")
-def debug_lead_by_email(email: str, db: Session = Depends(get_db)):
+def debug_lead_by_email(email: str, db: Session = Depends(get_db), admin: dict = Depends(require_super_admin)):
     """Diagnostic tool to check a lead's raw state."""
     lead = db.query(models.Lead).filter(models.Lead.email == email).first()
     if not lead:
@@ -208,7 +209,7 @@ def get_login_logs(
 ):
     """Paginated login history with session duration. Super Admin only."""
     from sqlalchemy import or_
-    query = db.query(models.LoginLog).order_by(models.LoginLog.login_at.desc())
+    query = db.query(models.LoginLog).order_by(models.LoginLog.login_at.desc(), models.LoginLog.id.desc())
 
     if search:
         term = f"%{search}%"
@@ -374,53 +375,6 @@ def cleanup_duplicate_names(db: Session = Depends(get_db), admin = Depends(requi
 
 
 
-# ── View As / Impersonate ────────────────────────────────────────────────────
-
-
-@router.post("/impersonate/{user_id}")
-def impersonate_user(user_id: str, admin: dict = Depends(require_super_admin), db: Session = Depends(get_db)):
-    """Generate a short-lived JWT to view the app as another user.
-    Only Super Admins can use this. Returns a token + the original admin token
-    so the frontend can show a banner and switch back.
-    """
-    target = db.query(models.User).filter(models.User.id == user_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Don't allow impersonating yourself
-    if target.id == admin.get("sub"):
-        raise HTTPException(status_code=400, detail="Cannot impersonate yourself")
-
-    # Log the impersonation event
-    from activity_logger import log_activity
-    log_activity(admin["sub"], "IMPERSONATE", user_email=admin.get("email"),
-                 user_name=admin.get("name"),
-                 metadata={"target_user_id": target.id, "target_email": target.email})
-
-    # Create a short-lived token (1 hour) for the target user with impersonation flag
-    impersonate_token = create_jwt({
-        "sub": target.id,
-        "email": target.email,
-        "name": target.name,
-        "role": target.role,
-        "pod_id": target.pod_id,
-        "dialer_enabled": bool(getattr(target, 'dialer_enabled', False)),
-        "email_sync_enabled": bool(getattr(target, 'email_sync_enabled', False)),
-        "impersonated_by": admin.get("sub"),
-        "impersonator_name": admin.get("name"),
-    })
-
-    return {
-        "token": impersonate_token,
-        "target_user": {
-            "id": target.id,
-            "name": target.name,
-            "email": target.email,
-            "role": target.role,
-        }
-    }
-
-
 # ── Public API Key Management ────────────────────────────────────────────────
 
 @router.get("/public-api-key/status")
@@ -430,7 +384,11 @@ def public_api_key_status(
 ):
     """Check if a public API key is configured."""
     settings = _get_or_create_sync_settings(db)
-    return {"configured": bool(settings.public_api_key)}
+    return {
+        "configured": bool(settings.public_api_key),
+        "call_count": settings.public_api_call_count or 0,
+        "last_used_at": settings.public_api_last_used_at.isoformat() if settings.public_api_last_used_at else None,
+    }
 
 
 @router.post("/public-api-key/generate")
@@ -524,6 +482,8 @@ def list_call_logs(
     date_from:    str  = None,
     date_to:      str  = None,
     has_recording: bool = None,
+    search:       str  = None,
+    sort_by:      str  = None,  # time | duration | status | direction | provider (prefix '-' for descending)
     db: Session = Depends(get_db),
     admin: dict = Depends(require_admin),
 ):
@@ -531,8 +491,14 @@ def list_call_logs(
     Paginated call log view for Admin / Super Admin.
     Includes stats summary and SDR list for the filter dropdown.
     """
+    from auth import check_bulk_read
+    check_bulk_read(db, admin, per_page, "/api/admin/call-logs")
     from sqlalchemy import or_, and_, case, func, exists
     from sqlalchemy.orm import aliased
+    from routes.analytics_routes import _effective_pod_id, _pod_scope_activity_query, _sdr_dropdown
+
+    conversation_min_seconds = get_conversation_min_seconds(db)
+    effective_pod = _effective_pod_id(admin, None)
 
     # ── Filter Building ──────────────────────────────────────────────────────
     # Use SQL EXISTS subquery instead of fetching all user IDs into Python.
@@ -540,14 +506,6 @@ def list_call_logs(
     # a large literal IN (...) list that bypasses join-path optimisation.
     known_user_subq = db.query(models.User.id).subquery()
     filters = [models.DialerCall.user_id.in_(known_user_subq)]
-
-    if admin.get("role") == "Pod Admin":
-        pod_id = admin.get("pod_id")
-        if pod_id:
-            pod_user_subq = db.query(models.User.id).filter(
-                models.User.pod_id == pod_id
-            ).subquery()
-            filters.append(models.DialerCall.user_id.in_(pod_user_subq))
 
     if sdr_id: filters.append(models.DialerCall.user_id == sdr_id)
     if outcome: filters.append(models.DialerCall.outcome == outcome)
@@ -569,6 +527,13 @@ def list_call_logs(
         filters.append(and_(models.DialerCall.recording_url.isnot(None), models.DialerCall.recording_url != ""))
     elif has_recording is False:
         filters.append(or_(models.DialerCall.recording_url.is_(None), models.DialerCall.recording_url == ""))
+    if search:
+        # RCA (Activity Monitor design pass): the legacy call_monitor.js UI
+        # collected this into _filters.search but never actually sent it to
+        # the API (see test_call_monitor.py's own docstring) — a silent
+        # no-op search box. Wiring it here so it behaves the same as the new
+        # Email/Message tabs' search, instead of carrying that gap forward.
+        filters.append(lead_search_clause(search.strip()))
 
     # ── Single aggregate query: total + stats in one pass ───────────────────
     # RCA 2026-08-06: the Call Monitor UI's "Connected" tile read `completed`
@@ -583,26 +548,69 @@ def list_call_logs(
     # Also: the "missed" pattern matched '%no-answer%' (hyphenated) but the
     # real status value is NO_ANSWER (underscore) — those calls silently
     # never counted as completed, failed, OR missed.
+    # Pod scoping needs User+Lead joined for both queries below (matches
+    # calling user's pod OR the dialed lead's pod, same OR-fallback Analytics
+    # Hub uses — catches pod-reassignment drift a User-only check would miss).
+    def _scoped(q):
+        q = (
+            q.outerjoin(models.User, models.DialerCall.user_id == models.User.id)
+             .outerjoin(models.Lead, models.DialerCall.lead_id == models.Lead.id)
+             .filter(*filters)
+        )
+        return _pod_scope_activity_query(q, effective_pod)
+
     agg = (
-        db.query(
+        _scoped(db.query(
             func.count(models.DialerCall.id).label("total"),
             func.sum(case((models.DialerCall.status.ilike("%ENDED%"), 1), else_=0)).label("completed"),
-            func.sum(case((models.dialer_call_connected(list(models.ANSWERED_OUTCOMES)), 1), else_=0)).label("connected"),
+            func.sum(case((models.dialer_call_connected(conversation_min_seconds), 1), else_=0)).label("connected"),
             func.sum(case((models.DialerCall.status.ilike("%FAIL%"), 1), else_=0)).label("failed"),
             func.sum(case((or_(models.DialerCall.status.ilike("%MISS%"), models.DialerCall.status.ilike("%NO_ANSWER%")), 1), else_=0)).label("missed"),
             func.avg(models.DialerCall.duration).label("avg_duration"),
-        )
-        .filter(*filters)
+        ))
         .one()
     )
     total = agg.total or 0
 
+    # Calendar-integration usage — "are SDRs actually creating meeting
+    # invites when they log a Meeting Confirmed call". Separate from the
+    # DialerCall-based agg above: meeting confirmation + invite creation are
+    # both CallLog-side (routes/call_routes.py's log_call/_create_meeting_
+    # calendar_event), not DialerCall — a manual outcome log, not a synced
+    # telephony record. Same date/sdr/pod scope as the rest of this tab so
+    # the numbers describe the same window, but built on CallLog's own
+    # columns since DialerCall has no equivalent.
+    invite_filters = [models.CallLog.outcome == "Meeting Confirmed"]
+    if sdr_id: invite_filters.append(models.CallLog.user_id == sdr_id)
+    if date_from:
+        invite_filters.append(models.CallLog.called_at >= datetime.fromisoformat(date_from).replace(tzinfo=None))
+    if date_to:
+        invite_filters.append(models.CallLog.called_at <= datetime.fromisoformat(date_to + "T23:59:59").replace(tzinfo=None))
+    invite_agg = (
+        _pod_scope_activity_query(
+            db.query(
+                func.count(models.CallLog.id).label("meetings_confirmed"),
+                func.sum(case((models.Lead.nylas_event_id.isnot(None), 1), else_=0)).label("invites_created"),
+            )
+            .outerjoin(models.User, models.CallLog.user_id == models.User.id)
+            .outerjoin(models.Lead, models.CallLog.lead_id == models.Lead.id)
+            .filter(*invite_filters),
+            effective_pod,
+        )
+        .one()
+    )
+
+    sort_columns = {
+        "time": models.dialer_call_event_time(),
+        "duration": models.DialerCall.duration,
+        "status": models.DialerCall.status,
+        "direction": models.DialerCall.direction,
+        "provider": models.DialerCall.provider,
+    }
+    sort_col, sort_desc = resolve_sort(sort_by, sort_columns, models.dialer_call_event_time())
     rows = (
-        db.query(models.DialerCall, models.User, models.Lead)
-        .outerjoin(models.User, models.DialerCall.user_id == models.User.id)
-        .outerjoin(models.Lead, models.DialerCall.lead_id == models.Lead.id)
-        .filter(*filters)
-        .order_by(models.dialer_call_event_time().desc())
+        _scoped(db.query(models.DialerCall, models.User, models.Lead))
+        .order_by(sort_col.desc() if sort_desc else sort_col.asc())
         .offset((page - 1) * per_page).limit(per_page).all()
     )
 
@@ -621,23 +629,14 @@ def list_call_logs(
             "recording_url": call.recording_url, "transcript": call.transcript,
             "error_detail": call.notes if call.status and "FAIL" in call.status.upper() else None,
             "notes": call.notes if call.status and "FAIL" not in call.status.upper() else None,
-            "created_at": str(call.created_at) if call.created_at else None,
-            "started_at": str(call.started_at) if call.started_at else None,
-            "answered_at": str(call.answered_at) if call.answered_at else None,
-            "ended_at": str(call.ended_at) if call.ended_at else None,
+            "created_at": call.created_at.isoformat() if call.created_at else None,
+            "started_at": call.started_at.isoformat() if call.started_at else None,
+            "answered_at": call.answered_at.isoformat() if call.answered_at else None,
+            "ended_at": call.ended_at.isoformat() if call.ended_at else None,
             "lead_id": call.lead_id,
         })
 
-    sdrs_q = (
-        db.query(models.User)
-        .filter(models.User.role.in_(["SDR", "Pod Admin", "Admin"]))
-        .order_by(models.User.name)
-    )
-    if admin.get("role") == "Pod Admin":
-        pod_id = admin.get("pod_id")
-        if pod_id:
-            sdrs_q = sdrs_q.filter(models.User.pod_id == pod_id)
-    sdr_list = [{"id": u.id, "name": u.name, "email": u.email} for u in sdrs_q.all()]
+    sdr_list = _sdr_dropdown(db, effective_pod)
 
     return {
         "items":    items,
@@ -652,6 +651,8 @@ def list_call_logs(
             "failed":       int(agg.failed      or 0),
             "missed":       int(agg.missed      or 0),
             "avg_duration": int(agg.avg_duration) if agg.avg_duration else None,
+            "meetings_confirmed": int(invite_agg.meetings_confirmed or 0),
+            "invites_created":    int(invite_agg.invites_created or 0),
         },
     }
 
@@ -663,6 +664,7 @@ from routes.ai_research_routes import (
     _build_prompt_v2, _call_groq_sync, _sanitize_research_v2,
     _normalise_company_key, _update_company_cache,
 )
+from services.smart_analytics import _resolve_groq_model
 
 # In-memory flag to prevent duplicate concurrent jobs (EC-18)
 _bulk_research_running = False
@@ -726,9 +728,14 @@ async def trigger_bulk_research(
 
     # Get LLM config BEFORE spawning thread (db session not safe to share across threads)
     settings = _get_or_create_sync_settings(db)
+    api_key = (getattr(settings, "llm_api_key", None) or "").strip() or os.environ.get("GROQ_API_KEY", "")
     llm_config = {
-        "api_key": (getattr(settings, "llm_api_key", None) or "").strip() or os.environ.get("GROQ_API_KEY", ""),
-        "model":   getattr(settings, "llm_model", None) or "gemma2-9b-it",
+        "api_key": api_key,
+        # RCA 2026-08-20: was getattr(settings, "llm_model", ...) trusted
+        # verbatim -- a deprecated model id silently broke bulk research the
+        # same way it broke single-lead ai-research. _resolve_groq_model
+        # revalidates against Groq's live model list and self-heals.
+        "model":   _resolve_groq_model(api_key, db) if api_key else "gemma2-9b-it",
         "research_prompt": getattr(settings, "research_prompt", None),
         "pod_id": pod_id,  # pass through to background thread
     }
@@ -780,7 +787,11 @@ def _run_bulk_research_background(llm_config: dict):
     """
     global _bulk_research_running, _bulk_research_stats
     import time
-    from database import SessionLocal
+    # AiSessionLocal (RCA 2026-09-01): this background job calls Groq once per
+    # lead and can run for many minutes end to end — using the dedicated AI
+    # pool instead of the main one means a long/slow bulk-research run can
+    # never tie up a connection the rest of the app needs.
+    from database import AiSessionLocal as SessionLocal
 
     _bulk_research_running = True
     _bulk_research_stats   = {"processed": 0, "skipped": 0, "failed": 0, "total": 0, "started_at": None}

@@ -2,7 +2,7 @@
 """
 Seed script for staging: 4 Pod Admins, 12 SDRs (3 per pod), 4 Pods, 60 Leads (15 per pod).
 Usage:
-    python3 seed_staging.py --url https://rcm-crm.onrender.com --token <ADMIN_JWT>
+    python3 seed_staging.py --url https://messenger-crm.onrender.com --token <ADMIN_JWT>
 """
 
 import requests
@@ -114,7 +114,7 @@ assert len(LEADS) == 60, f"Expected 60 leads, got {len(LEADS)}"
 
 def main():
     parser = argparse.ArgumentParser(description="Seed staging with test data")
-    parser.add_argument("--url", required=True, help="Staging base URL (e.g. https://rcm-crm.onrender.com)")
+    parser.add_argument("--url", required=True, help="Staging base URL (e.g. https://messenger-crm.onrender.com)")
     parser.add_argument("--token", required=True, help="Super Admin JWT token")
     args = parser.parse_args()
 

@@ -3,7 +3,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { AircallEverywhereDrawer } from '../../features/aircall-everywhere/AircallEverywhereDrawer';
 import { OPT_OUT_KEY } from '../../features/aircall-everywhere/useAircallEverywhere';
 
-const TOUR_SEEN_KEY = 'rcm:aircall-drawer-tour-seen';
+const TOUR_SEEN_KEY = 'alternate:aircall-drawer-tour-seen';
 const BODY_OPEN_CLASS = 'aircall-drawer-open';
 
 describe('AircallEverywhereDrawer', () => {

@@ -2,11 +2,14 @@ import os
 import re
 import json
 import threading
+from typing import Optional
 from simple_salesforce import Salesforce
 import models
 from sqlalchemy.orm import Session
-from datetime import datetime
+from sqlalchemy import or_, func
+from datetime import datetime, timezone
 from sf_logger import log_sf_operation
+from dialer_service import _normalize_digits  # same helper conversations_service.py already imports from here
 
 
 def _sanitize_email(email: str) -> str:
@@ -126,6 +129,78 @@ def get_record_types_from_salesforce(sf: Salesforce) -> list:
         return []
 
 
+def get_opportunity_stage_options_from_salesforce(sf: Salesforce) -> list:
+    """Fetch this org's actual Opportunity.StageName picklist values, so the
+    AE Pipeline / CSM Portal "update deal" forms can render a real dropdown
+    instead of a free-text field that could push an invalid value into a
+    restricted SF picklist. No caching, same as get_record_types_from_salesforce
+    above — this is a describe() call, not a query, and is only fetched once
+    per form load, not per keystroke."""
+    if not sf:
+        return []
+    try:
+        stage_field = next(
+            (f for f in sf.Opportunity.describe()["fields"] if f["name"] == "StageName"), None
+        )
+        if not stage_field:
+            return []
+        return [
+            {"value": pv["value"], "label": pv["label"]}
+            for pv in stage_field.get("picklistValues", [])
+            if pv.get("active")
+        ]
+    except Exception as e:
+        print(f"[SF] Failed to fetch Opportunity StageName picklist: {e}")
+        return []
+
+
+def get_standard_product_options_from_salesforce(sf: Salesforce) -> list:
+    """Fetch this org's real Standard_Product_Name__c picklist values (a
+    multipicklist), so the AE close-deal form can render real checkboxes
+    instead of free text that would get rejected by SF's own restricted
+    picklist. Same describe()-only, no-caching shape as
+    get_opportunity_stage_options_from_salesforce above."""
+    if not sf:
+        return []
+    try:
+        field = next(
+            (f for f in sf.Opportunity.describe()["fields"] if f["name"] == "Standard_Product_Name__c"), None
+        )
+        if not field:
+            return []
+        return [
+            {"value": pv["value"], "label": pv["label"]}
+            for pv in field.get("picklistValues", [])
+            if pv.get("active")
+        ]
+    except Exception as e:
+        print(f"[SF] Failed to fetch Opportunity Standard_Product_Name__c picklist: {e}")
+        return []
+
+
+def get_lost_reason_options_from_salesforce(sf: Salesforce) -> list:
+    """Fetch this org's real Opportunity_Lost_Reason__c picklist — required
+    by an SF validation rule on any Closed Lost push, alongside Standard
+    Product / Invoice Number (required on any Closed push). Same
+    describe()-only, no-caching shape as the sibling option fetchers above."""
+    if not sf:
+        return []
+    try:
+        field = next(
+            (f for f in sf.Opportunity.describe()["fields"] if f["name"] == "Opportunity_Lost_Reason__c"), None
+        )
+        if not field:
+            return []
+        return [
+            {"value": pv["value"], "label": pv["label"]}
+            for pv in field.get("picklistValues", [])
+            if pv.get("active")
+        ]
+    except Exception as e:
+        print(f"[SF] Failed to fetch Opportunity_Lost_Reason__c picklist: {e}")
+        return []
+
+
 def sync_leads_from_salesforce(
     db: Session,
     sf: Salesforce,
@@ -219,6 +294,7 @@ def sync_leads_from_salesforce(
 
         # Only set status for NEW leads, or if SF has a MORE advanced stage
         # Never regress an existing lead's pipeline status
+        prev_status = lead.status
         if is_new:
             lead.status = local_status
         else:
@@ -226,6 +302,10 @@ def sync_leads_from_salesforce(
             sf_order = PIPELINE_ORDER.get(local_status, 0)
             if sf_order > current_order:
                 lead.status = local_status
+        # v13.10.0: a status set by the Salesforce pull used to leave no trace (no log row, no status_changed_at).
+        if is_new or lead.status != prev_status:
+            lead.status_changed_at = datetime.now(timezone.utc)
+            models.log_status_change(db, lead.id, None if is_new else prev_status, lead.status, "Salesforce sync")
 
         op_type = "create" if is_new else "upsert"
         log_sf_operation(
@@ -237,6 +317,7 @@ def sync_leads_from_salesforce(
             fields_updated=["FirstName", "LastName", "Email", "Phone", "Company", "Status"],
             status="success",
             source_system="sync_button",
+            direction="inbound",
         )
         upserted_count += 1
         if is_new:
@@ -248,6 +329,299 @@ def sync_leads_from_salesforce(
     from audience_manager import sync_leads_to_am_background
     sync_leads_to_am_background(new_lead_ids)
 
+    return upserted_count
+
+
+def sync_accounts_from_salesforce(db: Session, sf: Salesforce, limit: int = 1000) -> int:
+    """Pull Salesforce Accounts into the local Account table — read-only
+    reference data for the CSM Portal (ARR/renewal context), mirroring
+    sync_leads_from_salesforce's upsert-by-sf-id, OR-fallback pattern.
+
+    assigned_csm_id: SF's own CSM field (Account_Manager_Lookup__c, labeled
+    "Customer Success Manager(CSM)" in Setup) is resolved by email, same
+    match-by-Owner.Email pattern sync_opportunities_from_salesforce uses for
+    Opportunity owner. Only fills a currently-unassigned account — an
+    existing local assignment (AE handover or Super Admin reassignment) is
+    never overwritten by a pull."""
+    if not sf:
+        return 0
+
+    limit_clause = f"LIMIT {limit}" if limit and limit > 0 else ""
+    query = (
+        "SELECT Id, Name, Industry, CreatedDate, "
+        "Account_Manager_Lookup__r.Email, Account_Manager_Lookup__r.Name, "
+        "Owner.Email, Owner.Name "
+        f"FROM Account ORDER BY LastModifiedDate DESC {limit_clause}"
+    ).strip()
+    try:
+        records = sf.query(query).get("records", [])
+    except Exception as e:
+        print(f"[SF] Account query failed: {e}")
+        raise
+
+    upserted_count = 0
+    for record in records:
+        sf_id = record["Id"]
+        account = db.query(models.Account).filter(models.Account.sf_account_id == sf_id).first()
+        is_new = account is None
+        if is_new:
+            account = models.Account(sf_account_id=sf_id, name=record.get("Name") or "Unnamed Account")
+            db.add(account)
+
+        # OR-fallback: don't wipe local data with null SF values
+        account.name     = record.get("Name") or account.name
+        account.industry = record.get("Industry") or account.industry
+        # health score's relationship factor needs a tenure anchor — SF never
+        # sent one, so every account fell back to the "never synced" floor
+        # score. CreatedDate is immutable in SF, so OR-fallback is safe here.
+        created_date = record.get("CreatedDate")
+        account.customer_since = account.customer_since or _parse_sf_date(created_date[:10] if created_date else None)
+
+        csm_rel = record.get("Account_Manager_Lookup__r") or {}
+        account.sf_csm_email = csm_rel.get("Email") or account.sf_csm_email
+        account.sf_csm_name  = csm_rel.get("Name") or account.sf_csm_name
+        if not account.assigned_csm_id and account.sf_csm_email:
+            csm_user = db.query(models.User).filter(
+                func.lower(models.User.email) == account.sf_csm_email.lower()
+            ).first()
+            if csm_user:
+                account.assigned_csm_id = csm_user.id
+
+        # Owner is a standard, always-populated SF field (unlike the custom
+        # CSM lookup above) — useful as a fallback identity to show in the
+        # UI on accounts where Account_Manager_Lookup__c is still empty.
+        # Raw email/name are stored even with no Alternate CRM user match yet —
+        # backfill_sf_identity_links() resolves owner_user_id retroactively
+        # the moment that person registers.
+        owner_rel = record.get("Owner") or {}
+        account.sf_owner_email = owner_rel.get("Email") or account.sf_owner_email
+        account.sf_owner_name  = owner_rel.get("Name") or account.sf_owner_name
+        if not account.owner_user_id and account.sf_owner_email:
+            owner_user = db.query(models.User).filter(
+                func.lower(models.User.email) == account.sf_owner_email.lower()
+            ).first()
+            if owner_user:
+                account.owner_user_id = owner_user.id
+
+        log_sf_operation(
+            db=db, operation_type="create" if is_new else "upsert", sf_object="Account",
+            record_identifier=sf_id, fields_updated=["Name", "Industry", "CreatedDate", "Account_Manager_Lookup__c", "OwnerId"],
+            status="success", source_system="sync_button",
+            direction="inbound",
+        )
+        upserted_count += 1
+
+    db.commit()
+    return upserted_count
+
+
+def backfill_sf_identity_links(db, user) -> int:
+    """Call right after a new User is created (SSO first login, admin
+    create-user). Accounts synced before this person had a Alternate CRM login
+    stored their SF Owner/CSM email on sf_owner_email/sf_csm_email but left
+    owner_user_id/assigned_csm_id null (see sync_accounts_from_salesforce) —
+    this resolves those links retroactively by email match. Returns the
+    number of accounts updated."""
+    email = user.email.lower()
+    updated = 0
+    for account in db.query(models.Account).filter(
+        models.Account.owner_user_id.is_(None), func.lower(models.Account.sf_owner_email) == email
+    ).all():
+        account.owner_user_id = user.id
+        updated += 1
+    for account in db.query(models.Account).filter(
+        models.Account.assigned_csm_id.is_(None), func.lower(models.Account.sf_csm_email) == email
+    ).all():
+        account.assigned_csm_id = user.id
+        updated += 1
+    if updated:
+        db.commit()
+    return updated
+
+
+def sync_contacts_from_salesforce(db: Session, sf: Salesforce, limit: int = 2000) -> int:
+    """Pull SF Contacts tied to an already-synced Account — CSM Portal
+    stakeholder mapping (item #7). Skips contacts whose Account hasn't been
+    synced locally yet (nothing to attach to); `role` is never set here, see
+    AccountStakeholder's doc comment for why."""
+    if not sf:
+        return 0
+
+    limit_clause = f"LIMIT {limit}" if limit and limit > 0 else ""
+    query = (
+        "SELECT Id, Name, Email, Phone, Title, CreatedDate, AccountId "
+        f"FROM Contact WHERE AccountId != null ORDER BY LastModifiedDate DESC {limit_clause}"
+    ).strip()
+    try:
+        records = sf.query(query).get("records", [])
+    except Exception as e:
+        print(f"[SF] Contact query failed: {e}")
+        raise
+
+    upserted_count = 0
+    for record in records:
+        account = db.query(models.Account).filter(models.Account.sf_account_id == record["AccountId"]).first()
+        if not account:
+            continue
+
+        sf_id = record["Id"]
+        contact = db.query(models.AccountStakeholder).filter(models.AccountStakeholder.sf_contact_id == sf_id).first()
+        is_new = contact is None
+        if is_new:
+            contact = models.AccountStakeholder(sf_contact_id=sf_id, account_id=account.id, name=record.get("Name") or "Unnamed Contact")
+            db.add(contact)
+
+        contact.account_id = account.id  # SF can re-parent a Contact to a different Account
+        contact.name  = record.get("Name") or contact.name
+        contact.email = record.get("Email") or contact.email
+        contact.phone = record.get("Phone") or contact.phone
+        contact.title = record.get("Title") or contact.title
+        created_date = record.get("CreatedDate")
+        contact.sf_created_at = contact.sf_created_at or _parse_sf_date(created_date[:10] if created_date else None)
+
+        log_sf_operation(
+            db=db, operation_type="create" if is_new else "upsert", sf_object="Contact",
+            record_identifier=sf_id, fields_updated=["Name", "Email", "Phone", "Title", "AccountId"],
+            status="success", source_system="sync_button",
+            direction="inbound",
+        )
+        upserted_count += 1
+
+    db.commit()
+    return upserted_count
+
+
+def _parse_sf_date(value) -> Optional[datetime]:
+    """SF's CloseDate comes back as a plain 'YYYY-MM-DD' string, not a
+    datetime — assigning that string directly to a DateTime column works on
+    Postgres (implicit cast) but fails hard on SQLite, which requires a real
+    datetime/date object. Parse explicitly so this isn't DB-driver-dependent."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+
+
+# The StageName values an AE/CSM close writes locally, and the only thing
+# push_opportunity_to_salesforce can use to tell Salesforce a deal is closed:
+# SF derives IsClosed/IsWon from StageName as read-only formula fields, so on
+# the write path the stage name IS the close signal, not a label alongside it.
+# ponytail: stock SF picklist values. An org with a renamed closed stage gets
+# a visible INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST on the row's
+# sf_push_error, not a silent wrong state — make these a SyncSettings field
+# if that ever actually happens.
+CLOSED_WON_STAGE = "Closed Won"
+CLOSED_LOST_STAGE = "Closed Lost"
+
+# The opening stage for a CSM-created renewal. Both the local row and the SF
+# create payload have to use this same value: sync_opportunities_from_salesforce
+# overwrites stage_name from SF unconditionally (`opp.stage_name =
+# record.get("StageName") or opp.stage_name`, either direction mode), so a local
+# label SF doesn't share is guaranteed to flip on the next pull. It used to be
+# exactly that — created locally as "Renewal", pushed as "Prospecting".
+NEW_RENEWAL_STAGE = "Prospecting"
+
+
+# Opportunity stage precedence for the pull/push "never regress" rule.
+# Deliberately NOT a StageName ordinal ladder — this org's custom sales
+# process picklist isn't known, but IsClosed/IsWon are standard SF
+# Opportunity fields regardless of custom stage labels, and "closed" vs
+# "open" is the only distinction the bidirectional sync actually needs.
+# (No contradiction with the constants above: on the *pull* side SF hands us
+# IsClosed/IsWon already computed, which is exactly why they're the reliable
+# thing to compare; it's only the *push* side that can't write them.)
+def _opportunity_precedence(is_closed: bool, is_won: bool) -> int:
+    """Higher = more advanced. Closed-Won is the only state a pull/push
+    should never regress away from once reached locally."""
+    if is_closed and is_won:
+        return 2
+    if is_closed:
+        return 1
+    return 0
+
+
+def sync_opportunities_from_salesforce(db: Session, sf: Salesforce, limit: int = 1000, direction: str = "push_only") -> int:
+    """Pull Salesforce Opportunities into the local Opportunity table.
+
+    `direction` ("push_only" | "both", SyncSettings.opportunity_sync_direction)
+    controls only the is_closed/is_won stage fields, not the rest of the row:
+    display fields (Name, Amount, CloseDate, StageName, AccountId, Owner)
+    always refresh every run — that's harmless reference-data freshening.
+    Stage is different: in "push_only", a local Closed-Won (set by the AE's
+    close-deal action, which pushes it to SF) is authoritative and a pull
+    must never touch it — only "both" lets SF's stage advance the local one,
+    still guarded by the never-regress precedence check below.
+
+    This function is the pull half only — the push half (AE close-deal
+    action) lives in the ae_pipeline route, mirroring how Lead sync splits
+    sync_leads_from_salesforce (pull) from push_lead_to_salesforce (push)."""
+    if not sf:
+        return 0
+
+    limit_clause = f"LIMIT {limit}" if limit and limit > 0 else ""
+    query = (
+        "SELECT Id, Name, Amount, CloseDate, StageName, IsClosed, IsWon, AccountId, Owner.Email "
+        f"FROM Opportunity ORDER BY LastModifiedDate DESC {limit_clause}"
+    ).strip()
+    try:
+        records = sf.query(query).get("records", [])
+    except Exception as e:
+        print(f"[SF] Opportunity query failed: {e}")
+        raise
+
+    upserted_count = 0
+    for record in records:
+        sf_id = record["Id"]
+        opp = db.query(models.Opportunity).filter(models.Opportunity.sf_opportunity_id == sf_id).first()
+        is_new = opp is None
+        if is_new:
+            opp = models.Opportunity(sf_opportunity_id=sf_id)
+            db.add(opp)
+
+        sf_account_id = record.get("AccountId")
+        if sf_account_id:
+            account = db.query(models.Account).filter(models.Account.sf_account_id == sf_account_id).first()
+            if account:
+                opp.account_id = account.id
+
+        owner_email = ((record.get("Owner") or {}).get("Email"))
+        if owner_email:
+            owner = db.query(models.User).filter(models.User.email == owner_email).first()
+            if owner:
+                opp.owner_user_id = owner.id
+
+        # OR-fallback for display fields
+        opp.name       = record.get("Name") or opp.name
+        opp.amount     = record.get("Amount") if record.get("Amount") is not None else opp.amount
+        opp.close_date = _parse_sf_date(record.get("CloseDate")) or opp.close_date
+        opp.stage_name = record.get("StageName") or opp.stage_name
+
+        sf_is_closed = bool(record.get("IsClosed"))
+        sf_is_won = bool(record.get("IsWon"))
+
+        # Never regress, and only let a pull touch stage at all in "both"
+        # mode — see the direction docstring above.
+        if is_new:
+            opp.is_closed, opp.is_won = sf_is_closed, sf_is_won
+        elif direction == "both":
+            current_order = _opportunity_precedence(opp.is_closed, opp.is_won)
+            sf_order = _opportunity_precedence(sf_is_closed, sf_is_won)
+            if sf_order >= current_order:
+                opp.is_closed, opp.is_won = sf_is_closed, sf_is_won
+
+        log_sf_operation(
+            db=db, operation_type="create" if is_new else "upsert", sf_object="Opportunity",
+            record_identifier=sf_id, fields_updated=["Name", "Amount", "CloseDate", "StageName", "IsClosed", "IsWon"],
+            status="success", source_system="sync_button",
+            direction="inbound",
+        )
+        upserted_count += 1
+
+    db.commit()
     return upserted_count
 
 
@@ -363,6 +737,243 @@ def _build_lead_description(lead, db: Session = None) -> str:
 # Known sentinel prefixes for sf_lead_id values that are NOT real Salesforce IDs.
 # Real SF IDs are 15 or 18 alphanumeric chars with no hyphens.
 _SENTINEL_PREFIXES = ("mig-", "manual-", "upload-", "sandbox-")
+
+def find_lead_or_opportunity_by_phone(sf: Salesforce, phone_number: str) -> Optional[dict]:
+    """Live Salesforce lookup for a phone number with no matching local Lead —
+    used when a direct-dial webhook can't attach the call to anything Alternate CRM
+    already knows about (v11.4.2, RCA: inbound Salesforce Leads/Opportunities
+    that never went through the outbound upload flow have no local row to
+    match, so every first call created a placeholder "Unknown Caller" lead
+    instead of the real record).
+
+    Checks Lead first, then Contact -> most recent Opportunity via
+    OpportunityContactRole (the standard SF junction; if an org doesn't use
+    Contact Roles this simply returns no rows, same as no match).
+
+    SOQL has no digit-normalizing function, so this fetches candidates via a
+    LIKE on the last 7 digits (long enough to be practically unique) and
+    confirms the match in Python — same suffix-matching approach
+    dialer_service._find_lead_by_phone already uses locally.
+
+    Returns {"type": "Lead"|"Opportunity", "id", "first_name", "last_name",
+    "company", "email"} or None. Never raises — a lookup failure (no
+    Contact Roles, API error, timeout) just means "no match found", the
+    same as if this function didn't exist.
+    """
+    if not sf or not phone_number:
+        return None
+    digits = _normalize_digits(phone_number)
+    if len(digits) < 7:
+        return None
+    suffix = digits[-7:]  # digits-only, safe to interpolate — never contains a quote
+
+    def _matches(raw_phone):
+        p = _normalize_digits(raw_phone)
+        return bool(p) and (p.endswith(digits) or digits.endswith(p))
+
+    try:
+        leads = sf.query(
+            f"SELECT Id, FirstName, LastName, Company, Email, Phone FROM Lead "
+            f"WHERE Phone LIKE '%{suffix}%' LIMIT 5"
+        ).get("records", [])
+        for rec in leads:
+            if _matches(rec.get("Phone")):
+                return {
+                    "type": "Lead", "id": rec["Id"],
+                    "first_name": rec.get("FirstName") or "",
+                    "last_name": rec.get("LastName") or "Unknown",
+                    "company": rec.get("Company"), "email": rec.get("Email"),
+                }
+
+        contacts = sf.query(
+            f"SELECT Id, FirstName, LastName, Phone, MobilePhone, Account.Name FROM Contact "
+            f"WHERE Phone LIKE '%{suffix}%' OR MobilePhone LIKE '%{suffix}%' LIMIT 5"
+        ).get("records", [])
+        for rec in contacts:
+            if not (_matches(rec.get("Phone")) or _matches(rec.get("MobilePhone"))):
+                continue
+            roles = sf.query(
+                f"SELECT OpportunityId FROM OpportunityContactRole "
+                f"WHERE ContactId = '{rec['Id']}' ORDER BY Opportunity.CreatedDate DESC LIMIT 1"
+            ).get("records", [])
+            if roles:
+                account = rec.get("Account") or {}
+                return {
+                    "type": "Opportunity", "id": roles[0]["OpportunityId"],
+                    "first_name": rec.get("FirstName") or "",
+                    "last_name": rec.get("LastName") or "Unknown",
+                    "company": account.get("Name"), "email": None,
+                }
+        return None
+    except Exception as e:
+        print(f"[SF] find_lead_or_opportunity_by_phone failed: {e}")
+        return None
+
+
+def find_sf_match_by_phone(db: Session, sf: Salesforce, phone: str, exclude_lead_id: str = None) -> Optional[dict]:
+    """Phone-based fallback duplicate check for the lead-push paths
+    (_do_push, push_pending_leads_to_salesforce) — the same root cause as the
+    Aircall direct-dial dedup fix (v11.4.2): an existing SF Lead/Opportunity
+    with no email, or a different email than the local lead has, was never
+    caught by the email-only pre-create check those paths already ran, so a
+    fresh duplicate Lead got created in Salesforce whenever the phone alone
+    would have matched.
+
+    Guards sf_lead_id's unique constraint exactly like
+    backfill_direct_dial_leads does: a Lead match already linked to a
+    *different* local lead is treated as no match (caller falls through to
+    its normal create path) rather than stealing the link.
+    """
+    if not phone:
+        return None
+    match = find_lead_or_opportunity_by_phone(sf, phone)
+    if not match:
+        return None
+    if match["type"] == "Lead":
+        conflict = db.query(models.Lead).filter(
+            models.Lead.sf_lead_id == match["id"], models.Lead.id != exclude_lead_id,
+        ).first()
+        if conflict:
+            return None
+    return match
+
+
+def sf_lightning_url(instance_url: str, object_type: str, record_id: str) -> str:
+    """The literal Salesforce Lightning record-view URL shape — the one place
+    this path format lives, however instance_url was resolved (live client
+    in routes/public_api_routes.py's _build_sf_url, persisted
+    SalesforceConnection row here)."""
+    return f"{instance_url}/lightning/r/{object_type}/{record_id}/view"
+
+
+def salesforce_record_url(db: Session, object_type: str, record_id: str) -> Optional[str]:
+    """Build a clickable Salesforce Lightning URL from the org's own
+    instance_url (captured live from the API connection — never hardcode a
+    domain, it differs per org). Returns None if there's no id or no active
+    connection with a known instance_url yet."""
+    if not record_id:
+        return None
+    conn = db.query(models.SalesforceConnection).filter(
+        models.SalesforceConnection.is_active == True,
+    ).first()
+    if not conn or not conn.instance_url:
+        return None
+    return sf_lightning_url(conn.instance_url, object_type, record_id)
+
+
+def _direct_dial_placeholder_query(db: Session):
+    """The exact candidate set for backfill_direct_dial_leads — factored out
+    so the "how many are left" count in its response uses the identical
+    filter, not a hand-kept copy that could drift."""
+    return db.query(models.Lead).filter(
+        models.Lead.sf_opportunity_id.is_(None),
+        models.Lead.first_name == "",
+        models.Lead.last_name == "Unknown",
+        or_(
+            models.Lead.lead_source.like("aircall_webhook:%"),
+            models.Lead.lead_source.like("aircall_sync:%"),
+        ),
+    )
+
+
+def list_backfilled_direct_dial_leads(db: Session):
+    """Every lead backfill_direct_dial_leads has ever actually enriched (its
+    lead_source is tagged "+salesforce_match" on a real commit) — for
+    auditing exactly which real leads a backfill run touched."""
+    return (
+        db.query(models.Lead)
+        .filter(models.Lead.lead_source.ilike("%+salesforce_match"))
+        .order_by(models.Lead.created_at.desc())
+        .all()
+    )
+
+
+def backfill_direct_dial_leads(db: Session, sf: Salesforce, limit: int = 50, dry_run: bool = False) -> dict:
+    """One-off backfill for placeholder "Unknown Caller" leads created by the
+    direct-dial fallback BEFORE v11.4.2's live lookup shipped (see
+    find_lead_or_opportunity_by_phone / dialer_service._find_or_create_lead_by_phone).
+    Re-checks each one against Salesforce now and, on a match, enriches it
+    in place — never creates a new lead, never touches a row an SDR/admin has
+    since renamed or researched by hand (scoped to rows still exactly at the
+    placeholder signature: first_name="", last_name="Unknown").
+
+    limit bounds this to a single synchronous HTTP request's worth of work
+    (each candidate costs up to 3 sequential SOQL round-trips) — call again
+    while the response's "remaining" count is > 0 to work through a larger
+    backlog; already-matched rows naturally drop out of the candidate filter,
+    so repeat calls never re-process the same lead.
+
+    dry_run=True runs the identical lookup logic but rolls back instead of
+    committing, and returns a "preview" list showing exactly what each
+    candidate would become — for inspecting real impact before writing.
+    """
+    if not sf:
+        return {"checked": 0, "matched": 0, "skipped_conflict": 0, "remaining": 0, "preview": []}
+
+    candidates = _direct_dial_placeholder_query(db).order_by(models.Lead.created_at.asc()).limit(limit).all()
+
+    matched = 0
+    skipped_conflict = 0
+    preview = []
+    for lead in candidates:
+        sf_match = find_lead_or_opportunity_by_phone(sf, lead.phone)
+        if not sf_match and lead.phone_secondary:
+            sf_match = find_lead_or_opportunity_by_phone(sf, lead.phone_secondary)
+        if not sf_match:
+            preview.append({"lead_id": lead.id, "phone": lead.phone, "result": "no_match"})
+            continue
+
+        if sf_match["type"] == "Lead":
+            # Guard sf_lead_id's unique constraint — another local lead may
+            # already legitimately hold this exact Salesforce Lead Id (e.g.
+            # from an old sync before push_only was set).
+            conflict = db.query(models.Lead).filter(
+                models.Lead.sf_lead_id == sf_match["id"], models.Lead.id != lead.id,
+            ).first()
+            if conflict:
+                skipped_conflict += 1
+                preview.append({
+                    "lead_id": lead.id, "phone": lead.phone, "result": "skipped_conflict",
+                    "sf_type": "Lead", "sf_id": sf_match["id"],
+                })
+                continue
+            lead.sf_lead_id = sf_match["id"]
+        else:
+            lead.sf_opportunity_id = sf_match["id"]
+
+        preview.append({
+            "lead_id": lead.id, "phone": lead.phone, "result": "matched",
+            "sf_type": sf_match["type"], "sf_id": sf_match["id"],
+            "before": {"first_name": lead.first_name, "last_name": lead.last_name, "company": lead.company},
+            "after": {
+                "first_name": sf_match["first_name"], "last_name": sf_match["last_name"],
+                "company": sf_match.get("company") or lead.company,
+            },
+        })
+
+        lead.first_name = sf_match["first_name"]
+        lead.last_name = sf_match["last_name"]
+        if sf_match.get("company"):
+            lead.company = sf_match["company"]
+        if sf_match.get("email"):
+            lead.email = sf_match["email"]
+        lead.lead_source = f"{lead.lead_source}+salesforce_match"
+        matched += 1
+
+    if dry_run:
+        db.rollback()
+    else:
+        db.commit()
+    remaining = _direct_dial_placeholder_query(db).count()
+
+    return {
+        "checked": len(candidates),
+        "matched": matched,
+        "skipped_conflict": skipped_conflict,
+        "remaining": remaining,
+        "preview": preview,
+    }
+
 
 def _is_sentinel_sf_id(sf_id: str) -> bool:
     """Return True if sf_id is a local placeholder, not a real Salesforce Lead ID.
@@ -484,6 +1095,29 @@ def push_pending_leads_to_salesforce(db: Session, sf: Salesforce, push_stage: st
                     )
                     continue
 
+            # Duplicate check by phone — catches an SF record with no
+            # email, or a different email than ours, that the check above
+            # would otherwise miss (same root cause as the Aircall
+            # direct-dial dedup fix, applied here to the push-to-SF path).
+            phone_match = find_sf_match_by_phone(db, sf, lead.phone, exclude_lead_id=lead.id)
+            if phone_match:
+                if phone_match["type"] == "Lead":
+                    lead.sf_lead_id = phone_match["id"]
+                else:
+                    lead.sf_opportunity_id = phone_match["id"]
+                db.commit()
+                result["pushed"] += 1
+                result["linked"].append({"name": lead_name, "sf_id": phone_match["id"], "matched_by": "phone"})
+                log_sf_operation(
+                    operation_type="upsert", sf_object=phone_match["type"],
+                    record_identifier=phone_match["id"],
+                    first_name=lead.first_name, last_name=lead.last_name, email=lead.email,
+                    fields_updated=["sf_lead_id" if phone_match["type"] == "Lead" else "sf_opportunity_id"],
+                    status="success", source_system="sync_button",
+                    response_payload={"action": "linked_to_existing_by_phone", "sf_id": phone_match["id"]},
+                )
+                continue
+
             create_data = lead_push_info(lead, db)
             create_data["industry"] = lead.industry or getattr(lead, 'research_industry', None)
             sf_id = create_new_lead_in_salesforce(sf, create_data, source="sync_button")
@@ -505,18 +1139,55 @@ def push_pending_leads_to_salesforce(db: Session, sf: Salesforce, push_stage: st
     return result
 
 
+def _update_sf_connection_sync_status(db: Session, status: str, error: str = None, records_synced: int = 0) -> None:
+    """Stamp the active SalesforceConnection row after a sync attempt.
+
+    Root cause of last_sync_at always showing "Never" in Control Center /
+    legacy Settings: run_full_salesforce_sync (below) is the single choke
+    point for both the manual '/api/admin/sync' button and the scheduled
+    auto-sync job, but nothing ever wrote to last_sync_at/last_sync_status/
+    last_sync_error/records_synced_last_run — those columns existed on the
+    model since the start but had zero write sites anywhere in the codebase.
+    """
+    conn = db.query(models.SalesforceConnection).filter(
+        models.SalesforceConnection.is_active == True
+    ).first()
+    if not conn:
+        return
+    conn.last_sync_at = datetime.utcnow()
+    conn.last_sync_status = status
+    conn.last_sync_error = error
+    conn.records_synced_last_run = records_synced
+    db.commit()
+
+
 def run_full_salesforce_sync(db: Session, sf: Salesforce, settings) -> dict:
     """Core pull(if 2-way)+push sync logic — shared by the manual '/api/admin/sync'
     button and the scheduled auto-sync job (V44) so both behave identically."""
     sync_direction = settings.sync_direction if getattr(settings, 'sync_direction', None) else "push_only"
 
-    lead_count = 0
-    if sync_direction == "both":
-        rtype_ids = json.loads(settings.record_type_ids) if settings.record_type_ids else None
-        lead_count = sync_leads_from_salesforce(db, sf, limit=settings.lead_limit, record_type_ids=rtype_ids)
+    opportunity_direction = getattr(settings, 'opportunity_sync_direction', None) or "push_only"
 
-    push_stage = settings.sf_push_stage or "Meeting Scheduled"
-    push_result = push_pending_leads_to_salesforce(db, sf, push_stage)
+    try:
+        lead_count = 0
+        if sync_direction == "both":
+            rtype_ids = json.loads(settings.record_type_ids) if settings.record_type_ids else None
+            lead_count = sync_leads_from_salesforce(db, sf, limit=settings.lead_limit, record_type_ids=rtype_ids)
+
+        # Account/Opportunity: reference data for the CSM Portal. Gated the
+        # same way Lead's own pull is (sync_direction == "both") — "push_only"
+        # means this batch job never touches SF for Opportunity/Account at
+        # all (the AE close-deal action's push still happens independently).
+        if opportunity_direction == "both":
+            sync_accounts_from_salesforce(db, sf)
+            sync_contacts_from_salesforce(db, sf)
+            sync_opportunities_from_salesforce(db, sf, direction=opportunity_direction)
+
+        push_stage = settings.sf_push_stage or "Meeting Scheduled"
+        push_result = push_pending_leads_to_salesforce(db, sf, push_stage)
+    except Exception as e:
+        _update_sf_connection_sync_status(db, "failed", error=str(e))
+        raise
 
     all_at_stage = db.query(models.Lead).filter(models.Lead.status == push_stage).all()
     debug_info = {
@@ -528,6 +1199,8 @@ def run_full_salesforce_sync(db: Session, sf: Salesforce, settings) -> dict:
         "with_real_sf_id": len([l for l in all_at_stage if l.sf_lead_id and not l.sf_lead_id.startswith("upload-")]),
         "sample_sf_ids": [l.sf_lead_id for l in all_at_stage[:5]],
     }
+
+    _update_sf_connection_sync_status(db, "success", records_synced=lead_count + push_result["pushed"])
 
     return {
         "status": "Sync completed successfully",
@@ -619,6 +1292,50 @@ def _get_recreate_lock(sf_lead_id: str) -> threading.Lock:
         return lock
 
 
+def ae_owner_email(lead) -> str:
+    """Email of the AE whose Salesforce User should own this lead. Lead
+    Owner (unlike SDR_Name__c) is a normal lookup field, not a restricted
+    picklist, so it accepts anyone with a real Salesforce User record —
+    that's the field an AE's assignment maps to. Picks the first AE
+    alphabetically by name when a lead is (unusually) assigned to more than
+    one, for determinism."""
+    aes = sorted(
+        (u for u in lead.assigned_users if u.role == "AE" and u.email),
+        key=lambda u: u.name or "",
+    )
+    return aes[0].email if aes else None
+
+
+def _sf_user_id_by_email(sf: Salesforce, email: str):
+    """Resolve a Salesforce User Id by Email, for setting Lead Owner. Best
+    effort — returns None (never raises) if there's no matching User, so a
+    lookup miss just skips the OwnerId write instead of failing the push."""
+    if not email:
+        return None
+    safe_email = email.replace("'", "\\'")
+    try:
+        res = sf.query(f"SELECT Id FROM User WHERE Email = '{safe_email}' LIMIT 1")
+        records = res.get("records", [])
+        return records[0]["Id"] if records else None
+    except Exception:
+        return None
+
+
+def sdr_only_names(lead) -> str:
+    """Names for SDR_Name__c — a Salesforce restricted picklist limited to
+    real SDR names. An AE's name is not a valid picklist value there, and
+    Salesforce rejects the write wholesale (400 INVALID_OR_NULL_FOR_
+    RESTRICTED_PICKLIST) rather than dropping just that field — a lead
+    assigned only to an AE was failing to sync at all as a result. Only
+    SDR-role assignees qualify; an AE-only lead pushes no value for this
+    field — AE ownership goes to Salesforce's own Lead Owner field instead,
+    see ae_owner_email below."""
+    return ", ".join(u.name for u in lead.assigned_users if u.name and u.role == "SDR") or None
+
+
+from services.sf_field_mapping import custom_payload, builtin_overrides
+
+
 def lead_push_info(lead, db: Session = None) -> dict:
     """Build the lead_info dict push_lead_to_salesforce logs against, and
     recreates the Lead from if it was deleted in Salesforce.
@@ -645,9 +1362,38 @@ def lead_push_info(lead, db: Session = None) -> dict:
         "country": lead.country or lead.company_country,
         "company_street": lead.company_street, "company_postal_code": lead.company_postal_code,
         "linkedin_url": lead.linkedin_url or lead.person_linkedin,
-        "sdr_name": ", ".join(u.name for u in lead.assigned_users if u.name) or None,
+        "sdr_name": sdr_only_names(lead),
+        "owner_email": ae_owner_email(lead),
         "description": _build_lead_description(lead, db),
+        # v14.1.0: admin-configured extra fields (Control Center -> Salesforce field mapping), {SF API name: value}
+        "custom_sf_fields": custom_payload(db, lead) if db is not None else {},
+        # v14.1.0: built-in mappings an admin re-pointed ({lead key: SF name}) or switched off ({lead key: None})
+        "builtin_overrides": builtin_overrides(db) if db is not None else {},
     }
+
+
+# Alternate CRM lead field -> Salesforce Lead API name for the built-in push (extra fields are configured, see services/sf_field_mapping.py)
+LEAD_FIELD_MAP = {
+    "first_name":       "FirstName",
+    "last_name":        "LastName",
+    "email":            "Email",
+    "phone":            "Phone",
+    "status":           "Lead_Status__c",
+    "title":            "Job_Title__c",   # RCA 2026-08-03: org uses this custom field, not standard Title
+    "website":          "Website",
+    "industry":         "Industry",
+    "employee_count":   "NumberOfEmployees",
+    "annual_revenue":   "AnnualRevenue",
+    "city":             "City",
+    "state":            "State",
+    "country":          "Country",
+    "company_street":   "Street",
+    "company_postal_code": "PostalCode",
+    "description":      "Description",
+    "linkedin_url":     "LinkedIn_Profile__c",
+    "sdr_name":         "SDR_Name__c",
+    "disqualification_reason": "Lead_Lost_Reason__c",
+}
 
 
 def push_lead_to_salesforce(sf: Salesforce, sf_lead_id: str, updates: dict, lead_info: dict = None, source: str = "api") -> bool:
@@ -684,35 +1430,24 @@ def push_lead_to_salesforce(sf: Salesforce, sf_lead_id: str, updates: dict, lead
     # permanently stale value from whenever the Lead was first created.
     # Re-sync them from lead_info on every push, not just at creation;
     # respects an explicit override in `updates` if a caller ever sets one.
-    for _always_sync_key in ("sdr_name", "linkedin_url"):
+    for _always_sync_key in ("sdr_name", "linkedin_url", "owner_email"):
         if _always_sync_key not in updates and lead_info.get(_always_sync_key) is not None:
             updates = {**updates, _always_sync_key: lead_info[_always_sync_key]}
 
-    # Map our local field names → Salesforce field API names
-    field_map = {
-        "first_name":       "FirstName",
-        "last_name":        "LastName",
-        "email":            "Email",
-        "phone":            "Phone",
-        "status":           "Lead_Status__c",
-        "title":            "Job_Title__c",   # RCA 2026-08-03: org uses this custom field, not standard Title
-        "website":          "Website",
-        "industry":         "Industry",
-        "employee_count":   "NumberOfEmployees",
-        "annual_revenue":   "AnnualRevenue",
-        "city":             "City",
-        "state":            "State",
-        "country":          "Country",
-        "company_street":   "Street",
-        "company_postal_code": "PostalCode",
-        "description":      "Description",
-        "linkedin_url":     "LinkedIn_Profile__c",
-        "sdr_name":         "SDR_Name__c",
-        "disqualification_reason": "Lead_Lost_Reason__c",
-    }
+    overrides = lead_info.get("builtin_overrides") or {}
+    field_map = {k: overrides.get(k, v) for k, v in LEAD_FIELD_MAP.items() if overrides.get(k, v)}
 
     sf_payload = {}
     for local_key, value in updates.items():
+        # owner_email isn't a straight field passthrough — it needs an
+        # Email -> Salesforce User Id lookup, done here (not in field_map)
+        # since resolving it needs the `sf` client, which lead_push_info's
+        # caller doesn't always have on hand.
+        if local_key == "owner_email":
+            owner_id = _sf_user_id_by_email(sf, value)
+            if owner_id:
+                sf_payload["OwnerId"] = owner_id
+            continue
         sf_field = field_map.get(local_key)
         if sf_field and value is not None:
             # Translate CRM status to SF picklist value
@@ -731,11 +1466,14 @@ def push_lead_to_salesforce(sf: Salesforce, sf_lead_id: str, updates: dict, lead
                     continue  # skip empty/invalid email rather than failing
             sf_payload[sf_field] = value
 
+    custom = lead_info.get("custom_sf_fields") or {}
+    sf_payload.update({k: v for k, v in custom.items() if k not in sf_payload})
+
     if not sf_payload:
         return True  # Nothing to push
 
     try:
-        sf.Lead.update(sf_lead_id, sf_payload)
+        _call_with_picklist_retry(lambda p: sf.Lead.update(sf_lead_id, p), sf_payload, retry_fields=("SDR_Name__c", *custom, *[v for v in overrides.values() if v]))
         print(f"[SF Write-back] Updated Lead {sf_lead_id}: {sf_payload}")
         log_sf_operation(
             operation_type="update", sf_object="Lead",
@@ -806,13 +1544,71 @@ def push_lead_to_salesforce(sf: Salesforce, sf_lead_id: str, updates: dict, lead
         return False
 
 
+def _rejected_restricted_picklist_field(exc: Exception, field: str) -> bool:
+    """True if Salesforce rejected the request specifically because `field`
+    failed a restricted-picklist check (errorCode
+    INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST). Org-specific picklists (like
+    SDR_Name__c — see sdr_only_names) can lag behind Alternate CRM's real SDR
+    roster; when that happens SF rejects the *whole* create/update, not just
+    that field, so callers use this to retry once with the field dropped
+    rather than failing the entire push. Same .content-then-string-fallback
+    approach as _is_entity_deleted_error."""
+    content = getattr(exc, "content", None)
+    if isinstance(content, list):
+        for err in content:
+            if (isinstance(err, dict) and err.get("errorCode") == "INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST"
+                    and field in (err.get("fields") or [])):
+                return True
+    return "INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST" in str(exc) and field in str(exc)
+
+
+# Why Salesforce can refuse ONE admin-mapped field (v14.1.0): it was deleted/renamed, the value is too long, or the type is wrong.
+# One bad mapped field must not stop the rest of the lead from saving, so the caller drops just that field and retries.
+_FIELD_LEVEL_ERRORS = {"INVALID_FIELD", "INVALID_FIELD_FOR_INSERT_UPDATE", "STRING_TOO_LONG", "INVALID_TYPE_ON_FIELD_IN_RECORD",
+                       "FIELD_INTEGRITY_EXCEPTION", "FIELD_CUSTOM_VALIDATION_EXCEPTION", "INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST"}
+
+
+def _rejected_custom_field(exc: Exception, field: str) -> bool:
+    content = getattr(exc, "content", None)
+    if isinstance(content, list):
+        for err in content:
+            if isinstance(err, dict) and err.get("errorCode") in _FIELD_LEVEL_ERRORS and (
+                    field in (err.get("fields") or []) or field in str(err.get("message", ""))):
+                return True
+    text = str(exc)
+    return field in text and any(code in text for code in _FIELD_LEVEL_ERRORS | {"No such column"})
+
+
+def _call_with_picklist_retry(call, payload: dict, retry_fields=("SDR_Name__c",)):
+    """Run `call(payload)` (a Lead create/update), retrying once per field in
+    retry_fields if SF rejected the *whole* request over just that field's
+    restricted-picklist value — org-managed picklists like SDR_Name__c can
+    lag behind Alternate CRM's real SDR roster, and SF has no partial-field
+    rejection, so without this a stale picklist blocks every field on the
+    lead, not just the one it doesn't like."""
+    try:
+        return call(payload)
+    except Exception as e:
+        for field in retry_fields:
+            if field in payload and (_rejected_restricted_picklist_field(e, field)
+                                     or (field != "SDR_Name__c" and _rejected_custom_field(e, field))):
+                print(f"[SF Write-back] {field}={payload[field]!r} rejected by a restricted picklist — retrying without it")
+                return _call_with_picklist_retry(call, {k: v for k, v in payload.items() if k != field}, retry_fields)
+        raise
+
+
 def _is_entity_deleted_error(exc: Exception) -> bool:
     """
-    True if Salesforce rejected a request because the target record was
-    deleted directly in Salesforce (errorCode ENTITY_IS_DELETED).
+    True if Salesforce rejected a request because the target record is gone:
+    deleted (ENTITY_IS_DELETED), or merged / hard-deleted — a 404 "Resource
+    Lead Not Found" with INVALID_CROSS_REFERENCE_KEY (RCA 2026-09-29: that
+    variant kept the dead id forever). Matched on the 404 itself, not the
+    bare errorCode — a bad OwnerId is also INVALID_CROSS_REFERENCE_KEY but a 400.
 
     Same .content-then-string-fallback approach as _extract_duplicate_sf_id.
     """
+    if getattr(exc, "status", None) == 404:
+        return True
     content = getattr(exc, "content", None)
     if isinstance(content, list):
         for err in content:
@@ -881,43 +1677,43 @@ def create_new_lead_in_salesforce(sf: Salesforce, lead_data: dict, source: str =
         "Lead_Source_New__c": "SDR Generated",
     }
 
-    # Standard fields — push everything that has data
-    standard_map = {
-        "title":              "Job_Title__c",   # RCA 2026-08-03: org uses this custom field, not standard Title
-        "website":            "Website",
-        "industry":           "Industry",
-        "city":               "City",
-        "state":              "State",
-        "country":            "Country",
-        "company_street":     "Street",
-        "company_postal_code": "PostalCode",
-        "description":        "Description",
-        "linkedin_url":       "LinkedIn_Profile__c",
-        "sdr_name":           "SDR_Name__c",
-    }
+    # Standard fields — push everything that has data (same names as LEAD_FIELD_MAP, minus any an admin re-pointed or switched off)
+    overrides = lead_data.get("builtin_overrides") or {}
+    standard_map = {k: overrides.get(k, LEAD_FIELD_MAP[k]) for k in (
+        "title", "website", "industry", "city", "state", "country", "company_street", "company_postal_code",
+        "description", "linkedin_url", "sdr_name") if overrides.get(k, LEAD_FIELD_MAP[k])}
     for local_key, sf_field in standard_map.items():
         val = lead_data.get(local_key)
         if val:
             sf_payload[sf_field] = val
 
+    # AE-assigned leads set Lead Owner (a plain lookup) instead of
+    # SDR_Name__c (a picklist restricted to SDR names — see sdr_only_names).
+    owner_id = _sf_user_id_by_email(sf, lead_data.get("owner_email"))
+    if owner_id:
+        sf_payload["OwnerId"] = owner_id
+
     # Numeric fields need type conversion
-    if lead_data.get("employee_count"):
+    if lead_data.get("employee_count") and overrides.get("employee_count", LEAD_FIELD_MAP["employee_count"]):
         try:
-            sf_payload["NumberOfEmployees"] = int(lead_data["employee_count"])
+            sf_payload[overrides.get("employee_count", LEAD_FIELD_MAP["employee_count"])] = int(lead_data["employee_count"])
         except (ValueError, TypeError):
             pass
-    if lead_data.get("annual_revenue"):
+    if lead_data.get("annual_revenue") and overrides.get("annual_revenue", LEAD_FIELD_MAP["annual_revenue"]):
         try:
-            sf_payload["AnnualRevenue"] = float(str(lead_data["annual_revenue"]).replace(",", "").replace("$", ""))
+            sf_payload[overrides.get("annual_revenue", LEAD_FIELD_MAP["annual_revenue"])] = float(str(lead_data["annual_revenue"]).replace(",", "").replace("$", ""))
         except (ValueError, TypeError):
             pass
 
-    # Remove empty values but KEEP required fields
+    custom = lead_data.get("custom_sf_fields") or {}      # v14.1.0: admin-configured extra fields
+    sf_payload.update({k: v for k, v in custom.items() if k not in sf_payload})
+
+    # Remove empty values but KEEP required fields (False/0 from a custom field are real values)
     required = {"LastName", "Company", "Lead_Status__c", "Lead_Source_New__c"}
-    sf_payload = {k: v for k, v in sf_payload.items() if v or k in required}
+    sf_payload = {k: v for k, v in sf_payload.items() if v or k in required or k in custom}
 
     try:
-        response = sf.Lead.create(sf_payload)
+        response = _call_with_picklist_retry(sf.Lead.create, sf_payload, retry_fields=("SDR_Name__c", *custom, *[v for v in overrides.values() if v]))
         sf_lead_id = response.get("id")
         print(f"[SF Write-back] Created new Lead {sf_lead_id}")
         log_sf_operation(
@@ -1059,4 +1855,81 @@ def push_sdr_metrics_to_salesforce(sf: Salesforce, user: models.User, metrics: d
         return True
     except Exception as e:
         print(f"[SF SDR Sync] Failed to update metrics for {user.email}: {e}")
+        return False
+
+
+def push_opportunity_to_salesforce(db: Session, sf: Salesforce, opportunity) -> bool:
+    """Write an Opportunity's stage fields back to Salesforce — the AE
+    close-deal action's push half (see sync_opportunities_from_salesforce's
+    own docstring for why the pull and push halves are split, mirroring how
+    Lead sync splits sync_leads_from_salesforce from push_lead_to_salesforce).
+
+    Simpler than push_lead_to_salesforce: fixed field set, no field_map, no
+    entity-deleted recreate recovery (an Opportunity disappearing from SF
+    mid-flow hasn't happened yet the way it has for Lead — add that recovery
+    if it ever does).
+
+    No-ops (returns without raising) if there's no SF client, or the
+    Opportunity has no sf_opportunity_id — a Alternate CRM-native Opportunity, or
+    one Salesforce has never heard of, so there's nothing there to push to.
+    """
+    if not sf or not opportunity.sf_opportunity_id:
+        return False
+
+    # IsClosed/IsWon are deliberately NOT in this payload, despite being what
+    # the local row actually tracks. In Salesforce they are read-only formula
+    # fields derived from StageName — sending them fails the whole update, and
+    # sending them alongside a still-open StageName (which is what this used to
+    # do, because apply_opportunity_close never moved stage_name off the open
+    # stage) could not have worked even if they were writable. StageName is the
+    # close signal; SF recomputes the other two from it, and the next pull reads
+    # them back consistent. See CLOSED_WON_STAGE above.
+    sf_payload = {
+        "StageName": opportunity.stage_name,
+        "CloseDate": opportunity.close_date.strftime("%Y-%m-%d") if opportunity.close_date else None,
+        # Live finding, 2026-09-15: this org rejects any move to a Closed
+        # stage without these — see the model's own comment on why
+        # standard_product_names is semicolon-joined (Standard_Product_Name__c
+        # is a multipicklist; that's SF's own wire format for one).
+        "Standard_Product_Name__c": opportunity.standard_product_names,
+        "Invoice_Number__c": opportunity.invoice_number,
+        "Opportunity_Lost_Reason__c": opportunity.lost_reason,
+    }
+    sf_payload = {k: v for k, v in sf_payload.items() if v is not None}
+    if not sf_payload:
+        return True
+
+    try:
+        sf.Opportunity.update(opportunity.sf_opportunity_id, sf_payload)
+        print(f"[SF Write-back] Updated Opportunity {opportunity.sf_opportunity_id}: {sf_payload}")
+        log_sf_operation(
+            db=db, operation_type="update", sf_object="Opportunity",
+            record_identifier=opportunity.sf_opportunity_id,
+            fields_updated=list(sf_payload.keys()),
+            status="success",
+            request_payload=sf_payload,
+            source_system="ae_pipeline",
+        )
+        opportunity.sf_push_status = "success"
+        opportunity.sf_push_error = None
+        opportunity.sf_push_at = datetime.utcnow()
+        db.commit()
+        return True
+    except Exception as e:
+        error_str = str(e)
+        print(f"[SF Write-back] Failed to update Opportunity {opportunity.sf_opportunity_id}: {e}")
+        log_sf_operation(
+            db=db, operation_type="update", sf_object="Opportunity",
+            record_identifier=opportunity.sf_opportunity_id,
+            fields_updated=list(sf_payload.keys()),
+            status="failed", error_message=error_str,
+            request_payload=sf_payload,
+            source_system="ae_pipeline",
+        )
+        # The AE/CSM who made the edit has no other way to learn this failed
+        # short of an admin checking the SF sync log — surface it on the row.
+        opportunity.sf_push_status = "failed"
+        opportunity.sf_push_error = error_str[:2000]
+        opportunity.sf_push_at = datetime.utcnow()
+        db.commit()
         return False

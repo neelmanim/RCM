@@ -1,4 +1,4 @@
-# RCM Public API — CMT Integration Guide
+# Alternate CRM Public API — CMT Integration Guide
 
 > **Version:** 1.0 | **Updated:** April 2026 | **Audience:** Contract Management Tool (CMT) developers
 
@@ -6,11 +6,11 @@
 
 ## Overview
 
-RCM exposes a small, authenticated REST API that lets your Contract Management Tool (CMT) look up the Salesforce record URL for any Account — using either the RCM Messaging Account ID or the company name — without requiring direct Salesforce credentials or setup in your tool.
+Alternate CRM exposes a small, authenticated REST API that lets your Contract Management Tool (CMT) look up the Salesforce record URL for any Account — using either the SMS Magic Account ID or the company name — without requiring direct Salesforce credentials or setup in your tool.
 
 | Property | Value |
 |---|---|
-| Base URL | `https://api.alternatecrm.com` |
+| Base URL | `https://api.alternatecrm.staging.in` |
 | Auth method | `X-API-Key` header |
 | Format | JSON |
 | Rate limit | No hard limit (use responsibly) |
@@ -19,13 +19,13 @@ RCM exposes a small, authenticated REST API that lets your Contract Management T
 
 ## Authentication
 
-Every request **must** include the `X-API-Key` header. The key is generated and managed by your RCM Super Admin under **Settings → 🔌 Public API**.
+Every request **must** include the `X-API-Key` header. The key is generated and managed by your Alternate CRM Super Admin under **Settings → 🔌 Public API**.
 
 ```http
-X-API-Key: rcm_<48-char-hex>
+X-API-Key: alternatecrm_<48-char-hex>
 ```
 
-> ⚠️ Treat this key like a password. Do not commit it to source control. Anyone with this key can query your Salesforce data through RCM.
+> ⚠️ Treat this key like a password. Do not commit it to source control. Anyone with this key can query your Salesforce data through Alternate CRM.
 
 **Error if missing or invalid:**
 ```json
@@ -45,7 +45,7 @@ Unauthenticated liveness check. Use this to verify the API is reachable.
 ```json
 {
   "status": "ok",
-  "api": "RCM Public API"
+  "api": "Alternate CRM Public API"
 }
 ```
 
@@ -53,23 +53,23 @@ Unauthenticated liveness check. Use this to verify the API is reachable.
 
 ### `GET /api/public/sf/account`
 
-Look up a Salesforce Account (or Lead fallback) using RCM's configured Salesforce connection.
+Look up a Salesforce Account (or Lead fallback) using Alternate CRM's configured Salesforce connection.
 
 #### Query Parameters
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `rcm_messaging_id` | string | Conditional | The RCM Messaging Account ID stored in Salesforce field `RCMMessaging_AccountId__c`. **Exact match.** |
-| `company_name` | string | Conditional | The Salesforce Account Name. RCM first tries exact match, then partial (LIKE) match. |
+| `messaging_provider_id` | string | Conditional | The SMS Magic Account ID stored in Salesforce field `messaging_provider_AccountId__c`. **Exact match.** |
+| `company_name` | string | Conditional | The Salesforce Account Name. Alternate CRM first tries exact match, then partial (LIKE) match. |
 
-**At least one of** `rcm_messaging_id` or `company_name` must be provided.
+**At least one of** `messaging_provider_id` or `company_name` must be provided.
 
-When both are provided, `rcm_messaging_id` is tried first; `company_name` is used as a fallback.
+When both are provided, `messaging_provider_id` is tried first; `company_name` is used as a fallback.
 
 #### Lookup Behaviour
 
 ```
-1. Query Salesforce Account WHERE RCMMessaging_AccountId__c = '<rcm_messaging_id>'
+1. Query Salesforce Account WHERE messaging_provider_AccountId__c = '<messaging_provider_id>'
 2. If not found → Query Salesforce Account WHERE Name = '<company_name>' (exact)
 3. If not found → Query Salesforce Account WHERE Name LIKE '%<company_name>%'
 4. If still not found → Fallback to Salesforce Lead object (same order)
@@ -87,8 +87,8 @@ HTTP 200
   "type": "Account",
   "sf_account_id": "001G0000010sn3FIAQ",
   "account_name": "Acme Corporation",
-  "sf_url": "https://rcm-messaging.lightning.force.com/lightning/r/Account/001G0000010sn3FIAQ/view",
-  "matched_by": "rcm_messaging_id",
+  "sf_url": "https://messaging_provider.lightning.force.com/lightning/r/Account/001G0000010sn3FIAQ/view",
+  "matched_by": "messaging_provider_id",
   "confidence": "exact"
 }
 ```
@@ -102,7 +102,7 @@ HTTP 200
   "type": "Account",
   "sf_account_id": "001G0000010sn3FIAQ",
   "account_name": "Acme Corporation Ltd",
-  "sf_url": "https://rcm-messaging.lightning.force.com/lightning/r/Account/001G0000010sn3FIAQ/view",
+  "sf_url": "https://messaging_provider.lightning.force.com/lightning/r/Account/001G0000010sn3FIAQ/view",
   "matched_by": "company_name",
   "confidence": "like",
   "candidates": [
@@ -116,7 +116,7 @@ HTTP 200
 
 #### Response: Lead Fallback
 
-If no Account is found, RCM searches Salesforce Lead records.
+If no Account is found, Alternate CRM searches Salesforce Lead records.
 
 ```json
 HTTP 200
@@ -126,7 +126,7 @@ HTTP 200
   "sf_lead_id": "00QG000000abcXYZ",
   "lead_name": "John Smith",
   "company": "Acme Corp",
-  "sf_url": "https://rcm-messaging.lightning.force.com/lightning/r/Lead/00QG000000abcXYZ/view",
+  "sf_url": "https://messaging_provider.lightning.force.com/lightning/r/Lead/00QG000000abcXYZ/view",
   "matched_by": "company_name",
   "confidence": "exact",
   "note": "No Account record found in Salesforce. Returning matching Lead record."
@@ -141,7 +141,7 @@ HTTP 200
   "found": false,
   "message": "No Account or Lead found in Salesforce for the given identifier.",
   "searched": {
-    "rcm_messaging_id": "12345",
+    "messaging_provider_id": "12345",
     "company_name": null
   }
 }
@@ -153,9 +153,9 @@ HTTP 200
 
 | HTTP Status | Cause | How to resolve |
 |---|---|---|
-| `400 Bad Request` | Neither `rcm_messaging_id` nor `company_name` provided | Pass at least one parameter |
-| `401 Unauthorized` | Missing or invalid `X-API-Key` | Check the key with your RCM admin |
-| `503 Service Unavailable` | Salesforce is not connected in RCM | Ask the RCM admin to check the SF connection in Settings |
+| `400 Bad Request` | Neither `messaging_provider_id` nor `company_name` provided | Pass at least one parameter |
+| `401 Unauthorized` | Missing or invalid `X-API-Key` | Check the key with your Alternate CRM admin |
+| `503 Service Unavailable` | Salesforce is not connected in Alternate CRM | Ask the Alternate CRM admin to check the SF connection in Settings |
 
 ---
 
@@ -164,20 +164,20 @@ HTTP 200
 ### cURL
 
 ```bash
-# Lookup by RCM Messaging ID
+# Lookup by SMS Magic ID
 curl -X GET \
-  "https://api.alternatecrm.com/api/public/sf/account?rcm_messaging_id=12345" \
-  -H "X-API-Key: rcm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  "https://api.alternatecrm.staging.in/api/public/sf/account?messaging_provider_id=12345" \
+  -H "X-API-Key: alternatecrm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 # Lookup by company name
 curl -X GET \
-  "https://api.alternatecrm.com/api/public/sf/account?company_name=Acme+Corporation" \
-  -H "X-API-Key: rcm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  "https://api.alternatecrm.staging.in/api/public/sf/account?company_name=Acme+Corporation" \
+  -H "X-API-Key: alternatecrm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-# Combined (rcm_messaging_id takes priority)
+# Combined (messaging_provider_id takes priority)
 curl -X GET \
-  "https://api.alternatecrm.com/api/public/sf/account?rcm_messaging_id=12345&company_name=Acme" \
-  -H "X-API-Key: rcm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  "https://api.alternatecrm.staging.in/api/public/sf/account?messaging_provider_id=12345&company_name=Acme" \
+  -H "X-API-Key: alternatecrm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
 ### Python
@@ -185,14 +185,14 @@ curl -X GET \
 ```python
 import requests
 
-API_BASE = "https://api.alternatecrm.com"
-API_KEY  = "rcm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+API_BASE = "https://api.alternatecrm.staging.in"
+API_KEY  = "alternatecrm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-def get_sf_account(rcm_messaging_id=None, company_name=None):
+def get_sf_account(messaging_provider_id=None, company_name=None):
     resp = requests.get(
         f"{API_BASE}/api/public/sf/account",
         params={k: v for k, v in [
-            ("rcm_messaging_id", rcm_messaging_id),
+            ("messaging_provider_id", messaging_provider_id),
             ("company_name", company_name),
         ] if v},
         headers={"X-API-Key": API_KEY},
@@ -202,7 +202,7 @@ def get_sf_account(rcm_messaging_id=None, company_name=None):
     return resp.json()
 
 # Usage
-result = get_sf_account(rcm_messaging_id="12345")
+result = get_sf_account(messaging_provider_id="12345")
 if result["found"]:
     print(f"Type: {result['type']}")
     print(f"SF URL: {result['sf_url']}")
@@ -214,12 +214,12 @@ else:
 ### JavaScript / Node.js
 
 ```javascript
-const API_BASE = 'https://api.alternatecrm.com';
-const API_KEY  = 'rcm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+const API_BASE = 'https://api.alternatecrm.staging.in';
+const API_KEY  = 'alternatecrm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
 
-async function getSalesforceAccount({ externalId, companyName } = {}) {
+async function getSalesforceAccount({ messaging_providerId, companyName } = {}) {
   const params = new URLSearchParams();
-  if (externalId)  params.set('rcm_messaging_id',  externalId);
+  if (messaging_providerId)  params.set('messaging_provider_id',  messaging_providerId);
   if (companyName) params.set('company_name', companyName);
 
   const resp = await fetch(`${API_BASE}/api/public/sf/account?${params}`, {
@@ -234,7 +234,7 @@ async function getSalesforceAccount({ externalId, companyName } = {}) {
 }
 
 // Usage
-const result = await getSalesforceAccount({ externalId: '12345' });
+const result = await getSalesforceAccount({ messaging_providerId: '12345' });
 if (result.found) {
   console.log('SF URL:', result.sf_url);
 }
@@ -253,7 +253,7 @@ if (result.found) {
 | `sf_account_id` | string | Salesforce Account record ID (`001...`) |
 | `account_name` | string | Salesforce Account Name |
 | `sf_url` | string | Full Salesforce Lightning URL |
-| `matched_by` | string | `"rcm_messaging_id"` or `"company_name"` |
+| `matched_by` | string | `"messaging_provider_id"` or `"company_name"` |
 | `confidence` | string | `"exact"` or `"like"` (partial match) |
 | `candidates` | array | Only present for `"like"` matches — list of all partial matches |
 
@@ -273,7 +273,7 @@ if (result.found) {
 
 ## Admin: Managing the API Key
 
-1. Log in to RCM as **Super Admin**
+1. Log in to Alternate CRM as **Super Admin**
 2. Go to **Settings → 🔌 Public API**
 3. Click **Generate New Key** — the key is shown once; copy it immediately
 4. Share the key with CMT team via a secure channel (1Password, encrypted email, etc.)
@@ -283,4 +283,4 @@ if (result.found) {
 
 ---
 
-*For issues, contact your RCM admin or raise via the in-app Feedback button.*
+*For issues, contact your Alternate CRM admin or raise via the in-app Feedback button.*

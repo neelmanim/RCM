@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ReactFlow, Background, Controls, MiniMap } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { ArrowLeft, Save, Plus, Rocket, Archive as ArchiveIcon, Pause, Play, Pencil } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Rocket, Archive as ArchiveIcon, Pause, Play, Pencil, ChevronDown, Lock, AlignStartVertical, AlignStartHorizontal, Workflow, BarChart3 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { ConfirmDialog } from '../../components/ui/Modal';
+import { Select } from '../../components/ui/Select';
+import { Tabs } from '../../components/ui/Tabs';
 import { useJourneyStore } from './store/useJourneyStore';
 import { nodeTypes, NODE_ACCENT } from './nodes';
 import { NodeConfigPanel } from './NodeConfigPanel';
 import { FailedEnrollmentsPanel } from './FailedEnrollmentsPanel';
-import { EngagementPanel } from './EngagementPanel';
+import { ReportingTab } from './ReportingTab';
 import { SendWindowSettings } from './SendWindowSettings';
-import { ActivityPanel } from './ActivityPanel';
+import { CadenceRulesSettings } from './CadenceRulesSettings';
+import { CadenceBuilderTour } from './CadenceBuilderTour';
 import { validateGraph, errorsByNode } from './validation';
 import { NODE_TYPES, NODE_LABELS, SINGLETON_NODE_TYPES } from './nodeDefaults';
 import { SalesJourneyService, PodsService } from '../../services/api';
@@ -23,7 +26,7 @@ const STATUS_VARIANT = { draft: 'default', active: 'success', paused: 'warning',
 // what it means for whether the cadence is actually running.
 const STATUS_TITLE = {
   draft: 'Not published yet — no leads can enroll.',
-  active: 'Live — matching leads enroll automatically and steps are running.',
+  active: 'Live — enrolls leads as they trigger it, and steps are running.',
   paused: 'No steps are running — leads stay exactly where they are until resumed.',
   archived: 'No longer active — cannot be edited or re-published.',
 };
@@ -32,14 +35,17 @@ const STATUS_TITLE = {
 const NODE_TYPE_HINT = {
   trigger: 'Starts the cadence — enrolls a lead automatically when an event happens (e.g. status changes).',
   email: 'Sends an email to the lead.',
-  wait: 'Pauses for a set number of hours before continuing.',
-  condition: 'Branches based on a timeout or an event (e.g. the lead replied).',
+  wait: 'Pauses for a set number of days/hours before continuing.',
+  condition: 'Branches on an event (e.g. the lead replied) or on a lead field (e.g. job title).',
   call: 'Creates a task reminding the assigned SDR to call — does not place an automated call.',
-  sms: 'Sends a text message to the lead via RCM.',
-  whatsapp: 'Sends a WhatsApp template message to the lead via RCM.',
+  task: 'A manual step (research, LinkedIn, anything done by hand) — the cadence waits for the rep and can branch on their outcome.',
+  sms: 'Sends a text message to the lead via Alternate Messenger.',
+  whatsapp: 'Sends a WhatsApp template message to the lead via Alternate Messenger.',
+  instantly_sequence: 'Hands the lead off to a live Instantly.ai campaign to send through the pooled domains — Alternate CRM resumes the cadence on reply/interest/completion.',
 };
 
-export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journeySendWindow, onBack, onArchived }) {
+export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journeySendWindow, onBack, onArchived,
+                                 readOnly = false, ownerName = null }) {
   const journeyId = useJourneyStore((s) => s.journeyId);
   const versionId = useJourneyStore((s) => s.versionId);
   const liveVersionId = useJourneyStore((s) => s.liveVersionId);
@@ -55,6 +61,8 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
   const selectNode = useJourneyStore((s) => s.selectNode);
   const markSaved = useJourneyStore((s) => s.markSaved);
   const graphDefinition = useJourneyStore((s) => s.graphDefinition);
+  const layoutDirection = useJourneyStore((s) => s.layoutDirection);
+  const applyLayout = useJourneyStore((s) => s.applyLayout);
 
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(journeyStatus);
@@ -70,6 +78,7 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
   const [podId, setPodId] = useState(journeyPodId || '');
   const [podSaving, setPodSaving] = useState(false);
   const [sendWindow, setSendWindow] = useState(journeySendWindow || {});
+  const [view, setView] = useState('builder'); // 'builder' | 'reporting'
 
   useEffect(() => {
     PodsService.getAll().then(setPods).catch(() => {});
@@ -117,6 +126,10 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
   );
 
   const existingTypes = useMemo(() => new Set(nodes.map((n) => n.type)), [nodes]);
+  // Every mutating control in this header shares this one gate — archived
+  // cadences are immutable for everyone, readOnly additionally blocks a
+  // non-admin viewer regardless of status.
+  const canEdit = status !== 'archived' && !readOnly;
 
   const handleAddNode = useCallback((type) => {
     // Stack straight down from whatever's currently lowest, instead of a
@@ -144,6 +157,13 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
     }
   }, [journeyId, versionId, lastSavedAt, graphDefinition, markSaved]);
 
+  // Says what publishing will and won't do: entry is event-driven (a status
+  // CHANGE), never a sweep of leads already sitting in the status.
+  const trigger = nodes.find((n) => n.type === 'trigger')?.data;
+  const publishEntryNote = trigger?.event === 'status_changed' && trigger.to_status
+    ? `Leads whose status changes to ${trigger.to_status} after you publish will enroll. Leads already in ${trigger.to_status} are not enrolled — use Enroll in Cadence for those.`
+    : 'Leads that trigger this after you publish will enroll.';
+
   const handlePublish = useCallback(async () => {
     setPublishing(true);
     try {
@@ -151,7 +171,7 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
       setStatus(result.status);
       setPublishedVersions(result.draft_version_id, result.live_version_id);
       setPublishConfirmOpen(false);
-      toast('Published — matching leads will start enrolling automatically.', 'success');
+      toast('Live — leads enroll when they trigger it, not retroactively.', 'success');
     } catch (err) {
       toast(err.response?.data?.detail || 'Failed to publish — please try again.', 'error');
     } finally {
@@ -229,12 +249,12 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
             />
           ) : (
             <h2
-              className={`text-sm font-bold text-slate-800 truncate flex items-center gap-1.5 ${status !== 'archived' ? 'cursor-pointer group' : ''}`}
-              title={status !== 'archived' ? 'Click to rename' : ''}
-              onClick={() => status !== 'archived' && setEditingName(true)}
+              className={`text-sm font-bold text-slate-800 truncate flex items-center gap-1.5 ${canEdit ? 'cursor-pointer group' : ''}`}
+              title={canEdit ? 'Click to rename' : ''}
+              onClick={() => canEdit && setEditingName(true)}
             >
               {name}
-              {status !== 'archived' && (
+              {canEdit && (
                 <Pencil size={12} className="text-slate-300 group-hover:text-slate-500 shrink-0" />
               )}
             </h2>
@@ -246,24 +266,40 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
             <span className="text-xs text-red-600 shrink-0">{errors.length} issue{errors.length > 1 ? 's' : ''}</span>
           )}
           {status !== 'archived' && (
-            <select
-              className="text-xs border border-slate-200 rounded-md px-1.5 py-1 text-slate-600 bg-white disabled:opacity-50"
-              value={podId}
-              disabled={podSaving}
-              title="Only leads in this pod can be auto-enrolled by this cadence's trigger. All pods if unset."
-              onChange={(e) => handlePodChange(e.target.value)}
-            >
-              <option value="">All pods</option>
-              {pods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            readOnly ? (
+              <span className="text-xs text-slate-500">{pods.find((p) => p.id === podId)?.name || 'All pods'}</span>
+            ) : (
+              <Select
+                ariaLabel="Change pod"
+                value={podId}
+                onChange={handlePodChange}
+                options={pods.map((p) => ({ value: p.id, label: p.name }))}
+                placeholder="All pods"
+              >
+                <button
+                  type="button"
+                  disabled={podSaving}
+                  title="Only leads in this pod can be auto-enrolled by this cadence's trigger. All pods if unset."
+                  className="flex items-center gap-1 text-xs border border-slate-200 rounded-md px-1.5 py-1 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {pods.find((p) => p.id === podId)?.name || 'All pods'}
+                  <ChevronDown size={12} className="text-slate-400 shrink-0" />
+                </button>
+              </Select>
+            )
           )}
-          {status !== 'archived' && (
-            <SendWindowSettings journeyId={journeyId} journey={sendWindow} onSaved={setSendWindow} />
+          {canEdit && (
+            <>
+              <SendWindowSettings journeyId={journeyId} journey={sendWindow} onSaved={setSendWindow} />
+              <span data-tour="cadence-rules">
+                <CadenceRulesSettings journeyId={journeyId} journey={sendWindow} onSaved={setSendWindow} />
+              </span>
+              <CadenceBuilderTour />
+            </>
           )}
-          {status !== 'draft' && status !== 'archived' && <ActivityPanel journeyId={journeyId} />}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {status !== 'archived' && NODE_TYPES.map((type) => {
+          {canEdit && view === 'builder' && NODE_TYPES.map((type) => {
             const isSingletonUsed = SINGLETON_NODE_TYPES.includes(type) && existingTypes.has(type);
             return (
               <Button
@@ -272,18 +308,39 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
                 size="sm"
                 disabled={isSingletonUsed}
                 onClick={() => handleAddNode(type)}
+                data-tour={type === 'task' ? 'add-task-step' : type === 'condition' ? 'add-condition-step' : type === 'instantly_sequence' ? 'add-instantly-sequence-step' : undefined}
                 title={isSingletonUsed ? `Only one ${NODE_LABELS[type]} node is allowed per cadence.` : NODE_TYPE_HINT[type]}
               >
                 <Plus size={14} /> {NODE_LABELS[type]}
               </Button>
             );
           })}
-          {status !== 'archived' && (
+          {canEdit && view === 'builder' && nodes.length > 1 && (
+            <div className="flex items-center border border-slate-200 rounded-md overflow-hidden" title="Re-arrange the graph by depth from the trigger">
+              <button
+                type="button"
+                onClick={() => applyLayout('TB')}
+                title="Vertical layout"
+                className={`p-1.5 ${layoutDirection === 'TB' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-400 hover:text-slate-600'}`}
+              >
+                <AlignStartVertical size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => applyLayout('LR')}
+                title="Horizontal layout"
+                className={`p-1.5 border-l border-slate-200 ${layoutDirection === 'LR' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-400 hover:text-slate-600'}`}
+              >
+                <AlignStartHorizontal size={14} />
+              </button>
+            </div>
+          )}
+          {canEdit && (
             <Button size="sm" onClick={handleSave} disabled={saving || !dirty}>
               <Save size={14} /> {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
             </Button>
           )}
-          {status !== 'archived' && (
+          {canEdit && (
             <Button size="sm" variant="outline" onClick={() => setPublishConfirmOpen(true)}
               disabled={errors.length > 0 || dirty}
               title={
@@ -294,13 +351,13 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
               <Rocket size={14} /> Publish
             </Button>
           )}
-          {(status === 'active' || status === 'paused') && (
+          {(status === 'active' || status === 'paused') && !readOnly && (
             <Button size="sm" variant="outline" onClick={handlePauseResume} disabled={pauseResumeBusy}>
               {status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
               {status === 'paused' ? 'Resume' : 'Pause'}
             </Button>
           )}
-          {status !== 'archived' && (
+          {canEdit && (
             <Button size="sm" variant="danger" onClick={openArchiveConfirm}>
               <ArchiveIcon size={14} /> Archive
             </Button>
@@ -308,50 +365,86 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
         </div>
       </div>
 
-      {(status === 'active' || status === 'paused') && liveVersionId && versionId !== liveVersionId && (
-        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
-          You're editing a draft — leads already enrolled keep running the live version.
-          {dirty ? ' Save, then click ' : ' Click '}
-          <strong>Publish</strong> to make these changes live for new enrollments.
+      {status !== 'draft' && status !== 'archived' && (
+        <Tabs
+          className="px-4"
+          tabs={[{ key: 'builder', label: 'Builder', icon: Workflow }, { key: 'reporting', label: 'Reporting', icon: BarChart3 }]}
+          active={view}
+          onChange={setView}
+        />
+      )}
+
+      {readOnly && (
+        <div data-tour="cadence-readonly-banner" className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-xs text-slate-500 flex items-center gap-1.5">
+          <Lock size={12} className="shrink-0 text-slate-400" />
+          {ownerName
+            // Whose it is, and who to go to — a bare "read-only" left a Pod
+            // Admin with no idea why their own edit rights didn't apply here.
+            ? <span>Read-only — this cadence is owned by <strong className="font-semibold text-slate-600">{ownerName}</strong>. Ask them to make changes.</span>
+            : <span>Read-only — contact your Pod Admin to request a change.</span>}
         </div>
       )}
 
-      {status !== 'draft' && status !== 'archived' && <FailedEnrollmentsPanel journeyId={journeyId} />}
-      {status !== 'draft' && status !== 'archived' && <EngagementPanel journeyId={journeyId} nodes={nodes} />}
-
-      <div className="flex flex-1 min-h-0">
-        <div className="flex-1 min-w-0 h-full relative">
-          {nodes.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-              <p className="text-sm text-slate-400 text-center max-w-xs">
-                Start by adding a <strong>Trigger</strong> node above — it defines how a lead enters this cadence.
-              </p>
-            </div>
+      {(status === 'active' || status === 'paused') && liveVersionId && versionId !== liveVersionId && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
+          {readOnly ? (
+            // Don't instruct someone to Save/Publish when both buttons are
+            // hidden from them — that's what this banner did for every
+            // read-only viewer (visible to SDRs since v12.1).
+            <>There are unpublished draft changes — leads already enrolled keep running the live version.</>
+          ) : (
+            <>
+              You're editing a draft — leads already enrolled keep running the live version.
+              {dirty ? ' Save, then click ' : ' Click '}
+              <strong>Publish</strong> to make these changes live for new enrollments.
+            </>
           )}
-          <ReactFlow
-            nodes={nodesWithErrors}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={(_, node) => selectNode(node.id)}
-            onPaneClick={() => selectNode(null)}
-            fitView
-          >
-            <Background />
-            <Controls />
-            <MiniMap pannable zoomable nodeColor={(n) => (NODE_ACCENT[n.type] || NODE_ACCENT.wait).hex} />
-          </ReactFlow>
         </div>
-        <NodeConfigPanel errors={errorMap} />
-      </div>
+      )}
+
+      {view === 'builder' ? (
+        <>
+          {status !== 'draft' && status !== 'archived' && <FailedEnrollmentsPanel journeyId={journeyId} readOnly={readOnly} />}
+
+          <div className="flex flex-1 min-h-0">
+            <div className="flex-1 min-w-0 h-full relative">
+              {nodes.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                  <p className="text-sm text-slate-400 text-center max-w-xs">
+                    Start by adding a <strong>Trigger</strong> node above — it defines how a lead enters this cadence.
+                  </p>
+                </div>
+              )}
+              <ReactFlow
+                nodes={nodesWithErrors}
+                edges={edges}
+                nodeTypes={nodeTypes}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onNodeClick={(_, node) => selectNode(node.id)}
+                onPaneClick={() => selectNode(null)}
+                nodesDraggable={!readOnly}
+                nodesConnectable={!readOnly}
+                fitView
+              >
+                <Background />
+                <Controls />
+                <MiniMap pannable zoomable nodeColor={(n) => (NODE_ACCENT[n.type] || NODE_ACCENT.wait).hex} />
+              </ReactFlow>
+            </div>
+            <NodeConfigPanel errors={errorMap} readOnly={readOnly} />
+          </div>
+        </>
+      ) : (
+        <ReportingTab journeyId={journeyId} nodes={nodes} />
+      )}
 
       <ConfirmDialog
         open={publishConfirmOpen}
         onClose={() => setPublishConfirmOpen(false)}
         title="Publish Cadence"
-        message="Leads matching this cadence's trigger will start enrolling automatically. You can still edit it afterward — publishing again replaces the live version for new enrollments only; leads already in progress keep running the version they enrolled on."
+        message={`${publishEntryNote} You can still edit it afterward — publishing again replaces the live version for new enrollments only; leads already in progress keep running the version they enrolled on.`}
         confirmLabel="Publish"
         onConfirm={handlePublish}
         loading={publishing}

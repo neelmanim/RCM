@@ -79,9 +79,13 @@ class TestEnums:
         assert actual == expected
 
     def test_outcome_groups(self):
-        assert "Meeting Scheduled" in models.ANSWERED_OUTCOMES
-        assert "Meeting Confirmed" in models.ANSWERED_OUTCOMES
         assert "No Answer" in models.NOT_ANSWERED_OUTCOMES
+        # RCA 2026-08-25: a call the SDR never got through on isn't a live
+        # connect either — was missing from the set entirely.
+        assert "Unreachable" in models.NOT_ANSWERED_OUTCOMES
+        # "Left the Company" stays out on purpose — a human did pick up.
+        assert "Left the Company" not in models.NOT_ANSWERED_OUTCOMES
+        assert "no_answer" in models.NOT_ANSWERED_OUTCOMES_LOWER
         assert "Not Interested" in models.TERMINAL_OUTCOMES
         assert "Unreachable" in models.TERMINAL_OUTCOMES
         assert "Left the Company" in models.TERMINAL_OUTCOMES
@@ -293,6 +297,95 @@ class TestLogStatusChange:
         db.commit()
         assert entry.from_status is None
         assert entry.to_status == "Lead Assigned"
+
+    def test_swallowed_trigger_exception_does_not_poison_session(self, db):
+        """RCA 2026-09-07 (live, PendingRollbackError on /api/calls/start): a
+        real DB error inside the trigger check (mirrors the concurrent-
+        enrollment IntegrityError race this fix protects against) must not
+        leave the session poisoned for the caller's own later commit, AND
+        must not silently discard this function's own db.add(entry) either —
+        the SAVEPOINT fix must satisfy both."""
+        from unittest.mock import patch
+        lead = create_test_lead(db)
+
+        def _boom(*args, **kwargs):
+            # Two inserts with the same explicit primary key -> a real
+            # IntegrityError on flush, not a generic mocked exception, so this
+            # actually exercises SQLAlchemy's "session poisoned by a DB error"
+            # state the way the live bug did.
+            db.add(models.LeadStatusLog(id="dup-savepoint-test", lead_id=lead.id, to_status="A"))
+            db.add(models.LeadStatusLog(id="dup-savepoint-test", lead_id=lead.id, to_status="B"))
+            db.flush()
+
+        with patch("journey_engine.engine.check_entry_triggers", side_effect=_boom):
+            entry = models.log_status_change(db, lead.id, "Lead Assigned", "Calling", "tester@test.com")
+
+        # Caller's own subsequent commit must succeed, not raise PendingRollbackError.
+        db.commit()
+
+        persisted = db.query(models.LeadStatusLog).filter(models.LeadStatusLog.id == entry.id).first()
+        assert persisted is not None, "SAVEPOINT rollback must not discard this function's own db.add(entry)"
+        assert persisted.to_status == "Calling"
+
+
+# ── LeadFieldHistory (before_flush listener) ─────────────────────────────────
+# RCA 2026-08-17 (LIVE): resolving a "lead lost its name" report required raw
+# DB forensics since nothing tracked field-level changes on a Lead.
+
+class TestLeadFieldHistory:
+
+    def _history(self, db, lead_id, field=None):
+        q = db.query(models.LeadFieldHistory).filter(models.LeadFieldHistory.lead_id == lead_id)
+        if field:
+            q = q.filter(models.LeadFieldHistory.field_name == field)
+        return q.order_by(models.LeadFieldHistory.changed_at).all()
+
+    def test_records_a_field_change_with_correct_actor(self, db):
+        # create_test_lead's own commit already logs a creation-time row for
+        # first_name (None → "Old") — assert on the *update* row (the last one).
+        lead = create_test_lead(db, first_name="Old", phone=None)
+        db.info["change_actor"] = "sdr@test.com"
+        lead.first_name = "New"
+        db.commit()
+
+        rows = self._history(db, lead.id, "first_name")
+        assert len(rows) == 2
+        assert rows[-1].old_value == "Old"
+        assert rows[-1].new_value == "New"
+        assert rows[-1].changed_by == "sdr@test.com"
+
+    def test_defaults_to_system_when_no_actor_set(self, db):
+        lead = create_test_lead(db, phone="+91 90000 00001")
+        db.info.pop("change_actor", None)
+        lead.phone = "+91 90000 00002"
+        db.commit()
+
+        rows = self._history(db, lead.id, "phone")
+        assert len(rows) == 2  # creation row + this update
+        assert rows[-1].changed_by == "system"
+
+    def test_no_row_written_when_value_is_unchanged(self, db):
+        lead = create_test_lead(db, company="Acme")
+        before = len(self._history(db, lead.id, "company"))  # creation already logged one row
+        lead.company = "Acme"  # same value — should not count as a change
+        db.commit()
+        assert len(self._history(db, lead.id, "company")) == before
+
+    def test_untracked_field_is_not_logged(self, db):
+        lead = create_test_lead(db)
+        lead.research_company = "Some research note"  # not in _LEAD_HISTORY_FIELDS
+        db.commit()
+        assert self._history(db, lead.id, "research_company") == []
+
+    def test_initial_creation_logs_old_value_as_none(self, db):
+        lead = models.Lead(first_name="Viren", last_name="Baid", phone="8431150795")
+        db.add(lead)
+        db.commit()
+
+        rows = self._history(db, lead.id, "first_name")
+        assert len(rows) == 1
+        assert rows[0].old_value is None
+        assert rows[0].new_value == "Viren"
 
 
 # ── assign_lead ──────────────────────────────────────────────────────────────

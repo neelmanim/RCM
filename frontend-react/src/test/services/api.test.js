@@ -113,3 +113,12 @@ describe('LeadsService.reprioritize', () => {
     expect(axios.__mockInstance.patch).toHaveBeenCalledWith('/leads/lead-1/priority', { priority_score: 50 });
   });
 });
+
+describe('SettingsService.getRecordTypes', () => {
+  it('hits GET /admin/record-types, not /admin/sf/status', async () => {
+    const axios = await import('axios');
+    await SettingsService.getRecordTypes();
+    expect(axios.__mockInstance.get).toHaveBeenCalledWith('/admin/record-types');
+    expect(axios.__mockInstance.get).not.toHaveBeenCalledWith('/admin/sf/status');
+  });
+});

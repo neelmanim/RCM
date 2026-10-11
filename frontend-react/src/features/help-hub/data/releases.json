@@ -1,17 +1,2419 @@
 [
   {
+    "version": "v14.3.0",
+    "date": "10 Oct 2026",
+    "family": "14.0",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Drill into Team Digest by industry, country and account — plus guided tours and tooltips that work",
+    "summary": "Under the Funnel you can now break the period's calls, conversations and meetings down by ICP fit, industry, country, city, seniority, function, company size or source — with conversion rates and how each group moved against the period before — see each account worked, see which hours and outcomes work best on calls, follow any number to the leads behind it, and download it all as Excel. Super Admins can edit what counts as ICP. Missing data is shown, not hidden. Salesforce field messages are clearer. Every page's guided tour now waits for the page, can be replayed from the Guide button at the top or from Help → Guided tours, and the Team Digest and Control Center tours are rewritten. New numbers have a small \"i\" that explains them in plain words."
+  },
+  {
+    "version": "v14.2.0",
+    "date": "10 Oct 2026",
+    "family": "14.0",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Settings that always show the truth, a permanent export record, and editable Salesforce fields",
+    "summary": "Switches in Control Center now update straight away instead of showing the old value. Super Admins get an Export History (who downloaded what, and when) and a History of every Salesforce field mapping change. Built-in Salesforce fields, apart from name, email, phone and status, can now be edited or switched off."
+  },
+  {
+    "version": "v14.1.0",
+    "date": "9 Oct 2026",
+    "family": "14.0",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Team Digest, data export you switch on per person, and a tidier Salesforce section",
+    "summary": "Daily Digest is now Team Digest: look at any period (yesterday, last week, last month or your own dates), see what was worked per campaign, choose which numbers you see and save your own views. A new Funnel shows accounts given through meetings held. Exporting CSV and Excel files is now off by default: Super Admins always can, and can switch Data Export on for anyone else (Control Center → Team & Access). The Salesforce settings are now one tab, ask you to confirm before anything that moves data, and the field mapping table can be searched, sorted and edited."
+  },
+  {
+    "version": "v14.0.1",
+    "date": "9 Oct 2026",
+    "family": "14.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🔒 SECURITY",
+        "variant": "danger"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Activity Monitor shows only your own team, and email numbers are honest",
+    "items": [
+      "**🔒 Own team only:** Pod Admins see only their own pod's reps in Activity Monitor and Call Monitor. A rep from another pod calling a lead in your pod no longer shows up.",
+      "**📧 Open rate fixed:** it can no longer go above 100%. *Opened* now counts the leads who opened, against the leads emailed.",
+      "**🙅 Colleague emails ignored:** mail from a teammate's address is no longer logged as a lead reply.",
+      "**🗑️ Deleted leads** no longer appear in the Activity Monitor's email list."
+    ]
+  },
+  {
+    "version": "v14.0.0",
+    "date": "9 Oct 2026",
+    "family": "14.0",
+    "kind": "major",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🔒 SECURITY",
+        "variant": "danger"
+      }
+    ],
+    "title": "A Daily Digest built for team leads, tighter pod access, and a faster search",
+    "items": [
+      "**📰 Daily Digest, rebuilt:** each rep's calls, emails sent, research notes and meetings booked for the day, with the same weekday last week beside it. Click any number to see the leads behind it, click a rep to see only their leads, and use *Needs attention* to jump to idle reps and overdue follow-ups.",
+      "**📋 Leads touched:** every lead worked that day, overdue follow-ups first, with filters (rep, follow-up, kind of activity), search and pages. **Export Excel** gives the whole digest — summary, team and every lead — in one file.",
+      "**🕒 Your team's own day:** the digest follows the pod's time zone, so an India team's day is the India day. Super Admins can pick a pod.",
+      "**👁️ View As for Pod Admins:** open the app as any SDR or AE in your own pod (Control Center → Team & Access → eye icon) to see exactly what they see. It is read-only (you can look but not change anything) and every use is logged. Super Admins can still view as anyone.",
+      "**🔒 Pod Admins now see only their own pod** — Activity feed, assignment lists, Reports, uploads, search, AE Pipeline and more. A Pod Admin whose pod isn't set sees nothing until it is.",
+      "**🔎 Search is quicker and smoother:** results appear as you type without flicker, and repeat searches are instant.",
+      "**👥 Removing a user now switches off all their access** (sign-in, dialer, messaging, email) and shows them as *Left* in reports.",
+      "**🎯 Meetings per rep now means meetings that person booked**, in the Leaderboard and the Analytics rep table.",
+      "**📊 Needs attention** on the Dashboard now means no calls and no emails today, and lists everyone."
+    ]
+  },
+  {
+    "version": "v13.12.0",
+    "date": "8 Oct 2026",
+    "family": "13.0",
+    "kind": "minor",
+    "summary": "Removing a user now switches off all their access (sign-in, dialer, messaging, email) and shows them as Left in the Leaderboard and Analytics. The Leaderboard now counts meetings a person booked, not leads they happen to hold."
+  },
+  {
+    "version": "v13.11.0",
+    "date": "8 Oct 2026",
+    "family": "13.0",
+    "kind": "minor",
+    "summary": "Every meeting booking is now recorded (who booked it, held, no-show). Your Dashboard shows which of your leads are new, inherited or in progress, and admins can export raw calls and meetings to Excel. Lead statuses are unchanged."
+  },
+  {
+    "version": "v13.10.0",
+    "date": "8 Oct 2026",
+    "family": "13.0",
+    "kind": "minor",
+    "summary": "Lead ownership history — Alternate CRM now remembers who owned each lead and when, so reports can credit the right SDR after a reassignment. Nothing changes on your screens; lead statuses are unchanged."
+  },
+  {
+    "version": "v13.9.6",
+    "date": "8 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Dashboard numbers are easier to read",
+    "items": [
+      "**🔢 Full captions** — the small text under each Dashboard number now shows in full instead of being cut off."
+    ]
+  },
+  {
+    "version": "v13.9.5",
+    "date": "8 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Clickable Dashboard, My Day with any date and export",
+    "items": [
+      "**🖱️ Click any number** — Given today, Not yet called, Calling, Meetings… open the Leads page already filtered to exactly those leads.",
+      "**📅 My Day** — page through everything, pick any past date, filter by calls/notes/moves/emails, and export the day as a CSV.",
+      "**🧭 Guided tour** — a short walkthrough of the Dashboard on your first visit.",
+      "**🎨 Fresh look** — the Dashboard now matches the rest of Alternate CRM."
+    ]
+  },
+  {
+    "version": "v13.9.4",
+    "date": "7 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "My Day, an honest Dashboard, saved views that follow you",
+    "items": [
+      "**📅 My Day** — on your Dashboard: the leads given to you today and everything you did (calls, notes, moves, emails), with Yesterday one click away.",
+      "**🔢 Dashboard cards** — now say what they count: Assigned to me, Given today, Not yet called.",
+      "**📊 SDR Performance** — shows the whole current pipeline, and the period cards say \"in period\".",
+      "**💾 Saved views** — stored on your account, so they appear on any browser or device, and a failed save tells you why."
+    ]
+  },
+  {
+    "version": "v13.9.3",
+    "date": "7 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Expired sessions sign you out clearly",
+    "items": [
+      "**🔐 Session ended** — if your login expires you are taken to the sign-in page with a clear message instead of an error on a blank screen.",
+      "**⚡ Leads list** — loads a little faster."
+    ]
+  },
+  {
+    "version": "v13.9.2",
+    "date": "7 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Claude connector: pods, counts and tags",
+    "items": [
+      "**🧩 Pods** — Claude can now tell you which SDR is in which pod and how loaded each person is (admins).",
+      "**🔢 Counts** — ask \"how many leads by status, tag or rep\" and Claude answers in one step instead of paging through thousands of leads.",
+      "**🏷️ Filters** — Claude can filter leads by tag, rep, upload or cadence, and replies are faster."
+    ]
+  },
+  {
+    "version": "v13.9.1",
+    "date": "7 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Refused actions now explain why",
+    "items": [
+      "**🧩 Pod Management** — if an action is refused (for example adding someone who is still in another pod), you now see the reason instead of nothing.",
+      "**🛟 Everywhere** — a refused action shows the system's own message instead of a generic \"refresh the page\"."
+    ]
+  },
+  {
+    "version": "v13.9.0",
+    "date": "7 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Reassign requests, clearer duplicates, tag fixes, re-enrollment rule",
+    "items": [
+      "**🔁 Request a reassignment** — if you add a lead another rep owns, the message now says who has it and its status, and you can send a reassignment request. A Pod Admin approves it under Leads → Reassign Requests; the lead keeps all its calls, notes and history.",
+      "**🏷️ Tag filter** — shows tags created after the page opened and says \"No tags yet\" when there are none. Tag and owner changes now appear on the lead's timeline.",
+      "**♻️ Allow re-enrollment** — a cadence rule (with an optional wait in days) for whether a lead that already went through a cadence can join it again. New cadences default to off; existing ones are unchanged.",
+      "**🛡️ Status trigger with no status** now enrolls nobody instead of everybody."
+    ]
+  },
+  {
+    "version": "v13.8.1",
+    "date": "7 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Small fixes after the first prod cadence run",
+    "items": [
+      "**💬 Dialer message badge** — the unread number on the dialer button now clears once you open the Messages view, and comes back only when a new reply arrives.",
+      "**🧪 Playground** — hidden from Pod Admins (it was always Super-Admin-only on the server, so Pod Admins landed on \"Access Denied\")."
+    ]
+  },
+  {
+    "version": "v13.8.0",
+    "date": "7 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Instantly replies, in one place",
+    "items": [
+      "**📬 Replies inbox** — every reply to an Instantly email, with the full message and the thread, in Sales Tools → Replies. Filter by cadence, rep, mailbox, intent or unread; open the lead; mark as read.",
+      "**📊 Replies report** — sent, replied and positive rates by cadence, step, mailbox or rep, for any date range.",
+      "**🏠 Dashboard tile** — replies this week, positive replies, reply rate and what's still unread.",
+      "**🧾 On the lead page** — Instantly emails show their subject, and you can open the message right in the timeline.",
+      "**🐛 Replies counted once** — a reply used to be stored twice and out-of-office replies counted as real. Fixed, and Activity Monitor now includes Instantly replies in its reply rate and rep filter.",
+      "**🔒 Cadence roster** — the per-lead roster and its CSV now only list leads you're allowed to see.",
+      "**🧭 Cadence fixes from the field** — a cadence only stops on a real reply to its own email (not a colleague's mail or a read receipt), a status trigger only enrols leads whose status *changes*, \"Wrong number\" is one click on the lead page, and call attempts are counted once."
+    ]
+  },
+  {
+    "version": "v13.7.0",
+    "date": "6 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "My Tasks and approvals, redone",
+    "items": [
+      "**📥 Approvals tab** — cadence emails and texts waiting for you to send have their own tab in My Tasks, and the sidebar shows how many.",
+      "**⏰ Honest due dates** — a new approval says \"Due in 24h\", not \"Overdue\". To do is grouped by Overdue, Today and Upcoming.",
+      "**✍️ Formatted drafts** — edit a cadence email as normal text instead of raw HTML.",
+      "**⏭ Skip this step** — move a lead on without sending, instead of deleting the task.",
+      "**🔔 Better notifications** — approvals, replies and due tasks, each opening where you act on it.",
+      "**➕ Enroll from the lead page** — and the cadence card says when it's waiting on you.",
+      "**💬 Message, not call** — the purple button opens messages and calls; it never dials on its own.",
+      "**🛠 Staging stability** — fixes the memory growth that kept restarting staging."
+    ]
+  },
+  {
+    "version": "v13.6.1",
+    "date": "6 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Replies always move the cadence",
+    "items": [
+      "**✉️ Email replies never get missed** — if the instant notification doesn't arrive, a lead's reply is still picked up within 5 minutes and moves their cadence.",
+      "**💬 Shared phone numbers** — a text reply goes to the lead whose cadence is waiting for it.",
+      "**🏷 Clearer step names** — the cadence lead list says \"Instantly Sequence\"."
+    ]
+  },
+  {
+    "version": "v13.6.0",
+    "date": "6 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Ask Claude more, and smoother cadences",
+    "items": [
+      "**🤖 Claude knows more** — ask why a cadence isn't sending, who's on which step, who texted back today, which leads opened your email but never replied, how an upload is doing, the AE leaderboard, a full opportunity, and (for CSMs) your portfolio, an account and the CSM digest.",
+      "**⚠️ Clear failure reasons** — when a cadence step fails, the lead page now shows exactly why.",
+      "**⏱️ Minutes, not hours** — a \"did they reply?\" branch can now wait minutes.",
+      "**✋ Manual-only cadences** — start a cadence \"Only when enrolled manually\".",
+      "**📮 Clearer mailbox picker** — choose Instantly sending mailboxes from one searchable table, in Control Center and in each Instantly step. Each lead gets one email per step, from one mailbox in the pool."
+    ]
+  },
+  {
+    "version": "v13.5.0",
+    "date": "6 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Choose the sending domain for Instantly steps",
+    "items": [
+      "**📮 Send from** — an Instantly step in a cadence can now send from a specific domain or mailboxes. You'll only see the mailboxes a Super Admin has enabled in Control Center → Integrations → Instantly. Leave it empty to use all of them."
+    ]
+  },
+  {
+    "version": "v13.4.2",
+    "date": "6 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Re-add a deleted lead",
+    "items": [
+      "**➕ New lead** — adding a lead is no longer refused as a duplicate of a lead that was deleted."
+    ]
+  },
+  {
+    "version": "v13.4.1",
+    "date": "6 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Instantly and SMS replies land on the right lead",
+    "items": [
+      "**📬 Instantly replies** — replies to Instantly emails now appear on the lead. A reply in an unexpected format was stopping the Instantly sync before it finished.",
+      "**💬 SMS replies** — a reply now always shows on the lead whose cadence sent the text, even when several test leads share the sandbox number."
+    ]
+  },
+  {
+    "version": "v13.4.0",
+    "date": "6 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Connect Claude to Alternate CRM",
+    "items": [
+      "**🤖 Claude connector (Super Admins for now)** — ask Claude about your leads, tasks, cadences, pipeline, team performance and each lead's activity. Create a key in My Settings → Claude connector and follow the steps. Claude sees only what you can see.",
+      "**🔒 You stay in control** — Claude is view-only by default. A Super Admin can let it make changes (notes, tasks, status, approving cadence drafts) and open the connector to everyone in Control Center → Integrations. Before sending a draft, Claude always shows you the exact message and waits for your yes.",
+      "**📋 Claude Logs** — Super Admins can see every lookup and change made through Claude in Control Center → Monitoring → Claude Logs.",
+      "**🐛 Replied branch** — a cadence with a \"Replied\" branch never took it while Stop on reply was on (it is by default). Publishing now tells you, so you can turn Stop on reply off or remove the branch."
+    ]
+  },
+  {
+    "version": "v13.3.5",
+    "date": "6 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Cadences stop cleanly, and a reply during a wait is never missed",
+    "items": [
+      "**🛑 Clean stops** — removing a lead from a cadence, archiving a cadence, deleting a lead, or an unsubscribe / Do Not Contact now ends every cadence for that lead right away: pending email/SMS drafts close and Instantly stops sending too.",
+      "**💬 Replies during a wait** — a lead who replied before the \"replied?\" check is now recognised and branched right away. Out-of-office auto-replies still don't count as replies.",
+      "**✉️ Clear send errors** — if a draft can't be sent (e.g. no connected mailbox), Send now tells you why and keeps your draft."
+    ]
+  },
+  {
+    "version": "v13.3.4",
+    "date": "6 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Reps can now build their own cadences end to end",
+    "items": [
+      "**🐛 Cadences for reps** — AEs and SDRs could click New Cadence, but the cadence then opened read-only and couldn't be saved or published. Any role can now build, edit, publish, pause, and delete the cadences they own; other people's cadences stay read-only.",
+      "**🧭 Updated tour** — the in-app cadence tour for reps no longer says they can't create or edit cadences."
+    ]
+  },
+  {
+    "version": "v13.3.3",
+    "date": "5 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      },
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Backend reliability fix, and a reorganized Integrations page",
+    "items": [
+      "**🐛 Background jobs** — the previous fix only covered half the problem: a routine deploy could still leave every scheduled job silently not running until the next one. It now keeps retrying until it recovers.",
+      "**🗂️ Integrations, reorganized** — Control Center → Integrations now has an **Email Sending** tab (Nylas + Instantly) and a **Calling & Messaging** tab (Aircall, Alternate Messenger, Klenty), instead of email and calling tools being mixed together under \"Dialer\".",
+      "**✨ Klenty card** — enable, add an API key, and trigger a catch-up sync from the UI for the first time."
+    ]
+  },
+  {
+    "version": "v13.3.2",
+    "date": "5 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Fixed a bug that could leave background jobs not running after a deploy",
+    "items": [
+      "**🐛 Background jobs** (the cadence engine, engagement syncs, scheduled reports/campaigns) no longer risk going silent after a deploy until the next one — you shouldn't notice anything except reliability."
+    ]
+  },
+  {
+    "version": "v13.3.1",
+    "date": "5 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Instantly cadences now actually send, and show up in cadence reporting",
+    "items": [
+      "**🐛 Instantly campaigns now activate automatically** — a cadence's Instantly Sequence step was creating a campaign that never started sending until someone manually launched it from Instantly's own dashboard. Fixed so it sends on its own, no dashboard visit needed.",
+      "**✨ Instantly engagement now shows in Cadence Reporting** — an Instantly Sequence step's sent/opened/clicked/replied numbers appear in the cadence's own Reporting tab, alongside email and SMS steps."
+    ]
+  },
+  {
+    "version": "v13.3.0",
+    "date": "5 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Instantly.ai integration: engagement sync + send cadences through your Instantly domains",
+    "items": [
+      "**✨ Instantly engagement sync** — Control Center → Integrations now has an Instantly.ai card: opens, clicks and replies from your Instantly campaigns show up on the lead's activity feed, synced every 15 minutes.",
+      "**✨ Send cadences through Instantly** — a new \"Instantly Sequence\" cadence step lets your cadence send through the domains/mailboxes you've bought in Instantly, instead of your own mailbox — Alternate CRM still authors the content and owns the reply/exit logic, Instantly just handles delivery.",
+      "**✨ Sending-accounts picker** and **✨ real-time webhook toggle** in the Instantly card let you control which mailboxes a cadence can send from and get replies back instantly instead of waiting for the next sync."
+    ]
+  },
+  {
+    "version": "v13.2.0",
+    "date": "5 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Fixed a scheduler bug that could slow things down under load",
+    "items": [
+      "**🐛 Background jobs** (email sync, messaging sync, scheduled reports/campaigns) no longer run twice as often as intended under the hood — you shouldn't notice anything except things feeling a little snappier."
+    ]
+  },
+  {
+    "version": "v13.1.9",
+    "date": "2 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Cadence list: reply-rate chart, archived-cadence clutter, collapsed snapshot",
+    "items": [
+      "**✨ Reply-rate chart** — the cross-cadence engagement ranking is now a bar chart instead of a table that was often just one row.",
+      "**🐛 Archived cadences hidden by default** — QA/test auto-archived cadences no longer clutter the top of your list; use the existing status filter to see them.",
+      "**✨ Performance snapshot collapsed by default** — the list itself now has room to breathe instead of competing with a donut and chart above the fold."
+    ]
+  },
+  {
+    "version": "v13.1.8",
+    "date": "2 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Cadence reporting revamp: a real tab, rep performance, weekly trend, per-lead drill-down",
+    "items": [
+      "**✨ Reporting tab** — Engagement, rep performance, trend, and the enrolled-leads roster now live in a full \"Reporting\" tab next to \"Builder\", instead of a cramped side drawer.",
+      "**✨ Rep performance** and **✨ weekly trend** tables — new views on top of data that already existed, now visible for the first time.",
+      "**✨ Roster search, sort, and pagination** — find a lead fast and page through large rosters a page at a time.",
+      "**🐛 Per-lead activity** — click a lead in the roster to see their own send/reply history inline, replacing the old separate \"Activity\" feed that didn't connect to any specific lead."
+    ]
+  },
+  {
+    "version": "v13.1.7",
+    "date": "2 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Cadence builder canvas no longer gets squeezed off screen",
+    "items": [
+      "**🐛 Cadence builder** — Engagement stats and the Enrolled Leads roster moved into a \"Reporting\" drawer (next to the existing \"Activity\" button) so the flow canvas always has room to display."
+    ]
+  },
+  {
+    "version": "v13.1.6",
+    "date": "2 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Enrolled leads list no longer feels like it disappears while scrolling",
+    "items": [
+      "**🐛 Enrolled leads list** on a cadence now scrolls with the rest of the page instead of its own small scroll box, which could make it seem to vanish mid-scroll."
+    ]
+  },
+  {
+    "version": "v13.1.5",
+    "date": "2 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Cadence reporting cleanup: engagement panel redesign, opt-out rate, stage visibility",
+    "items": [
+      "**🐛 Engagement panel** redesigned — email, SMS, and manual steps now show in one merged table per cadence step instead of two disconnected ones, and manual email/SMS steps finally report their real send/completion counts.",
+      "**✨ Opt-out rate** now shows as a KPI on every cadence's stats.",
+      "**🐛 Enrolled leads panel** on a cadence is now open by default and shows a stage breakdown at a glance, instead of requiring a click to see what stage leads are at.",
+      "Removed the Communications tab added in v13.1.3 — it duplicated the existing Activity Monitor."
+    ]
+  },
+  {
+    "version": "v13.1.4",
+    "date": "2 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Cadence copy opened to every role, cleaner performance snapshot, real pagination",
+    "items": [
+      "**🐛 Copy cadence** is now available to every role, not just Pod Admin and above — matching cadence creation itself.",
+      "**🐛 Performance snapshot** on the Sales Cadences page no longer counts archived cadences, so leftover test cadences don't skew the numbers.",
+      "**🐛 Communications tab** now has real page controls showing the true result count, replacing the earlier open-ended loading button."
+    ]
+  },
+  {
+    "version": "v13.1.3",
+    "date": "2 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Communications tracking, enroll-time warnings, vertical tagging",
+    "items": [
+      "**✨ Communications tab** — a new cross-lead feed in the Analytics Hub showing every email, SMS, WhatsApp, and call in one place, filterable by pod/rep/channel/date.",
+      "**✨ Enroll-time warnings** — enrolling leads into a cadence now warns (without blocking) if a sender's mailbox is disconnected or the lead's vertical doesn't match the cadence's.",
+      "**✨ Vertical tagging** — leads and cadences can now be tagged with an optional vertical, editable from the Lead Detail page and Cadence Rules settings.",
+      "Fixed a slow query on the Leads Hub's company filter, and a flaky \"Couldn't load leads\" error caused by a stale request race."
+    ]
+  },
+  {
+    "version": "v13.1.2",
+    "date": "2 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Remove from cadence, manual SMS, hard-stop steps, cadence roster + CSV",
+    "items": [
+      "**✨ Remove a lead from a cadence** — pull one lead out of an active enrollment without archiving the whole cadence; re-enroll them again anytime.",
+      "**✨ SMS can be kept manual** — an SMS step can now require rep review/edit before sending, the same as the existing manual-email step.",
+      "**✨ Hard-stop manual steps** — any manual step (task, manual email, manual SMS) can be set to wait for the rep indefinitely instead of auto-advancing on a missed deadline.",
+      "**✨ Cadence roster + CSV export** — see every enrolled lead's current step and status in one list, and download it as a raw CSV."
+    ]
+  },
+  {
+    "version": "v13.1.1",
+    "date": "1 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Cadence creation + enrollment opened to every role",
+    "items": [
+      "**✨ Anyone can create a cadence** — cadence creation is no longer limited to Pod Admins and above.",
+      "**✨ Anyone can enroll their own leads** — enrolling a lead into a cadence that sends as the lead's own rep is now open to every role, not just Pod Admins and the cadence owner.",
+      "Cadences that always send as their owner still require owner-or-Super-Admin to enroll into, unchanged."
+    ]
+  },
+  {
+    "version": "v13.1.0",
+    "date": "1 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Manual-email cadence steps — rep review before sending",
+    "items": [
+      "**✨ Require approval before sending** — any email step in a cadence can now be set to pause for the lead's rep to review and edit before it sends, instead of sending automatically.",
+      "**✨ Edit before you send** — the rep sees the drafted email in their Tasks list and can change the subject/body before approving.",
+      "**✨ Fully tracked** — an approved send counts the same as an automated one in cadence reporting (opens, clicks, replies).",
+      "A missed deadline never sends automatically — the step is skipped, never sent without approval."
+    ]
+  },
+  {
+    "version": "v13.0.6",
+    "date": "1 Oct 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Cadence reporting — SMS/WhatsApp, cross-cadence comparison, per-rep",
+    "items": [
+      "**✨ SMS/WhatsApp engagement** — delivery and reply rate now show for text steps, alongside email open/click/reply.",
+      "**✨ Cross-cadence comparison** — the cadence list shows a ranked table (sent/open%/click%/reply%) so you can see which cadence actually performs best.",
+      "**✨ Per-rep performance** — see which rep's sends on a cadence convert best.",
+      "**✨ Opt-out visibility** — leads who unsubscribed or opted out now show in the exit-reasons breakdown."
+    ]
+  },
+  {
+    "version": "v13.0.4",
+    "date": "30 Sep 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "Shareable cadence links",
+    "items": [
+      "**✨ Cadence links** — every cadence can now be opened directly by link, instead of only from the cadence list. Useful for sharing a specific cadence with a teammate."
+    ]
+  },
+  {
+    "version": "v13.0.3",
+    "date": "30 Sep 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "warning"
+      },
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "title": "SMS phone-format correction, cadence layout toggle, editable webhook URL",
+    "items": [
+      "**🔧 SMS/WhatsApp sends** — destination phone numbers are now sent in proper international format. **Known issue:** SMS to non-Indian numbers is still failing on Alternate Messenger's side even after this fix — under investigation with Alternate Messenger, not yet resolved.",
+      "**✨ Cadence builder** — a new toolbar toggle re-arranges the whole graph vertically or horizontally, useful once a cadence has a lot of steps.",
+      "**✨ Aircall Webhook URL** — now editable in Control Center → Integrations → Dialer."
+    ]
+  },
+  {
+    "version": "v13.0.2",
+    "date": "30 Sep 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Cadence Sandbox fix + safer security rollout defaults",
+    "items": [
+      "**🔧 Cadence Sandbox test-lead enrollment** — fixed a server error that stopped Playground's \"Cadence Test\" tab from working. **🔧 Security rollout** — the safe default for new checks now lives in code, so a deploy alone can never turn on a check before its logs have been reviewed."
+    ]
+  },
+  {
+    "version": "v13.0.1",
+    "date": "30 Sep 2026",
+    "family": "13.0",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "warning"
+      }
+    ],
+    "title": "Aircall webhook token setting",
+    "items": [
+      "**🔧 Aircall webhook token** — Control Center → Integrations → Dialer now has a **Webhook Token** field, so call events from Aircall can be verified. The saved token is never shown back."
+    ]
+  },
+  {
+    "version": "v13.0.0",
+    "date": "30 Sep 2026",
+    "family": "13.0",
+    "kind": "major",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🔒 SECURITY",
+        "variant": "danger"
+      }
+    ],
+    "title": "Research-led cadences, emails on Lead Detail, and tighter access to every lead",
+    "items": [
+      "**✨ Manual steps inside a cadence** — a new **Task** step gives the rep a research, LinkedIn or other hand-done task. The cadence waits for them, and the outcome they pick (e.g. *Accepted* / *Not accepted*) decides what comes next. Tasks show the message to copy and the outcome buttons in **My Tasks** and on the lead.",
+      "**✨ Smarter cadences** — branch on a lead field (e.g. job title → the Marketing or Ops email), waits in days, formatted emails with tables, and research merge fields (`{{research_hook}}`, `{{research_opening}}`, `{{rep_name}}`).",
+      "**✨ Cadence Rules** — stop when the lead replies (email, SMS or WhatsApp) or books a meeting, cap the length (e.g. 15 days), get a *Re-engage* task 60 days later for leads who engaged, and send as the lead's own rep. Text steps are skipped for leads with no phone number.",
+      "**✨ Copy a cadence** in one click, and see manual steps, outcomes and early exits in the Engagement panel.",
+      "**✨ Emails open right inside Lead Detail** — click an email to read the whole conversation, reply or write a new one without leaving the lead.",
+      "**🔒 Access follows the lead (rolling out this week)** — you'll only be able to open leads assigned to you; Pod Admins can view any lead but only change their own pod's. It covers details, emails, calls, notes, tasks and attachments, and removing someone's access takes effect within a minute.",
+      "**🔒 Demo login removed**, and incoming Aircall, Nylas and Alternate Messenger events are now checked for authenticity (being switched on per integration this week)."
+    ]
+  },
+  {
+    "version": "v12.7.18",
+    "date": "29 Sep 2026",
+    "family": "12.7",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "items": [
+      "**✨ New**: Lead Detail now has an Emails card — every email sent to or received from the lead, with Sent / Opened / Clicked / Replied stats and a Cadence or Campaign tag on each.",
+      "**🐛 Fixed**: when a Lead is merged or deleted in Salesforce, the CRM now re-links it by email (or recreates it) instead of failing every push against the old record."
+    ]
+  },
+  {
+    "version": "v12.7.17",
+    "date": "29 Sep 2026",
+    "family": "12.7",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🔧 CHANGE",
+        "variant": "info"
+      }
+    ],
+    "items": [
+      "**Changed**: reassigning a lead that has no meeting yet now makes the new person its only owner — SDR or AE. After a meeting is booked, an AE taking over still keeps the SDR who booked it."
+    ]
+  },
+  {
+    "version": "v12.7.16",
+    "date": "29 Sep 2026",
+    "family": "12.7",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "items": [
+      "**Fixed**: the lookalike \"Meeting Scheduled\" call outcome no longer comes back when outcome settings have been saved — use **Meeting Booked**."
+    ]
+  },
+  {
+    "version": "v12.7.15",
+    "date": "29 Sep 2026",
+    "family": "12.7",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "items": [
+      "**Fixed**: a lookalike \"Meeting Scheduled\" call outcome saved the meeting without moving the lead to Meeting Scheduled — use **Meeting Booked**; tagging a call \"Discovery Call / Meeting Set\" in Aircall now moves the lead to Meeting Scheduled; reassigning a lead now replaces the previous SDR instead of adding a second one; SDRs advance one stage at a time. **Added** on Lead Detail: full cadence status with reasons, Won/Lost notes and changing an outcome, a confirm before regenerating research."
+    ]
+  },
+  {
+    "version": "v12.7.14",
+    "date": "28 Sep 2026",
+    "family": "12.7",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "items": [
+      "**Fixed**: a research-requirement setting could be silently skipped when changing a lead's stage from the Lead Detail page. **Added**: Company Phone is now visible and editable on Contact Card, any phone number can be corrected after it's set, a working \"Message\" button, and tasks can now have a due time."
+    ]
+  },
+  {
+    "version": "v12.7.13",
+    "date": "28 Sep 2026",
+    "family": "12.7",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "items": [
+      "**Added**: campaigns can now be renamed (pencil icon in the Campaigns list) — fixes the ones stuck with a generic auto-generated name from before real names were required. Old campaigns that matched a saved template were renamed automatically where possible."
+    ]
+  },
+  {
+    "version": "v12.7.12",
+    "date": "28 Sep 2026",
+    "family": "12.7",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "items": [
+      "**Fixed**: the Help Hub no longer goes blank (a bad release-notes entry from the previous release crashed it for everyone); the mogambo hash unlock now actually shows Pipeline & CSM instead of silently doing nothing."
+    ]
+  },
+  {
+    "version": "v12.7.11",
+    "date": "28 Sep 2026",
+    "family": "12.7",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "items": [
+      "**Fixed**: the Calendar's search and rep filter now actually filter the Month/Week grid (previously only the List view responded); campaigns now have a real \"Campaign name\" field instead of all showing the same template text as their name. **Changed**: Pipeline & CSM Portal is now hidden from everyone, reachable only via a one-time hash unlock."
+    ]
+  },
+  {
+    "version": "v12.7.10",
+    "date": "28 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "summary": "**Fixed**: Super Admins and Pod Admins can now see every campaign in their scope, not just their own. **Added**: a \"Run By\" column and \"My campaigns/cadences only\" toggles; sortable columns across Reports, Activity Monitor, Pods, AE Pipeline, Leaderboard, Users & Roles, CSM Portfolio, Upload History, Daily Digest and Email Campaigns; a calendar-invite usage stat in Activity Monitor; and a guided tour for the Lead Activity panel."
+  },
+  {
+    "version": "v12.7.9",
+    "date": "25 Sep 2026",
+    "family": "12.7",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "items": [
+      "**Fixed**: a Lead Activity date-filter bug that could show far more leads than actually matched. **Added**: email history (count + open/click status) on each Lead Activity row and in its timeline, plus a header count and per-lead warning marker for connected calls with no logged outcome."
+    ]
+  },
+  {
+    "version": "v12.7.8",
+    "date": "25 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "summary": "**Added**: a per-rep filter and a Lead Activity drill-down panel in Analytics Hub, plus multi-SDR selection in Export Leads. **Fixed**: the batch dropdown now shows the real file name instead of the upload date, and an SDR can no longer see another pod's upload batches. AE Pipeline and CSM Portal are temporarily hidden while that area is reworked."
+  },
+  {
+    "version": "v12.7.7",
+    "date": "24 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Fixed**: Growth Intelligence no longer shows a CSM the entire org's pipeline data — CSMs now correctly see no lead data there, since leads aren't a CSM's unit of work."
+  },
+  {
+    "version": "v12.7.6",
+    "date": "24 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "summary": "**Added**: the Public API card now shows how many times your key has been used and when. **Fixed**: the CSM filter in CSM Portal now shows up whenever there's at least one CSM, and Activity Monitor's rep filter now includes CSMs and AEs, not just SDRs."
+  },
+  {
+    "version": "v12.7.5",
+    "date": "24 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Fixed**: Analytics Hub now counts meetings the Leaderboard already counted correctly, several date fields no longer show \"Invalid Date\" on Safari, and Control Center's Automation settings refresh right after you save. Also added an automatic network-quality flag for Aircall calls."
+  },
+  {
+    "version": "v12.7.4",
+    "date": "22 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Fixed**: the \"someone tried to sign in\" access-request email now goes to one admin instead of CC'ing every Super Admin."
+  },
+  {
+    "version": "v12.7.3",
+    "date": "22 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🔧 CHANGE",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Removed**: the Active Lead Cap no longer blocks assigning leads to an SDR — this deprecated limit has been retired org-wide."
+  },
+  {
+    "version": "v12.7.2",
+    "date": "22 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Fixed**: the real cause of Control Center showing a teammate's old POD — the Users list cache wasn't clearing on a POD change, not just a display timing issue."
+  },
+  {
+    "version": "v12.7.1",
+    "date": "22 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Fixed**: a deleted lead no longer reappears via a direct link; moving an SDR between PODs now confirms it worked and updates everywhere without a refresh; bulk-unassign shows progress instead of going silent."
+  },
+  {
+    "version": "v12.7.0",
+    "date": "17 Sep 2026",
+    "family": "12.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      }
+    ],
+    "summary": "**CSM Portal: stakeholder mapping, an engagement timeline, and CSM-manager oversight** — tag POC/Billing/Champion contacts, log Onboarding/QBR/Renewal milestones, and a CSM with reportee CSMs can now see her team's combined portfolio."
+  },
+  {
+    "version": "v12.6.9",
+    "date": "16 Sep 2026",
+    "family": "12.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**CSM Portal Owner/CSM columns now show a name even without a Alternate CRM login** — and automatically link up once that person registers."
+  },
+  {
+    "version": "v12.6.8",
+    "date": "16 Sep 2026",
+    "family": "12.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Super Admins now see the Owner column and Inbox pagination too** — the fix in v12.6.7 only rebuilt the bundle CSMs use; Super Admins load CSM Portal through a separate bundle that wasn't rebuilt."
+  },
+  {
+    "version": "v12.6.7",
+    "date": "16 Sep 2026",
+    "family": "12.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      }
+    ],
+    "summary": "**CSM Portal Inbox and Portfolio now show an Owner column** alongside CSM — a Salesforce Account Owner is always set, even on accounts where a CSM hasn't been assigned yet."
+  },
+  {
+    "version": "v12.6.6",
+    "date": "16 Sep 2026",
+    "family": "12.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Sync Log fix** — corrected historical logs that incorrectly showed \"Pushed to SF\" for records that were actually pulled in; CSM Portal Inbox is now paginated."
+  },
+  {
+    "version": "v12.6.5",
+    "date": "16 Sep 2026",
+    "family": "12.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Salesforce Sync Log now shows pull vs. push clearly**, with a safer confirm before turning on Opportunity/Account pull; fixed account health scores stuck at \"Critical\", CSM Portal slow loads, and calls that couldn't be logged without a deal yet. Plus a flat CSM nav, merged Pipeline hub, and call logging (was previously undocumented)."
+  },
+  {
+    "version": "v12.6.0",
+    "date": "15 Sep 2026",
+    "family": "12.6",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      }
+    ],
+    "title": "Power Dialer call scripts, campaign email analytics, My Tasks page",
+    "items": [
+      "**✨ Power Dialer call scripts** — every card can carry its own talking points, written per-lead or set as a default on a Sales Cadence \"call\" step. Your own version always wins if you've written one.",
+      "**✨ Email Campaigns now show opens and clicks** — right in the campaign list, and per recipient when you open one, using the same tracking Activity Monitor's Email tab already had.",
+      "**✨ My Tasks** — a new page listing every task assigned to you across every lead, filterable Open/Done/All, with complete/snooze/jump-to-lead inline."
+    ]
+  },
+  {
+    "version": "v12.5.2",
+    "date": "15 Sep 2026",
+    "family": "12.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Admins no longer act as the owning AE/CSM** on calls, deals, touches, or renewals; AE Pipeline gained an owner column and a Won/Lost/Open chart; fixed a closed deal not updating its stage."
+  },
+  {
+    "version": "v12.5.1",
+    "date": "15 Sep 2026",
+    "family": "12.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Bulk-assign accounts to a CSM** from Portfolio; fixed unstyled AE Pipeline/CSM Portal dropdowns and date fields, a silent no-op closing a deal with no close date, an incomplete health-score breakdown, and lost Audience Manager backfill progress on restart."
+  },
+  {
+    "version": "v12.5.0",
+    "date": "15 Sep 2026",
+    "family": "12.5",
+    "kind": "major",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Salesforce write-back guardrails, smarter sign-in, Power Dialer fixes",
+    "items": [
+      "**✨ Salesforce write-back guardrails** — Stage is now a real dropdown pulled from your Salesforce picklist, and nothing pushes to Salesforce until a Super Admin turns it on in Control Center. Push failures now show right on the deal.",
+      "**✨ Sign-in page**: if you're not set up yet, your admin is notified automatically — no more dead-end \"contact an admin.\" Also fixed the page's responsive layout and added real Terms of Use / Privacy Policy pages.",
+      "**🐛 Fixed a Power Dialer Call List count** that could show leads you couldn't actually dial.",
+      "**✨ The Power Dialer call card now shows the last note** left on a lead, not just the outcome."
+    ]
+  },
+  {
+    "version": "v12.4.0",
+    "date": "11 Sep 2026",
+    "family": "12.4",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      }
+    ],
+    "title": "AE Pipeline + CSM Portal Beta",
+    "items": [
+      "**✨ AE Pipeline** — track your Opportunities, log calls per deal, and close deals with a quick handover note that flows to your CSM and pushes the win to Salesforce.",
+      "**✨ CSM Portal (beta)** — an at-risk inbox, your account portfolio, and a 360° view of each account with handover notes, touch-logging, champion-departure tracking, and a manual health override.",
+      "**✨ New CSM role**, plus AE and CSM demo sign-in buttons.",
+      "**✨ Sign-in page copy updated** to reflect Alternate CRM refining leads into Salesforce-ready pipeline."
+    ]
+  },
+  {
+    "version": "v12.3.8",
+    "date": "10 Sep 2026",
+    "family": "12.3",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      }
+    ],
+    "summary": "**Audience Manager now stays in sync on lead updates**, not just first-time sync — a phone/name/status change on an already-synced lead used to go stale there silently."
+  },
+  {
+    "version": "v12.3.7",
+    "date": "10 Sep 2026",
+    "family": "12.3",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Fixed the Help Hub \"What's New\" tab showing stale content in production** — the release-notes bundle wasn't rebuilt after the previous update."
+  },
+  {
+    "version": "v12.3.6",
+    "date": "10 Sep 2026",
+    "family": "12.3",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "info"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Redesigned sign-in page, SMS Campaigns via Alternate Messenger, email signature toggle",
+    "items": [
+      "**✨ The sign-in page has a whole new look** — same Google sign-in and demo access underneath, with a bit more personality (and a hidden surprise for the curious).",
+      "**✨ SMS Campaigns is now a tab in Sales Tools**, opening straight into Alternate Messenger.",
+      "**✨ Choose whether to include your saved signature when sending a campaign email** — on by default.",
+      "**🐛 Fixed an error some Account Executives could hit loading the \"All Batches\" analytics view.**",
+      "**🐛 Fixed a brief loading glitch and a color styling issue in View-As mode.**"
+    ]
+  },
+  {
+    "version": "v12.2.8",
+    "date": "9 Sep 2026",
+    "family": "12.2",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Analytics Hub dropdowns actually fixed this time",
+    "items": [
+      "**🐛 The Analytics Hub's dropdowns look properly styled now** — POD/Batch pickers and Ask AI's new suggestion list no longer look like plain native browser controls. This was the real cause of the original \"buttons look transparent\" report.",
+      "**🐛 Ask AI's suggestion dropdown no longer closes itself the instant you open it** — a timing issue in yesterday's release."
+    ]
+  },
+  {
+    "version": "v12.2.7",
+    "date": "9 Sep 2026",
+    "family": "12.2",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ IMPROVEMENT",
+        "variant": "default"
+      }
+    ],
+    "title": "Ask AI gets smarter suggestions; the tab bar finally shows where you are",
+    "items": [
+      "**✨ Ask AI's search box now suggests as you type** — a live list of your saved reports and suggested questions, filtered as you type, replaces the old fixed row of examples.",
+      "**🐛 The Dashboard / Ask AI / Reports tabs never highlighted which one you were on** — fixed. This also explains why Ask AI's \"edit filters\" button looked broken: it was switching tabs correctly the whole time, just without showing you it had.",
+      "**🔖 Saved Reports look like real, clickable items now**, instead of plain unstyled text."
+    ]
+  },
+  {
+    "version": "v12.2.6",
+    "date": "9 Sep 2026",
+    "family": "12.2",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Salesforce sync fix for AEs; a cleaner Analytics Hub",
+    "items": [
+      "**🐛 Salesforce sync was failing for leads assigned to an AE** — the sync rejected the whole lead over a field only meant for SDR names. Fixed, and Salesforce's Lead Owner is now set correctly for AE-owned leads.",
+      "**📊 Report Logs now has pagination** instead of silently cutting off at 200 rows.",
+      "**✨ The Analytics Hub looks more consistent** — the Dashboard filter panel, Ask AI, and the Reports page now share the same components as the rest of the app, and Ask AI's \"edit filters\" button actually works now."
+    ]
+  },
+  {
+    "version": "v12.2.5",
+    "date": "9 Sep 2026",
+    "family": "12.2",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "✨ IMPROVEMENT",
+        "variant": "default"
+      }
+    ],
+    "title": "SDR Performance moves to the new design; three old pages retired",
+    "items": [
+      "**✨ SDR Performance now matches the rest of the app** — opening someone's performance from the Leaderboard shows the new design instead of the old plain page.",
+      "**🧹 Three admin-only pages you were never using are gone** — Upload Center, System Logs, and a couple of unlinked internal test pages had already been fully replaced inside Control Center; this removes the old copies. Everything they did is in Control Center's Data and Monitoring tabs."
+    ]
+  },
+  {
+    "version": "v12.2.4",
+    "date": "9 Sep 2026",
+    "family": "12.2",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🧹 CLEANUP",
+        "variant": "default"
+      }
+    ],
+    "title": "Internal cleanup — nothing you will see",
+    "items": [
+      "**🧹 Removed 3,621 lines of unreachable code** — old page code left behind as those pages were rebuilt in React. Nothing you can do has changed; the app just carries less dead weight."
+    ]
+  },
+  {
+    "version": "v12.2.3",
+    "date": "9 Sep 2026",
+    "family": "12.2",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Connecting your mailbox, and a class of blank screens",
+    "items": [
+      "**🐛 \"Connect email\" didn't work** — on My Settings, clicking Connect email showed an \"undefined\" error and left you on a broken web address instead of Google's sign-in screen. Connecting from a lead's Email tab was never affected.",
+      "**🐛 Blank panels that only a reload could fix** — Alternate CRM's newer screens are mini-apps the page swaps in and out, and when the page rebuilt the space one was living in, that screen kept drawing itself somewhere invisible. It had happened on Calendar and on the Email tab; all 15 of those screens now notice and redraw themselves, so the whole family of blank screens is gone.",
+      "**🐛 Scheduled email campaigns would not have sent** — a campaign set for a future date or a repeating cadence would have been skipped every time it came due. Nothing was missed (there were none yet) and campaigns sent immediately were never affected.",
+      "**🐛 The Email tab loads a much smaller stylesheet** — a build quirk had been stacking a fresh copy of the Email tab's styles into the same file on every release; nine copies had piled up and everyone opening a lead's Email tab downloaded all of them.",
+      "**🐛 Real errors were buried in our logs** — any request over a second was filed as an error even when it succeeded, hiding genuine failures underneath. Only real failures are logged as errors now."
+    ]
+  },
+  {
+    "version": "v12.2.2",
+    "date": "9 Sep 2026",
+    "family": "12.2",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🔒 SECURITY",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Calling, email sending, and a clearer set of settings screens",
+    "items": [
+      "**🐛 Dialling could fail with a server error and then block you for minutes** — if two of your leads shared the same phone number (often the same line saved once plainly and once with an extension), Alternate CRM got confused about which call was which and left your previous call looking like it was still running, so every attempt said \"You already have an active call in progress\" for about six minutes.",
+      "**🐛 Sending email needed a full page refresh between leads** — opening one lead's Email tab then going straight to another left the tab blank until you reloaded the whole page.",
+      "**🐛 Your mailbox could say \"Connected\" while sending was actually failing** — if a campaign or cadence email was rejected because your mailbox isn't authorised to send, My Settings kept a green \"Connected\" badge. It now shows \"Reconnect needed\" with a Reconnect email button, and displays your real address instead of \"your mailbox\".",
+      "**🐛 Email Branding and Email Signature are one card** — they controlled the same thing (what gets added to the foot of your emails), so they're merged into a single \"Email Sign-off\" card.",
+      "**🐛 The Leaderboard and SDR performance pages use proper icons** — the performance drill-down showed emoji instead of the app's own icon set, which looked different on every computer.",
+      "**🐛 Control Center described pages that no longer exist** — it called itself \"additive alongside the existing Settings, Admin, Upload Center and System Logs pages\", all long gone. POD Admins, who see a single Team & Access tab, were told about four pages they don't have.",
+      "**🔒 Only Super Admins can change integration settings** — POD Admins could still change org-wide Salesforce, Aircall and Alternate Messenger settings by API even though the screen was only shown to Super Admins. Your Alternate Messenger API key is now encrypted at rest too, like every other stored credential."
+    ]
+  },
+  {
+    "version": "v12.2.1",
+    "date": "9 Sep 2026",
+    "family": "12.2",
+    "kind": "patch",
+    "tags": [
+      {
+        "label": "🔒 SECURITY",
+        "variant": "indigo"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Permission fixes, a tidier POD Admin menu, signatures for Super Admins",
+    "items": [
+      "**🔒 POD Admins can no longer act outside their own POD** — a POD Admin could previously create a user with any role (including Super Admin) and delete or revoke login access for anyone in the org. They can now only add, delete or change access for SDRs and AEs in their own POD.",
+      "**🔒 Cadences are fully owner-protected** — enrolling leads, adding a sandbox test lead, and retrying, advancing or skipping an enrollment are now owner-only, alongside the edit/publish/archive rules from v12.2.0. A cadence sends from its owner's mailbox, so this stops anyone else causing email to go out under your name.",
+      "**🐛 Daily Digest could open empty with \"Failed to load\"** — if your day had started but it was still the previous day in UTC (in India, midnight to 5:30am), the page asked for a date the server rejected and showed no numbers at all.",
+      "**🐛 A cleaner menu for POD Admins** — \"Settings\" and \"Admin\" are gone; everything they were used for lives in Control Center → Team & Access, with personal preferences in My Settings.",
+      "**🐛 Super Admins can set an email signature** — My Settings is the only place to set one and it was hidden from Super Admins, so their outgoing mail had no signature and no way to add one."
+    ]
+  },
+  {
+    "version": "v12.2.0",
+    "date": "9 Sep 2026",
+    "family": "12.2",
+    "kind": "major",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "🔒 SECURITY",
+        "variant": "indigo"
+      }
+    ],
+    "title": "Merge-field picker, cadence email preview, ownership rules, Leaderboard + My Settings rebuilt",
+    "items": [
+      "**🐛 Campaign emails were arriving with raw HTML in them** — recipients saw literal `<p>` tags instead of formatted paragraphs. Campaign bodies now send as real formatted email. Cadence step emails were never affected.",
+      "**✨ Merge fields are clickable now** — the campaign composer and the template editor both show `{{first_name}}`-style chips that insert at your cursor, in the subject or the body. No more typing them by hand.",
+      "**✨ Preview what a cadence actually sends** — open any email step and hit \"Preview email\" to read the real subject and body with sample values filled in. Works even with read-only access, where the step card used to cut the subject off with no way to see the rest.",
+      "**🔒 Cadences and templates now have owners** — a cadence someone else owns is labelled with their name and opens read-only, with a note on who to ask. Only its owner or a Super Admin can edit, publish, pause or delete it; previously any Pod Admin could change anyone's. Templates follow the same rule, and you can duplicate someone else's as your own.",
+      "**✨ Safer deletes** — deleting a shared template now asks first, and deleting a live cadence warns you it can still be enrolling leads.",
+      "**✨ Daily Digest realigned** — KPIs grouped Outcomes-first then Activity & outreach, the card that repeated the same week-over-week comparison twice removed, Notable events moved beside Pipeline flow, and the live pipeline snapshot now clearly marked as \"right now\" rather than part of the selected day.",
+      "**✨ Leaderboard and My Settings rebuilt** — same data and features, faster and consistent with the rest of the app. The signature editor now handles images and company logos properly.",
+      "**✨ Pod Admins get Control Center** — the Team & Access section, for managing your pod's users and roles."
+    ]
+  },
+  {
+    "version": "v12.1.0",
+    "date": "8 Sep 2026",
+    "family": "12.1",
+    "kind": "major",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Cadence for every role, merged Campaigns view, Daily Digest React port",
+    "items": [
+      "**✨ Cadence is now visible to every role**, read-only for non-admins — inspect a cadence's steps and config without being able to edit/publish/archive/delete it. A guided tour explains this the first time.",
+      "**✨ Campaigns + Performance merged** — one screen instead of two, with a single delivery-outcomes donut at the top of Campaigns.",
+      "**✨ Cadence gets its own performance donut** — enrollment outcomes across every cadence at a glance.",
+      "**✨ Daily Digest, rebuilt** — a modern page with two new metrics (Campaigns Sent, Cadence Enrollments) and its own guided tour.",
+      "**✨ Export Leads can filter by upload batch and/or date range**, not just SDR.",
+      "**🐛 Fixed**: a single lead couldn't be deleted (broken in production). **Fixed**: Alternate Messenger settings could silently lose a saved credential on save with a blank field. **Fixed**: Users & PODs search icon alignment, and added a Role filter. **Fixed**: Export Leads' upload-batch filter wasn't populating."
+    ]
+  },
+  {
+    "version": "v12.0.0",
+    "date": "7 Sep 2026",
+    "family": "12.0",
+    "kind": "major",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "title": "Email Campaigns (Sales Tools) + dialer error-log fixes",
+    "items": [
+      "**✨ Email Campaigns** — a new tab inside **Sales Tools** (renamed from \"Sales Cadences\") for sending a one-off bulk email to a list of leads, open to every role. Pick recipients directly from a New Campaign button with search/filter (status, upload file, date ingested) and \"select all matching\", or from Leads Hub's own bulk-select bar.",
+      "**✨ Rich-text compose** — bold/italic, bullet/numbered lists, and links in both the compose step and saved Templates, not just plain text.",
+      "**✨ Schedule for later, or repeat** — send now, pick a one-time future date/time, or set a campaign to repeat daily/weekly/monthly. The confirm button always says what's actually about to happen (\"Send\", \"Schedule Campaign\", or \"Save & Repeat\").",
+      "**✨ Performance tab** — a donut chart of delivery outcomes (sent/failed/skipped) across all your campaigns, or drill into just one. Templates are now editable, not just deletable. The Campaigns list has status filtering and pagination.",
+      "**✨ A short guided walkthrough** points out what's new the first time you open Sales Tools.",
+      "**🐛 Fixed**: \"You already have an active call in progress\" was logged as a Critical error when it's really an expected, low-severity case (same category as two similar phrases already downgraded) — now logged as a Warning. **Fixed** a race between two concurrent calls for the same lead that could leave the database session in a broken state, surfacing as a raw 500 error."
+    ]
+  },
+  {
+    "version": "v11.12.1",
+    "date": "4 Sep 2026",
+    "family": "11.12",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Fixed two causes of \"You already have an active call in progress\" firing when no call was actually blocking you.** Every phone number with an extension (e.g. \"ext. 2227\") could never self-heal — the dialer's own self-check for whether your last call had ended was breaking on the extension digits, so it fell through to a slower fallback for every one of these numbers. Separately, a request timing gap let two dial attempts in quick succession both slip past the one-call-at-a-time guard, so a fast re-click could get incorrectly blocked while an already-finished call was still being recorded. Both fixed."
+  },
+  {
+    "version": "v11.11.5",
+    "date": "3 Sep 2026",
+    "family": "11.11",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Calls that failed with \"could not receive the call\" on the first try now connect without you re-clicking.** This was the most frequent dialer error in production — 665 in the last two weeks — and it was transient: 89% of those numbers connected when the SDR simply dialled again. The system now does that retry for you. **\"At least 1 call must be logged\" no longer blocks a lead that already has a call.** If you spoke to someone but the outcome never got saved, you can now move the lead to Meeting Scheduled — an answered call counts as a logged call. This was affecting 1,305 leads. **Booking a meeting from the new Lead Details view now advances the stage** the same way the classic view does. **Opening the Calls tab on a lead with many calls no longer risks slowing the app for everyone.** **Granting someone calling or messaging access now emails them a link to sign in.**"
+  },
+  {
+    "version": "v11.10.5",
+    "date": "2 Sep 2026",
+    "family": "11.10",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Fixed a data-migration bug that granted or denied SMS/WhatsApp access based on the wrong signal.** Some Aircall-only callers with no Alternate Messenger agent identity had been incorrectly granted SMS/WhatsApp access, while some real, already-active Alternate Messenger agents had been incorrectly denied it. Both are now corrected based on whether a Alternate Messenger agent ID is actually configured."
+  },
+  {
+    "version": "v11.10.4",
+    "date": "2 Sep 2026",
+    "family": "11.10",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🧹 CLEANUP",
+        "variant": "warning"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**User Access now has filters and pagination** (5 users per page, filter by provider/capability/agent ID) and uses the full page width so chips no longer wrap over each other. **\"＋ Assign Alternate Messenger Agent\" opens as a side panel** instead of a form that could render below the fold. **Alternate Messenger is now selectable as a Calling Provider**, matching what the per-user override already supported. A dropped-connection error on a grant/revoke click now shows a plain message with a Retry button instead of a raw browser error."
+  },
+  {
+    "version": "v11.10.3",
+    "date": "2 Sep 2026",
+    "family": "11.10",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**\"＋ Assign Alternate Messenger Agent\" responds sooner after opening the page** — it no longer waits on unrelated settings elsewhere on the page to finish loading first. Calling & Messaging can still take a few seconds to fully settle on this environment; that's a separate, known rough edge, not something this release claims to have solved."
+  },
+  {
+    "version": "v11.10.2",
+    "date": "2 Sep 2026",
+    "family": "11.10",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**\"＋ Assign Alternate Messenger Agent\" could be unresponsive on the first click** if it landed before the User Access list finished its initial load — fixed."
+  },
+  {
+    "version": "v11.10.1",
+    "date": "2 Sep 2026",
+    "family": "11.10",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🧹 CLEANUP",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Calling and messaging settings, consolidated into one place** — the separate 📞 Dialer and 💜 Alternate Messenger tabs are now one \"📞 Calling & Messaging\" tab, and the two overlapping per-user grant tables are now one User Access table listing everyone. Admin → Users no longer carries its own unvalidated copy of the same dialer/Alternate Messenger fields — just a read-only summary linking to the one real editor. The settings page now also warns above the grant list if a channel is granted but the org-level vendor config underneath it isn't complete yet."
+  },
+  {
+    "version": "v11.10.0",
+    "date": "2 Sep 2026",
+    "family": "11.10",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Admins can switch SMS and WhatsApp on per person** — open Settings → 💜 Alternate Messenger (or 📞 Dialer for Aircall) and click the chip next to someone's name to grant or revoke Calling, SMS, or WhatsApp. Messaging no longer depends on the dialer, so a rep who calls through Aircall can now message from Alternate CRM, and granting the dialer no longer quietly grants WhatsApp. Each person can also be on a different messaging provider from their calling one, and the settings page now names the exact missing field when a channel isn't ready to send. Also fixes: WhatsApp replies being recorded as SMS and attached to no rep, cadence SMS steps failing as \"not configured\" because they read the calling caller-ID instead of the messaging sender, and reps being able to switch their own dialer access back on after an admin switched it off."
+  },
+  {
+    "version": "v11.9.4",
+    "date": "2 Sep 2026",
+    "family": "11.9",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**A consistent look across the whole app** — every dropdown, tab, empty state, badge, checkbox, switch, spinner, avatar, search box, and modal now shares one design across Leads, Lead Details, PODs, Power Dialer, Sales Cadences, Activity Monitor, Help, Analytics, Calendar, Dashboard, and Email. Also fixes 5 bugs this surfaced: two priority-dot menus staying open at once, a filter dropdown occasionally not opening the next step, a jarring dark border on the global search box, a Timezone picker appearing stuck behind the Send Window popup instead of on top of it, and a lead's detail page mislabeling its source as \"Manual\"."
+  },
+  {
+    "version": "v11.9.3",
+    "date": "1 Sep 2026",
+    "family": "11.9",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Dropdowns and date/time pickers now match everywhere** — Sales Cadences, PODs, Power Dialer, Analytics, Leads, and Calendar all share the same searchable, consistently-styled control. Also: the AI research assistant now automatically tries a different model if a response comes back in an unexpected format instead of occasionally failing."
+  },
+  {
+    "version": "v11.9.2",
+    "date": "1 Sep 2026",
+    "family": "11.9",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Overnight incident fixes** — Connect Rate no longer trusts Aircall's own disposition field; Groq AI failures can no longer break Lead Detail or other pages (isolated onto their own database connection pool) and model resolution now auto-discovers a working model instead of relying on a fixed list; call recordings retry once with a fresh URL if the old one expired; Export CSV now shows an error instead of silently doing nothing; and logging a call outcome no longer leaves SDRs blocked from their next call."
+  },
+  {
+    "version": "v11.9.1",
+    "date": "1 Sep 2026",
+    "family": "11.9",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Activity Monitor UI/UX fixes** — the expand-row panel no longer breaks layout on calls with a transcript or long note, email previews show readable text instead of raw HTML, expanded rows now have a Collapse button, and call recordings play through a new redesigned audio player."
+  },
+  {
+    "version": "v11.9.0",
+    "date": "31 Aug 2026",
+    "family": "11.9",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Call Monitor is now Activity Monitor** — Super Admins and Pod Admins can see calls, emails, and SMS/WhatsApp messages across their team in one place, with per-channel filters, a searchable SDR dropdown, a calendar date-range picker, CSV export, and auto-refresh. Every dropdown and the date picker were rebuilt on Radix UI for consistent styling and correct positioning — the previous custom dropdowns didn't match the rest of the app. Also: the Calls tab's search box is now actually wired to the backend (it silently did nothing before), and call-log pod-scoping was fixed to match a lead's pod as well as the calling SDR's, so a reassigned lead's calls don't disappear from view."
+  },
+  {
+    "version": "v11.8.2",
+    "date": "31 Aug 2026",
+    "family": "11.8",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Connect Rate and Conversations now share one raised threshold (120s, up from 30s)** for calls with no logged outcome, keeping Connect Rate always ≥ Conversations. Also: this What's New list itself was stuck showing v11.6.6 as the latest entry for the last few releases — a rebuild step was missing, so newer entries never reached the deployed page even though they were written. Fixed, and backfilled the v11.8.0 entry that was skipped."
+  },
+  {
+    "version": "v11.8.1",
+    "date": "31 Aug 2026",
+    "family": "11.8",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**6 bugs reported while the team was on PTO, fixed.** Salesforce sync no longer creates a duplicate placeholder lead when sync is set to one-directional, and a narrower duplicate-record check that missed some migrated/placeholder leads is now unified. A call that placed successfully but failed to save is now retried instead of silently disappearing from your call history. Leaderboard and call-count numbers now stay in sync with each other. Disqualifying a lead as \"Other\" now lets you add a note explaining why. The Power Dialer keeps your place in the queue when you navigate away and back, and a crash in the Power Dialer (or an unusual lead timezone) no longer takes down the whole page."
+  },
+  {
+    "version": "v11.8.0",
+    "date": "26 Aug 2026",
+    "family": "11.8",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**More of Analytics Hub (beta) is now real numbers, not placeholders**: Calls Made, Connected Calls, Conversations, No Shows, and Email stats all now use the same shared definition Dashboard and Ask AI use. Metric definitions can now be drafted and previewed before publishing (Super Admin/Pod Admin), a new Overview tab gives a KPI snapshot, and Ask Analytics vNext can now answer day/week/month trend questions. Also fixes a real cross-pod data leak where naming another pod's SDR by name could still return that SDR's real numbers, and a Reports gap where some older leads silently dropped out of the Qualified/Disqualified counts."
+  },
+  {
+    "version": "v11.7.0",
+    "date": "26 Aug 2026",
+    "family": "11.7",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Super Admins can now try the new Analytics Hub (beta)** via a link on the existing Analytics Hub — same 5 key metrics, each with an Inspect view showing exactly what it means and how it's calculated, plus a way to compare against today's number. Classic Analytics Hub is unchanged and still the default. Also fixes a few Ask AI issues: batch filter was ignored on grouped questions, an unsupported breakdown (e.g. \"by POD\") silently showed the wrong number instead of saying so, and \"last month\" wasn't understood."
+  },
+  {
+    "version": "v11.6.6",
+    "date": "26 Aug 2026",
+    "family": "11.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Delete and Opt Out now ask you to confirm first**, using the app's own popup instead of a browser dialog. The assignment dropdown is now a searchable picker, and Send Email no longer bounces you to the old view. Also fixed a pod-scoping gap that let a Pod Admin see (and in one case, use) controls for a lead outside their own pod."
+  },
+  {
+    "version": "v11.6.5",
+    "date": "26 Aug 2026",
+    "family": "11.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**The app is now usable on a phone.** The sidebar is now a proper slide-out menu instead of permanently covering more than half the screen — tap ☰ to open it. Fixes every page built on the new design at once."
+  },
+  {
+    "version": "v11.6.4",
+    "date": "26 Aug 2026",
+    "family": "11.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "summary": "**Super Admins and Pod Admins can now change a lead's assignment directly from the new Lead Details view.** Also: clearer loading placeholders everywhere in the new view, including the very first page load."
+  },
+  {
+    "version": "v11.6.3",
+    "date": "26 Aug 2026",
+    "family": "11.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Found the real cause of the repeat staging crashes.** The server was accidentally starting its background jobs twice on every boot, silently doubling how often things like the email-sync job ran — no visible change, purely a backend stability fix."
+  },
+  {
+    "version": "v11.6.2",
+    "date": "26 Aug 2026",
+    "family": "11.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**You can now progress a lead through the whole pipeline from the new Lead Details view** — Disqualify, No-Show, Demo Success/Failed, Meeting Complete, Discovery calls, and Schedule Demo all work now. Also added a Sales Cadence chip, a research heat badge, a copy-opening-line button, an Enrichment Data card, a phone timezone badge, and click-to-edit contact fields. Fixed: a completed lead no longer shows a \"Follow up\" suggestion."
+  },
+  {
+    "version": "v11.6.1",
+    "date": "26 Aug 2026",
+    "family": "11.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Backend stability fix.** Found and fixed four more places where behind-the-scenes caches or background jobs could grow without limit under heavy traffic — this was causing staging to run out of memory. Also fixed the Analytics Hub's AI insight summary, which was silently broken and always showed nothing."
+  },
+  {
+    "version": "v11.6.0",
+    "date": "25 Aug 2026",
+    "family": "11.6",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "summary": "**A redesigned Lead Details page is now available to try.** Open any lead and click \"Switch to the new experience\" — built around \"what should I do next,\" with a unified activity timeline. Your current page is still there and still the default; switch back any time."
+  },
+  {
+    "version": "v11.5.25",
+    "date": "25 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      },
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "summary": "**Connect Rate was still overstated for teams using the in-app dialer** — a call auto-logged both as a dialer call and a manual call log was being counted as connected twice. Fixed. **Analytics Hub no longer loads any data by default.** Pick a POD, date range, and (optionally) a batch first — nothing fetches until you apply."
+  },
+  {
+    "version": "v11.5.24",
+    "date": "25 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Connect Rate is now more accurate** — calls marked \"Unreachable\" or a mistyped \"No Answer\" no longer count as connected, and manually-logged calls now count the same way dialer calls do. **Every number in the Analytics Hub now explains itself on hover.** The SDR table shows **\"Accounts Called\" instead of \"Leads\"**, and drops the Conversations column. **SDR lead caps are now consistent everywhere** — a hidden, unmanageable per-pod override has been removed."
+  },
+  {
+    "version": "v11.5.22",
+    "date": "25 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      },
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "summary": "**Reassigning a lead, and calls made through the in-app dialer, now update the screen and call counts right away.** **Deleting a user updates the list immediately**, and uses a proper confirmation dialog instead of a plain browser popup. Failed WhatsApp/SMS sends now show the real reason. **Fixed a staging server crash** caused by a cache that never cleaned up old entries during busy periods. New: **WhatsApp sender numbers can now be assigned per SDR**, same as calling numbers (Settings → Dialer → Agent Assignments)."
+  },
+  {
+    "version": "v11.5.23",
+    "date": "25 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**The \"Mark Opted Out\" tooltip no longer drifts out of place when you scroll**, and uses the app's own confirmation dialog instead of a browser popup. **The WhatsApp template picker's dropdown now opens under the field** instead of the center of the screen. **Fixed a rare case where the dialer's call-mode picker could fail to appear**, leaving a call stuck until it timed out."
+  },
+  {
+    "version": "v11.5.21",
+    "date": "24 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Capped how many email-inbox syncs can run at the same time in the background**, reducing memory pressure during bursts of activity on the Lead Detail page's Emails tab."
+  },
+  {
+    "version": "v11.5.20",
+    "date": "24 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🔧 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Fixed a slow memory leak in the background job scheduler** that was causing occasional server restarts, including during quiet periods with no active users."
+  },
+  {
+    "version": "v11.5.19",
+    "date": "24 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**The new searchable Assigned-To/Status picker now actually shows its options** (it briefly rendered blank right after shipping). **Deleting a user who's used the Power Dialer no longer errors** — the same underlying issue as the Pod Admin delete fix, on a different table. Also: a one-time pointer now highlights the new \"Mark Opted Out\" button for anyone who hasn't seen it yet."
+  },
+  {
+    "version": "v11.5.18",
+    "date": "24 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      },
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "summary": "**Reassigning a lead away from a departed teammate now works**, **deleting a Pod Admin no longer errors** (and warns you which pod(s) they administer first), **the Alternate Messenger dialer retries automatically on a flaky connection** instead of silently running a call with no controls, and **embedded Aircall calls log fewer duplicates/delays**. New: **leads can now be marked as opted out**, stopping all future calls, texts, and journey emails to them."
+  },
+  {
+    "version": "v11.5.17",
+    "date": "21 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**The Alternate Messenger call widget no longer goes silent mid-call.** Some SDRs could click Call, hear it ring and connect, and talk to the lead — while the timer, mute, and hangup controls never appeared, and a failed dial showed no error either. The widget's panel is now guaranteed to exist before any call can start."
+  },
+  {
+    "version": "v11.5.16",
+    "date": "21 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Dial counts no longer double-count** (two separate causes fixed), **\"Couldn't load this lead\" no longer strands you on a blank page**, **leads with no company now sort to the bottom instead of the top** (classic list, new list, and Power Dialer's group-by-company order), **the new leads list groups by company for everyone including SDRs**, and **Analytics Hub numbers now agree with each other** across views for late-night US-timezone calls. Also: a quick interactive tour now walks you through the new leads list the first time you open it."
+  },
+  {
+    "version": "v11.5.15",
+    "date": "20 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "purple"
+      }
+    ],
+    "summary": "**Call Lists + Analytics Hub for SDRs**: build a named, shareable list of leads (bulk-select via a new \"Select Leads\" mode, or \"save current filter\") and dial from it in Power Dialer. Analytics Hub is now visible to SDRs too, scoped to your own leads/calls. Also: Ask AI is hidden for SDR/AE (not self-scoped yet), correcting a dialer-logged call's outcome is confirmed working for every role and now documented in the Help guide, and the Leads page has a new \"Switch to classic view\" link."
+  },
+  {
+    "version": "v11.5.14",
+    "date": "20 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**\"Switch to the new experience\" button fixed**: clicking it on the classic Leads list reloaded the page but silently stayed on the classic list — it now actually switches to the new Leads experience."
+  },
+  {
+    "version": "v11.5.13",
+    "date": "20 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**Dial-count and dialer stability fixes**: dial counts no longer double-count auto-logged Aircall calls, real-time call status now reaches the browser for both dialer providers (was silently falling back to slow polling), the floating dialer widget no longer disappears when a second call starts mid fade-out, the No-Show modal no longer navigates to the wrong lead if reopened quickly, and the Leads list order now stays put when navigating back from a lead. Also: the Power Dialer queue list now shows each lead's company."
+  },
+  {
+    "version": "v11.5.10",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "purple"
+      }
+    ],
+    "summary": "**Weekly Changelog Digest, simplified**: the v11.5.6 \"What Shipped This Week\" email required going through the full Report Builder (scope, schedule, recipients, sender, CSV) even though almost none of that applied. Replaced with a single on/off switch in Analytics Hub → Reports — no setup, sends to every current CRM user automatically (new teammates included), off by default."
+  },
+  {
+    "version": "v11.5.8",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "warning"
+      }
+    ],
+    "summary": "**POD Management fixes**: Pod Admins can now actually see the POD Management nav link (a role-gate mismatch had it hidden), Team Roster loads faster for orgs with several PODs, revisiting the page no longer gets stuck, and Team Roster now has search and pagination."
+  },
+  {
+    "version": "v11.5.7",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "purple"
+      }
+    ],
+    "summary": "**Redesigned POD Management**: a new Team Roster view lets Pod Admins see every rep's active lead count and how long leads have sat untouched (over 24h / over 72h), sorted worst-first — click a rep to jump straight to their leads in the Leads Hub. Pod/admin/member setup moved to a Manage tab in the same page."
+  },
+  {
+    "version": "v11.5.6",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "purple"
+      }
+    ],
+    "summary": "**New weekly digest option**: Admins can now set up a \"What Shipped This Week\" email (Analytics Hub → Reports), so the team gets a short recap of what launched each week — with a link to read the full details here in Help — instead of relying on someone to check this page."
+  },
+  {
+    "version": "v11.5.5",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "⚡ PERFORMANCE",
+        "variant": "success"
+      }
+    ],
+    "summary": "**Smoother page loads, fewer stray clicks**: pages like Leads, Calendar, and the Power Dialer no longer jump around right after they finish loading. Also fixed two alert banners (the stuck-call notice and the \"log the outcome\" reminder) that could sit invisibly on top of the search bar and toolbar buttons, blocking clicks."
+  },
+  {
+    "version": "v11.5.4",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ IMPROVEMENT",
+        "variant": "purple"
+      }
+    ],
+    "summary": "**Leads is now one experience**: the older \"classic\" Leads view has been retired — everyone now always sees the redesigned Leads Hub. Also, an admin-only tool was added to permanently delete a lead's Sales Cadence history on request."
+  },
+  {
+    "version": "v11.5.3",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "⚙️ ADMIN",
+        "variant": "info"
+      }
+    ],
+    "summary": "**New admin control**: the nightly Aircall call-history sync can now be turned on or off from Settings, same as the existing Klenty sync switch — for when it needs to be paused without waiting on engineering."
+  },
+  {
+    "version": "v11.5.2",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Help & User Guide crash fixed**: opening Help could show a blank page and an error instead of the guide, caused by a bad entry in the What's New list. Also: the local-time badge next to a phone number now trusts the lead's saved country first, instead of guessing from how the number happens to be formatted — fixes a case where an Indian number written with a space (e.g. \"98105 92904\") was shown in US time."
+  },
+  {
+    "version": "v11.5.1",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Faster live call status updates**: call status on screen (ringing, connected, ended) was quietly relying on a slower backup check-in every couple of seconds instead of updating instantly, because the instant-update connection was silently failing behind the scenes. Fixed — updates should now feel snappier."
+  },
+  {
+    "version": "v11.5.0",
+    "date": "19 Aug 2026",
+    "family": "11.5",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Five dialer issues fixed**: a call blocked as \"active\" for up to 25+ seconds after you'd already hung up (the system now double-checks with Aircall instead of just waiting); auto-logged outcomes couldn't be corrected (now editable from the Calls tab); a rare crash when auto-logging a tagged call; and the timezone badge next to a phone number defaulting to India for every US lead whose number was stored without a country code."
+  },
+  {
+    "version": "v11.4.9",
+    "date": "18 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Connect rate fixed again, same day**: a call long enough to count as a real conversation could still be missed as \"connected\" if the SDR never tagged an outcome and the telephony signal wasn't the exact string the system checked for. Connect rate now always counts at least as many calls as Conversations does."
+  },
+  {
+    "version": "v11.4.8",
+    "date": "18 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Connect rate was significantly over-counted**: a call the SDR explicitly logged as \"No Answer\" or \"Wrong Number\" could still be counted as connected because of a raw telephony signal overriding it. Fixed — reported connect rates across Analytics Hub, SDR table, and the Weekly SDR Report will drop to reflect the real number. Also fixed a Leads list crash triggered by searching and navigating away in quick succession."
+  },
+  {
+    "version": "v11.4.7",
+    "date": "18 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "📊 REPORTS",
+        "variant": "default"
+      }
+    ],
+    "summary": "**Weekly SDR Report now shows connect rate and conversations per SDR**, not just calls/meetings/qualified — so the org-wide number in the report and a single team's number in the Analytics Hub don't look like they disagree when they're just different scopes."
+  },
+  {
+    "version": "v11.4.6",
+    "date": "18 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Salesforce duplicate-lead fix, extended**: the automatic push-to-Salesforce (when a lead reaches Meeting Scheduled) and the manual Sync button now also check by phone number before creating a new Salesforce Lead — closing the same duplicate-creation gap the Aircall fix addressed, for these two paths as well."
+  },
+  {
+    "version": "v11.4.5",
+    "date": "18 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "📚 INTERNAL",
+        "variant": "default"
+      }
+    ],
+    "summary": "**Backfill audit trail**: added an admin-only endpoint listing every lead the Salesforce duplicate-cleanup backfill has enriched, for auditing exactly what changed."
+  },
+  {
+    "version": "v11.4.4",
+    "date": "18 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "📚 INTERNAL",
+        "variant": "default"
+      }
+    ],
+    "summary": "**Backfill dry-run preview**: admins can now preview exactly which leads and Salesforce records the duplicate-cleanup backfill would change, before running it for real."
+  },
+  {
+    "version": "v11.4.3",
+    "date": "18 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Duplicate lead cleanup**: existing placeholder \"Unknown Caller\" leads created before yesterday's Salesforce fix are now re-checked and enriched with the real Salesforce record, instead of only preventing new ones."
+  },
+  {
+    "version": "v11.4.2",
+    "date": "18 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Salesforce duplicate-lead fix**: calling an inbound Salesforce Lead or Opportunity directly via Aircall no longer creates a duplicate placeholder lead — Alternate CRM now checks Salesforce live for the real record first. New clickable \"View in Salesforce\" / \"View Opportunity in Salesforce\" links on the lead detail page. Also fixed the SMS/WhatsApp integration health check, which was reporting \"unreachable\" even with valid credentials."
+  },
+  {
+    "version": "v11.4.1",
+    "date": "18 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Aircall dialer fixes**: call outcomes now auto-log correctly from Aircall tags, \"already have an active call\" false-blocks resolve automatically, and the Automated Reports SDR table now shows Calls Made and Meetings. Also fixed real-time caller-ID notifications and made Aircall Everywhere adoption (log in from the browser, no Desktop app needed) easier to see and use."
+  },
+  {
+    "version": "v11.4.0",
+    "date": "17 Aug 2026",
+    "family": "11.4",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
+    ],
+    "summary": "**Automated Reports rewrite** — support multiple named reports (not just one org-wide schedule), a full-page builder with POD/batch/SDR filters, date-range rules resolved at send time, timezone-aware send time, To/CC/BCC recipient chips, a **Report Logs** tab, **Run Now**, and CSV attachment. Replaces the single-schedule version shipped earlier today."
+  },
+  {
+    "version": "v11.3.0",
+    "date": "17 Aug 2026",
+    "family": "11.3",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Automated Analytics reports** — schedule a qualified/disqualified-by-SDR email digest from a new Analytics Hub \"Reports\" tab. **Prospect replies now show in the notification bell**. **Upload a logo into your email signature**. **Caller ID** on incoming Aircall calls. **Fixed**: replying to a thread sent from Alternate CRM now works (was disabled on every thread); Cadence Builder node titles show the full text on hover."
+  },
+  {
+    "version": "v11.2.0",
+    "date": "17 Aug 2026",
+    "family": "11.2",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Power Dialer can sequence by account** (group same-company contacts together) and **load a cadence's leads directly as a dialer queue**. **Analytics**: qualified/disqualified counts by SDR, expandable per batch. **You can now delete a lead** (removed everywhere, calls/notes/emails kept). **Fixed**: \"Disqualify Lead\" (incl. Wrong Number) now works from any stage the button is shown at, not just Calling."
+  },
+  {
+    "version": "v11.1.0",
+    "date": "17 Aug 2026",
+    "family": "11.1",
+    "kind": "minor",
+    "tags": [
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
+    ],
+    "summary": "**Every lead now has a change history** — name, phone, email, company, title, LinkedIn, and pod-assignment edits are recorded and shown on the lead detail page. **Fixed**: adding a lead no longer gets silently blocked when Aircall already logged a call to that number, and the \"Call ended\" prompt no longer appears the instant you dial."
+  },
+  {
     "version": "v11.0.0",
     "date": "14 Aug 2026",
     "family": "11.0",
     "kind": "major",
     "tags": [
-      { "label": "✨ NEW", "variant": "success" },
-      { "label": "🐛 FIX", "variant": "danger" }
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
     ],
     "title": "Cadence/Messaging Sandbox, Aircall messaging, Analytics fixes",
     "items": [
       "**🧪 Cadence/Messaging Sandbox** — test an entire Sales Cadence end-to-end with real WhatsApp/SMS sends, safely, via Playground's new \"Cadence Test\" tab. Every send redirects to a Sandbox Test Phone Number you configure, never a real lead, and test data never shows up in Analytics.",
-      "**✨ Aircall added as a second messaging provider** alongside RCM Built-in Messaging — pick your active vendor in Settings.",
+      "**✨ Aircall added as a second messaging provider** alongside Alternate Messenger/Messaging Provider — pick your active vendor in Settings.",
       "**⚙️ The \"Conversations\" threshold in Analytics is now configurable** (Settings → Call & Pipeline Settings), instead of a fixed 30 seconds.",
       "**🐛 Fixed Analytics Hub filters resetting on tab switch** and the SDR Performance table's search icon alignment."
     ]
@@ -22,10 +2424,16 @@
     "family": "10.9",
     "kind": "minor",
     "tags": [
-      { "label": "✨ NEW", "variant": "success" },
-      { "label": "🐛 FIX", "variant": "danger" }
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      },
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
     ],
-    "summary": "**WhatsApp is now available as a Sales Cadence step** — pick from your account's real approved templates right in the Journey Builder. **Messages sent or received through the RCM Widget are now tracked in RCM** (previously left no record anywhere). **Fixed the Leads Hub Source badge overflowing into other columns** for long file names."
+    "summary": "**WhatsApp is now available as a Sales Cadence step** — pick from your account's real approved templates right in the Journey Builder. **Messages sent or received through the Alternate Messenger Widget are now tracked in Alternate CRM** (previously left no record anywhere). **Fixed the Leads Hub Source badge overflowing into other columns** for long file names."
   },
   {
     "version": "v10.9.13",
@@ -33,7 +2441,10 @@
     "family": "10.9",
     "kind": "minor",
     "tags": [
-      { "label": "✨ NEW", "variant": "success" }
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
     ],
     "summary": "**The redesigned Leads experience is now on by default for everyone** — the classic view is still one click away via \"Switch to classic view\". **Removed phone-number masking** for non-admins (the research-completion gate it was built for is retired). **Enroll in Cadence** is now available to Pod Admins and Admins, not just Super Admins."
   },
@@ -43,7 +2454,10 @@
     "family": "10.9",
     "kind": "minor",
     "tags": [
-      { "label": "🐛 FIX", "variant": "danger" }
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      }
     ],
     "summary": "**Pre-migration bug-fix pass on the redesigned Leads experience (beta)** — fixed a stale date filter, a filter combination that silently cancelled itself, Saved Views dropping search text, silent failures on inline edits and bulk actions, a lingering \"Unknown\" placeholder, multiple popovers staying open at once, and a company-connection badge that could reference a lead's own status as if a different lead resolved it. **Analytics Hub: the SDR Performance table now scrolls within its own bounded panel** instead of growing past the page with no reliable way to reach the rows below."
   },
@@ -53,8 +2467,14 @@
     "family": "10.9",
     "kind": "minor",
     "tags": [
-      { "label": "🐛 FIX", "variant": "danger" },
-      { "label": "✨ NEW", "variant": "success" }
+      {
+        "label": "🐛 FIX",
+        "variant": "danger"
+      },
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
     ],
     "summary": "**Fixed a lingering \"Source: Salesforce\" mislabel** on leads auto-created by the dialer (a follow-up gap from the earlier fix). **Analytics Hub: added a Conversations column** to SDR Performance (calls over 30s that weren't a no-answer/wrong-number/voicemail) and **each team's date filter now uses that team's own timezone** (set per-Pod in POD Management) instead of one shared UTC day, so a US team's late-night calls no longer land on the wrong on-screen date. **Restyled the Send Window's Timezone picker** with a consistent custom dropdown instead of the browser's own inconsistent-looking native list."
   },
@@ -64,10 +2484,16 @@
     "family": "10.9",
     "kind": "minor",
     "tags": [
-      { "label": "🚨 P1 HOTFIX", "variant": "danger" },
-      { "label": "✨ NEW", "variant": "success" }
+      {
+        "label": "🚨 P1 HOTFIX",
+        "variant": "danger"
+      },
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
     ],
-    "summary": "**Fixed an invisible click-blocking bug from the RCM dialer widget** — since it became default-on (v10.9.7), its collapsed floating button still reserved a full ~340x560px invisible area in the bottom-right of every page, silently swallowing clicks on anything else rendered there (e.g. Sales Cadence merge-field chips). Also added: rename a cadence directly from the builder header."
+    "summary": "**Fixed an invisible click-blocking bug from the Alternate Messenger dialer widget** — since it became default-on (v10.9.7), its collapsed floating button still reserved a full ~340x560px invisible area in the bottom-right of every page, silently swallowing clicks on anything else rendered there (e.g. Sales Cadence merge-field chips). Also added: rename a cadence directly from the builder header."
   },
   {
     "version": "v10.9.9",
@@ -75,9 +2501,12 @@
     "family": "10.9",
     "kind": "minor",
     "tags": [
-      { "label": "✨ NEW", "variant": "success" }
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
     ],
-    "summary": "**Sales Cadences: engagement tracking, A/B testing, SMS, send windows, AI copy, auto-reply detection, and a unified Activity view** — see open/click/reply rates per cadence and per step, split-test email subject/body, add an SMS step (via RCM), restrict sends to business hours in a chosen timezone, generate a first draft with AI, and out-of-office replies no longer count as real engagement. A new Activity view merges every email and SMS send/reply into one timeline per cadence."
+    "summary": "**Sales Cadences: engagement tracking, A/B testing, SMS, send windows, AI copy, auto-reply detection, and a unified Activity view** — see open/click/reply rates per cadence and per step, split-test email subject/body, add an SMS step (via Alternate Messenger), restrict sends to business hours in a chosen timezone, generate a first draft with AI, and out-of-office replies no longer count as real engagement. A new Activity view merges every email and SMS send/reply into one timeline per cadence."
   },
   {
     "version": "v10.9.8",
@@ -85,7 +2514,10 @@
     "family": "10.9",
     "kind": "minor",
     "tags": [
-      { "label": "✨ NEW", "variant": "success" }
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
     ],
     "summary": "**Sales Cadences: pod scoping + a new \"email received\" trigger** — scope a cadence to one pod's leads (or leave it open to all), and start a cadence the moment an SDR/AE gets an email from a lead, not just on status change. Also fixed two bulk-delete bugs and added a merge-field cursor affordance."
   },
@@ -95,9 +2527,12 @@
     "family": "10.9",
     "kind": "minor",
     "tags": [
-      { "label": "✨ NEW", "variant": "success" }
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
     ],
-    "summary": "**React RCM dialer widget is now the default** — the modernized Call/Message widget replaces the older version for everyone; the classic widget stays available as an automatic fallback."
+    "summary": "**React Alternate Messenger dialer widget is now the default** — the modernized Call/Message widget replaces the older version for everyone; the classic widget stays available as an automatic fallback."
   },
   {
     "version": "v10.9.6",
@@ -105,7 +2540,10 @@
     "family": "10.9",
     "kind": "major",
     "tags": [
-      { "label": "✨ NEW", "variant": "success" }
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
     ],
     "title": "Sales Cadences management, Analytics/Power Dialer user guides, source-label fix",
     "items": [
@@ -120,7 +2558,10 @@
     "family": "10.9",
     "kind": "major",
     "tags": [
-      { "label": "✨ NEW", "variant": "success" }
+      {
+        "label": "✨ NEW",
+        "variant": "success"
+      }
     ],
     "title": "Email Hub — CC/BCC, signatures, rich text, and reliable sync",
     "items": [
@@ -145,7 +2586,10 @@
     "family": "10.9",
     "kind": "major",
     "tags": [
-      { "label": "🐛 BUG FIX", "variant": "danger" }
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
     ],
     "title": "Power Dialer — call log fixes",
     "items": [
@@ -160,7 +2604,10 @@
     "family": "10.9",
     "kind": "major",
     "tags": [
-      { "label": "🐛 BUG FIX", "variant": "danger" }
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
     ],
     "title": "Analytics Hub — accuracy fixes",
     "items": [
@@ -182,7 +2629,10 @@
     "family": "10.9",
     "kind": "major",
     "tags": [
-      { "label": "✨ NEW", "variant": "indigo" }
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
     ],
     "title": "Aircall Everywhere — global drawer",
     "items": [
@@ -197,8 +2647,14 @@
     "family": "10.8",
     "kind": "major",
     "tags": [
-      { "label": "🔧 UX", "variant": "indigo" },
-      { "label": "🐛 BUG FIX", "variant": "danger" }
+      {
+        "label": "🔧 UX",
+        "variant": "indigo"
+      },
+      {
+        "label": "🐛 BUG FIX",
+        "variant": "danger"
+      }
     ],
     "title": "Power Dialer — live feedback pass",
     "items": [
@@ -208,7 +2664,7 @@
       "**🔍 Real filters** — search by name/company/phone, filter by stage, or hide leads you've already called.",
       "**📇 See who you're calling before you dial** — location, company size, and lead source now show on the call card, plus their last contact and outcome.",
       "**📝 Add a note or open the lead in the CRM** without leaving the queue.",
-      "**📞 The Call button now tells you what it'll do** — \"via Aircall\", \"via RCM\", or \"log manually\", based on your actual dialer setup.",
+      "**📞 The Call button now tells you what it'll do** — \"via Aircall\", \"via Alternate Messenger\", or \"log manually\", based on your actual dialer setup.",
       "**🌍 Local time for every lead** — a 🟢/🟡/🔴 badge next to the phone number so you don't call someone at 3am their time.",
       "**📊 Real pace, not a guess** — today's actual call count and an honest ETA based on your own calling speed, plus a manager-only skip-reason breakdown.",
       "**🐛 Fixed** — a laggy first load (dozens of extra database queries per page), a broken drag-to-reorder, a search box that felt like it was fighting you while typing, and a few layout glitches (faint borders, a runaway job-title line)."
@@ -220,7 +2676,10 @@
     "family": "10.8",
     "kind": "major",
     "tags": [
-      { "label": "✨ NEW", "variant": "indigo" }
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
     ],
     "title": "Power Dialer — replaces Today's Calls",
     "items": [
@@ -236,7 +2695,10 @@
     "family": "10.7",
     "kind": "major",
     "tags": [
-      { "label": "✨ NEW", "variant": "indigo" }
+      {
+        "label": "✨ NEW",
+        "variant": "indigo"
+      }
     ],
     "title": "Sales Cadences — visual workflow automation (early access)",
     "items": [
@@ -252,7 +2714,10 @@
     "version": "v10.6.41",
     "date": "06 Aug 2026",
     "tags": [
-      { "label": "FIX", "variant": "danger" }
+      {
+        "label": "FIX",
+        "variant": "danger"
+      }
     ],
     "title": null,
     "items": [
@@ -265,7 +2730,10 @@
     "version": "v10.6.40",
     "date": "06 Aug 2026",
     "tags": [
-      { "label": "FIX", "variant": "danger" }
+      {
+        "label": "FIX",
+        "variant": "danger"
+      }
     ],
     "title": null,
     "items": [
@@ -279,7 +2747,10 @@
     "version": "v10.6.39",
     "date": "05 Aug 2026",
     "tags": [
-      { "label": "FIX", "variant": "danger" }
+      {
+        "label": "FIX",
+        "variant": "danger"
+      }
     ],
     "title": null,
     "items": [
@@ -291,7 +2762,10 @@
     "version": "v10.6.38",
     "date": "04 Aug 2026",
     "tags": [
-      { "label": "✨ REDESIGN", "variant": "indigo" }
+      {
+        "label": "✨ REDESIGN",
+        "variant": "indigo"
+      }
     ],
     "title": null,
     "items": [
@@ -391,7 +2865,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 Fixed US phone numbers being misdialed as Indian numbers** in Aircall and RCM — a bare 10-digit number starting with 6–9 was incorrectly assumed to be Indian and dialed with a +91 prefix instead of +1."
+      "**📞 Fixed US phone numbers being misdialed as Indian numbers** in Aircall and Alternate Messenger — a bare 10-digit number starting with 6–9 was incorrectly assumed to be Indian and dialed with a +91 prefix instead of +1."
     ]
   },
   {
@@ -421,7 +2895,7 @@
     "title": null,
     "items": [
       "**🐛 Klenty integration health check fixed:** The Klenty connection test was failing with \"Invalid user: whoami\" — it now tests against your real Klenty username.",
-      "**📝 Call transcripts now show up everywhere:** Once RCM/Deepgram finishes processing a call, the transcript now appears on Call Monitor, the Lead's Calls tab, and the Activity Feed — previously it silently never rendered anywhere even when it was ready.",
+      "**📝 Call transcripts now show up everywhere:** Once Alternate Messenger/Deepgram finishes processing a call, the transcript now appears on Call Monitor, the Lead's Calls tab, and the Activity Feed — previously it silently never rendered anywhere even when it was ready.",
       "**🗣️ Transcript speakers now labeled \"Speaker 1\" / \"Speaker 2\"** instead of raw \"Speaker 0\" / \"Speaker 1\"."
     ]
   },
@@ -454,7 +2928,7 @@
       "**🐛 Disqualify now respects dialer-logged outcomes:** A lead marked \"Wrong Number\" (or another definitive outcome) through the in-app dialer can now be disqualified right away, without needing 5 call attempts first, and the lead page shows the correct latest disposition.",
       "**🧠 AI Research panel fixed for shared companies:** Switching between two contacts at the same company no longer shows the previous contact's research.",
       "**📊 Analytics Hub \"Calls Made\" now respects the batch filter** the same way every other number on the page already did.",
-      "**☎️ Fixed some SDRs' calls failing with a RCM \"Agent phone number is required\" error** — per-SDR dialer identity is now actually used when placing calls.",
+      "**☎️ Fixed some SDRs' calls failing with a Alternate Messenger \"Agent phone number is required\" error** — per-SDR dialer identity is now actually used when placing calls.",
       "**🎧 Call recordings: fixed \"Play\" failing right after a call, playback cutting off mid-recording, and a squeezed/broken player layout in Call Monitor.** Every call-recording view (Call Monitor, Lead Detail, My Calls, Activity Feed) now has a working Download option too.",
       "**⚙️ Settings no longer bounces back to the Connection tab** after saving a change in any other tab.",
       "**📞 The active-call popup no longer blurs the lead details behind it.**"
@@ -513,7 +2987,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 Klenty call activity now syncs into RCM:** Calls SDRs place through Klenty now pull in automatically each night and show up as call activity, matched to the right lead (or a new lead created if none exists). Admin-only setting, no changes for SDRs."
+      "**📞 Klenty call activity now syncs into Alternate CRM:** Calls SDRs place through Klenty now pull in automatically each night and show up as call activity, matched to the right lead (or a new lead created if none exists). Admin-only setting, no changes for SDRs."
     ]
   },
   {
@@ -542,7 +3016,7 @@
     "title": null,
     "items": [
       "**📊 Connect Rate fixed:** Connect Rate was showing 0% across the Analytics Hub, CSV export, Batch Summary, and Ask AI — it was checking for a call status that real calls never use. It now reflects real answered-call outcomes everywhere those numbers appear.",
-      "**📄 CSV export now matches the dashboard:** Exporting SDR performance was missing most calls (Aircall/Klenty/RCM activity wasn't included) and used a different Connect Rate formula than the dashboard. Export now shows the same numbers you see on screen.",
+      "**📄 CSV export now matches the dashboard:** Exporting SDR performance was missing most calls (Aircall/Klenty/Alternate CRM activity wasn't included) and used a different Connect Rate formula than the dashboard. Export now shows the same numbers you see on screen.",
       "**🔍 Source filter now works on the SDR Table:** Filtering SDR performance by lead source was silently being ignored — it now actually filters."
     ]
   },
@@ -562,7 +3036,7 @@
     "title": null,
     "items": [
       "**🎯 Leads Hub (Beta):** A redesigned All Leads experience is available to try — multi-select filters, tags, saved views, bulk and single reassignment, inline editing, a note preview per lead, and Disqualify Requests built in. Look for \"Try it (Beta)\" at the top of the Leads page — your classic view is unchanged until you opt in, and you can switch back anytime.",
-      "**🎧 RCM call recordings fixed:** Recordings were failing to appear for some SDRs when RCM's own status check had a temporary issue — recordings are no longer blocked by that unrelated check."
+      "**🎧 Alternate Messenger call recordings fixed:** Recordings were failing to appear for some SDRs when Alternate Messenger's own status check had a temporary issue — recordings are no longer blocked by that unrelated check."
     ]
   },
   {
@@ -576,7 +3050,7 @@
     ],
     "title": null,
     "items": [
-      "**🎧 Manual Dial (RCM) no longer shows two call widgets:** Dialling a number directly from the Manual Dial button could show a duplicate call panel and sometimes fail to show that the call had been answered. Manual Dial now uses the same reliable call manager as calling a lead directly."
+      "**🎧 Manual Dial (Alternate Messenger) no longer shows two call widgets:** Dialling a number directly from the Manual Dial button could show a duplicate call panel and sometimes fail to show that the call had been answered. Manual Dial now uses the same reliable call manager as calling a lead directly."
     ]
   },
   {
@@ -713,11 +3187,11 @@
     ],
     "title": null,
     "items": [
-      "**🧹 Memory leak fixed — no more surprise restarts:** The server was restarting every 4-8 days due to a memory leak in the RCM background sync. The nightly sync now retries failed API pages with backoff and automatically force-closes any call stuck in a non-terminal state for over 24 hours. This was the root cause of 3 forced server restarts since June 18.",
-      "**🔌 Zombie call pollers eliminated:** When RCM returned \"Call not found\" (404) for a stale call, the browser kept polling every 2 seconds forever — silently accumulating in the background. Those polls now terminate immediately on 404, freeing resources.",
-      "**⚡ Webhook response time: 1.4-2.3s → <50ms:** RCM webhook events were taking up to 2.3 seconds to process synchronously. They now return immediately — processing runs in the background. This prevents RCM from sending duplicate events when our server is slow.",
+      "**🧹 Memory leak fixed — no more surprise restarts:** The server was restarting every 4-8 days due to a memory leak in the Alternate Messenger background sync. The nightly sync now retries failed API pages with backoff and automatically force-closes any call stuck in a non-terminal state for over 24 hours. This was the root cause of 3 forced server restarts since June 18.",
+      "**🔌 Zombie call pollers eliminated:** When Alternate Messenger returned \"Call not found\" (404) for a stale call, the browser kept polling every 2 seconds forever — silently accumulating in the background. Those polls now terminate immediately on 404, freeing resources.",
+      "**⚡ Webhook response time: 1.4-2.3s → <50ms:** Alternate Messenger webhook events were taking up to 2.3 seconds to process synchronously. They now return immediately — processing runs in the background. This prevents Alternate Messenger from sending duplicate events when our server is slow.",
       "**📊 Error logs page loads faster:** The error log summary was running 4 separate database scans on every page load (1.5–3.6s). A new database index cuts this to ~50ms.",
-      "**🔧 Ankit Bakshi can now dial:** His dialer access was disabled in the system despite having valid RCM credentials. Fixed — he can now make calls.",
+      "**🔧 Ankit Bakshi can now dial:** His dialer access was disabled in the system despite having valid Alternate Messenger credentials. Fixed — he can now make calls.",
       "**🐛 Assignments panel crash fixed:** Rapidly switching away from the Assignments panel while it was still loading could crash the page with a \"Cannot read properties of null\" error (Diwakar Varadharajan reported this). Fixed with defensive null guards."
     ]
   },
@@ -817,7 +3291,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 Calls tab: faster load, no more background noise:** Opening the Calls tab was silently firing one RCM API request per historical call record. When RCM returned errors for old calls these piled up in server logs and could slow the tab. The background refresh now only runs when data is actually missing — completed calls that already have their recording, duration, and end time are skipped entirely. No user-visible change; everything loads the same, just faster."
+      "**📞 Calls tab: faster load, no more background noise:** Opening the Calls tab was silently firing one Alternate Messenger API request per historical call record. When Alternate Messenger returned errors for old calls these piled up in server logs and could slow the tab. The background refresh now only runs when data is actually missing — completed calls that already have their recording, duration, and end time are skipped entirely. No user-visible change; everything loads the same, just faster."
     ]
   },
   {
@@ -889,7 +3363,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 SDR Dashboard: Today's calls count now correct:** Calls made via RCM or Aircall (dialer) were not being counted in the \"Calls Today\" and \"Outcomes Today\" dashboard cards. Fixed — both manual and dialer calls are now included."
+      "**📞 SDR Dashboard: Today's calls count now correct:** Calls made via Alternate Messenger or Aircall (dialer) were not being counted in the \"Calls Today\" and \"Outcomes Today\" dashboard cards. Fixed — both manual and dialer calls are now included."
     ]
   },
   {
@@ -908,7 +3382,7 @@
     "title": null,
     "items": [
       "**🔐 View-As now shows correct data for all roles:** When a Super Admin used View-As to impersonate an SDR or Pod Admin, the Dashboard was still showing the admin's own data (all leads). Fixed — View-As now correctly scopes data to the impersonated user's role and pod.",
-      "**📋 Sidebar: logo-only when collapsed:** Collapsing the sidebar now shows only the RCM logo icon — the \"Powered by RCM\" text no longer bleeds through.",
+      "**📋 Sidebar: logo-only when collapsed:** Collapsing the sidebar now shows only the Alternate CRM logo icon — the \"Powered by Alternate Messenger\" text no longer bleeds through.",
       "**🌐 Pod Admin toggle: repositioned + new icons:** The My Pod / Global scope toggle is now grouped with the Refresh button on the right side of the dashboard header. Lock and globe SVG icons replace the previous emojis. Toggle always defaults to My Pod on page load.",
       "**📞 Dialer: zombie call blocking fixed:** SDRs who got stuck in an \"active call\" block after a silent hangup will now see a purple Force Clear banner — one click to unblock. The stuck-call timeout has also been reduced from 90 minutes to 15 minutes."
     ]
@@ -931,7 +3405,7 @@
       "**📊 Dashboard: Role-based views properly applied:** SDR and AE users now see only their personal KPIs and call outcomes — the Meetings Booked chart (which required admin access) is removed. Pod Admins retain the full chart and pipeline view.",
       "**🔗 Call Outcomes are now clickable:** Click any outcome card (e.g. \"Connected 3\") to jump directly to the Leads view filtered by that outcome. Zero-count outcomes are hidden to keep the view clean.",
       "**🔐 Pod Admin: My Pod / Global toggle:** Pod Admins can now switch between their pod's data and org-wide data with a single click in the dashboard header. The selected scope is remembered as you navigate.",
-      "**🎨 RCM brand update:** New logo is now live across the browser tab (favicon), Apple home screen icon, sidebar, and login page."
+      "**🎨 Alternate CRM brand update:** New logo is now live across the browser tab (favicon), Apple home screen icon, sidebar, and login page."
     ]
   },
   {
@@ -985,7 +3459,7 @@
     ],
     "title": null,
     "items": [
-      "**🎮 Fixed: Dialer Playground crash on Step 3:** The Playground would crash with \"RCMDialer.mount is not a function\" when advancing to the Live Test step, making it completely unusable. It now calls the CRM dialer API directly and tracks call status in the event log — no page refresh needed."
+      "**🎮 Fixed: Dialer Playground crash on Step 3:** The Playground would crash with \"Alternate MessengerDialer.mount is not a function\" when advancing to the Live Test step, making it completely unusable. It now calls the CRM dialer API directly and tracks call status in the event log — no page refresh needed."
     ]
   },
   {
@@ -999,7 +3473,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 Fixed: \"active call in progress\" error no longer blocks you permanently:** If a RCM call ended on the network but our system didn't receive the disconnect signal, the dialer would show \"You already have an active call in progress\" with no way out. It now automatically clears the stuck call and shows \"✅ Cleared a stuck call. Please try calling again.\" — no page refresh needed."
+      "**📞 Fixed: \"active call in progress\" error no longer blocks you permanently:** If a Alternate Messenger call ended on the network but our system didn't receive the disconnect signal, the dialer would show \"You already have an active call in progress\" with no way out. It now automatically clears the stuck call and shows \"✅ Cleared a stuck call. Please try calling again.\" — no page refresh needed."
     ]
   },
   {
@@ -1013,7 +3487,7 @@
     ],
     "title": null,
     "items": [
-      "**⚙️ Settings — Test Connection banner fix:** After clicking \"Test Connection\" in the Dialer or RCM settings, the result banner (success or error) now clears automatically as soon as you edit any credential field. Previously the banner stayed on screen even after you had changed credentials, which was misleading."
+      "**⚙️ Settings — Test Connection banner fix:** After clicking \"Test Connection\" in the Dialer or Alternate Messenger settings, the result banner (success or error) now clears automatically as soon as you edit any credential field. Previously the banner stayed on screen even after you had changed credentials, which was misleading."
     ]
   },
   {
@@ -1027,7 +3501,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 Fixed intermittent crash when using the RCM widget:** Some SDRs were seeing an \"An unexpected JavaScript error occurred\" notification while working in the app — particularly when switching tabs or using the messaging widget. This was caused by the widget trying to update itself before it had finished loading. The widget now safely ignores these early calls and the errors are gone."
+      "**📞 Fixed intermittent crash when using the Alternate Messenger widget:** Some SDRs were seeing an \"An unexpected JavaScript error occurred\" notification while working in the app — particularly when switching tabs or using the messaging widget. This was caused by the widget trying to update itself before it had finished loading. The widget now safely ignores these early calls and the errors are gone."
     ]
   },
   {
@@ -1041,7 +3515,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 Bridge mode now works correctly:** When an SDR selected \"Phone Bridge\", RCM wasn't told it was a bridge call — so it wasn't ringing the agent's phone first. Fixed: the call mode is now correctly passed so bridge calls ring your phone before connecting to the lead.",
+      "**📞 Bridge mode now works correctly:** When an SDR selected \"Phone Bridge\", Alternate Messenger wasn't told it was a bridge call — so it wasn't ringing the agent's phone first. Fixed: the call mode is now correctly passed so bridge calls ring your phone before connecting to the lead.",
       "**✅ Caller ID format no longer assumed:** Different telecom providers (Tata, Airtel, etc.) store outbound phone numbers in different formats. We were incorrectly converting the DID, causing a \"Invalid from_number\" error. Now the DID is sent exactly as configured in Settings — no guessing."
     ]
   },
@@ -1056,7 +3530,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 RCM calls now actually connect:** Clicking the Call button was loading the spinner and then silently failing — the call never went through to the lead's phone. The root cause was a mismatch between what our system was sending to RCM's servers and what RCM actually expects. After testing directly against the live RCM API, the exact required format was confirmed and fixed. Calls now connect reliably on the first try."
+      "**📞 Alternate Messenger calls now actually connect:** Clicking the Call button was loading the spinner and then silently failing — the call never went through to the lead's phone. The root cause was a mismatch between what our system was sending to Alternate Messenger's servers and what Alternate Messenger actually expects. After testing directly against the live Alternate Messenger API, the exact required format was confirmed and fixed. Calls now connect reliably on the first try."
     ]
   },
   {
@@ -1070,7 +3544,7 @@
     ],
     "title": null,
     "items": [
-      "**🎧 Browser call now shows a clear error if audio setup fails:** When you selected \"Browser Call\" and RCM's servers were temporarily unavailable, the dialer used to freeze at \"Ringing…\" with no explanation. Now it immediately shows a clear message — \"RCM did not return audio credentials — try again or switch to Phone Bridge\" — and the dialer resets so you can try again right away.",
+      "**🎧 Browser call now shows a clear error if audio setup fails:** When you selected \"Browser Call\" and Alternate Messenger's servers were temporarily unavailable, the dialer used to freeze at \"Ringing…\" with no explanation. Now it immediately shows a clear message — \"Alternate Messenger did not return audio credentials — try again or switch to Phone Bridge\" — and the dialer resets so you can try again right away.",
       "**🎧 Browser call now shows what to expect while ringing:** The call widget now shows \"🎧 Lead's phone is ringing — you'll hear them when they answer\" so you know the call is in progress and don't need to do anything else."
     ]
   },
@@ -1099,7 +3573,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 RCM dialer widget is now fully visible:** The call widget (showing lead name, phone, Mute / Hold / End buttons) was rendering with white text on a white background — completely invisible. Now displayed correctly with the dark-theme design it was intended to use.",
+      "**📞 Alternate Messenger dialer widget is now fully visible:** The call widget (showing lead name, phone, Mute / Hold / End buttons) was rendering with white text on a white background — completely invisible. Now displayed correctly with the dark-theme design it was intended to use.",
       "**🎮 Admin Dialer Playground re-enabled:** Super Admins can once again access the Dialer Playground from the sidebar to test outbound calls without touching a real lead record.",
       "**📞 Aircall call durations now heal automatically:** Calls where Aircall's webhook arrived before the billing data was finalised (showing 0s duration) will now be corrected automatically during the nightly sync."
     ]
@@ -1130,7 +3604,7 @@
     ],
     "title": null,
     "items": [
-      "**📞 RCM dialer no longer gets stuck after a call ends:** After ending a RCM call, the dialer was sometimes freezing or going blank, requiring a full page refresh before you could dial the next lead. This has been fixed — the dialer now resets itself cleanly after every call so you can dial the next lead immediately."
+      "**📞 Alternate Messenger dialer no longer gets stuck after a call ends:** After ending a Alternate Messenger call, the dialer was sometimes freezing or going blank, requiring a full page refresh before you could dial the next lead. This has been fixed — the dialer now resets itself cleanly after every call so you can dial the next lead immediately."
     ]
   },
   {
@@ -1389,7 +3863,7 @@
     ],
     "title": null,
     "items": [
-      "**🏷️ Error logs now show the correct dialer (admin-facing fix):** When an SDR was blocked from starting a call because another call was still active, the System Logs → Error Logs entry incorrectly showed \"RCM Dialer\" as the source — even for Aircall users. Admins were being misled into investigating RCM when the issue was with Aircall. The error label now correctly reflects whichever dialer the SDR is actually using."
+      "**🏷️ Error logs now show the correct dialer (admin-facing fix):** When an SDR was blocked from starting a call because another call was still active, the System Logs → Error Logs entry incorrectly showed \"Alternate Messenger Dialer\" as the source — even for Aircall users. Admins were being misled into investigating Alternate Messenger when the issue was with Aircall. The error label now correctly reflects whichever dialer the SDR is actually using."
     ]
   },
   {
@@ -1409,7 +3883,7 @@
     "items": [
       "**🛡️ Dialer no longer permanently blocks SDRs after a missed call:** If a call was started but the system never received the \"call ended\" confirmation (e.g. you closed the browser mid-call or the provider had a brief outage), the next dial attempt would show \"You already have an active call in progress\" — even hours later. This is now fixed. Stale records are automatically cleared after 90 minutes so you can always start a new call without refreshing or contacting support.",
       "**🧹 Background cleanup runs every 15 minutes:** A new background process sweeps for stuck call records every 15 minutes and heals them automatically. SDRs will no longer need to switch to Klenty or wait for admin intervention when this happens.",
-      "**🔄 Nightly sync now recovers zombie calls:** The overnight RCM data recovery job previously skipped calls it already knew about — even if the status was wrong. It now corrects any missed \"call ended\" records from the provider's history, ensuring call logs are accurate by the next morning."
+      "**🔄 Nightly sync now recovers zombie calls:** The overnight Alternate Messenger data recovery job previously skipped calls it already knew about — even if the status was wrong. It now corrects any missed \"call ended\" records from the provider's history, ensuring call logs are accurate by the next morning."
     ]
   },
   {
@@ -1565,11 +4039,11 @@
     ],
     "title": null,
     "items": [
-      "**🎮 Dialer Playground (Admin only):** A new 3-step onboarding wizard lets Super Admins and Admins verify RCM credentials, place a live test call, and confirm the widget is working — all without changing any SDR settings. Find it under 🎮 Playground in the Admin sidebar.",
-      "**⚡ Real-time call status (no more polling):** The RCM call widget now receives live call events (Ringing → Connected → Ended) instantly via Server-Sent Events instead of checking every 2 seconds. Calls feel faster and more responsive. Falls back to polling automatically if the connection drops.",
+      "**🎮 Dialer Playground (Admin only):** A new 3-step onboarding wizard lets Super Admins and Admins verify Alternate Messenger credentials, place a live test call, and confirm the widget is working — all without changing any SDR settings. Find it under 🎮 Playground in the Admin sidebar.",
+      "**⚡ Real-time call status (no more polling):** The Alternate Messenger call widget now receives live call events (Ringing → Connected → Ended) instantly via Server-Sent Events instead of checking every 2 seconds. Calls feel faster and more responsive. Falls back to polling automatically if the connection drops.",
       "**🛡️ Double-call prevention:** If an SDR accidentally clicks Call twice (or refreshes mid-call), the second call is now blocked immediately with a clear message: \"You already have an active call in progress.\" No more zombie LiveKit sessions.",
-      "**🔒 Call duration now always accurate:** RCM sometimes re-sends the same call event multiple times. The system now ignores duplicate endings — so call duration in the Calls tab always reflects the real duration, never overwritten by a retry.",
-      "**🎨 Lighter call widget:** The RCM floating call widget now uses a clean light theme — easier to read against both light and dark page backgrounds."
+      "**🔒 Call duration now always accurate:** Alternate Messenger sometimes re-sends the same call event multiple times. The system now ignores duplicate endings — so call duration in the Calls tab always reflects the real duration, never overwritten by a retry.",
+      "**🎨 Lighter call widget:** The Alternate Messenger floating call widget now uses a clean light theme — easier to read against both light and dark page backgrounds."
     ]
   },
   {
@@ -1587,7 +4061,7 @@
     ],
     "title": null,
     "items": [
-      "**🔄 RCM nightly call sync now actually runs:** A background job runs every night to recover any RCM calls that the real-time system may have missed (e.g. during a server restart). This job was silently failing every night due to an incorrect internal import — it never ran. Fixed: missed calls are now correctly recovered and appear in Call Logs the next morning."
+      "**🔄 Alternate Messenger nightly call sync now actually runs:** A background job runs every night to recover any Alternate Messenger calls that the real-time system may have missed (e.g. during a server restart). This job was silently failing every night due to an incorrect internal import — it never ran. Fixed: missed calls are now correctly recovered and appear in Call Logs the next morning."
     ]
   },
   {
@@ -1708,10 +4182,10 @@
     ],
     "title": null,
     "items": [
-      "**🔒 Phone validation before every call:** Both Aircall and RCM now validate the phone number before dialling — numbers with extensions are stripped automatically, dots and spaces are cleaned up, and invalid numbers (Indian 1860/1800 service lines, bad area codes, too short/long) are blocked with a clear message instead of a silent failure.",
+      "**🔒 Phone validation before every call:** Both Aircall and Alternate Messenger now validate the phone number before dialling — numbers with extensions are stripped automatically, dots and spaces are cleaned up, and invalid numbers (Indian 1860/1800 service lines, bad area codes, too short/long) are blocked with a clear message instead of a silent failure.",
       "**📋 Extension stripping:** If a lead's phone number has an extension (e.g. `+1 800-887-8965 ext 288`), the extension is automatically stripped before dialling. You no longer need to manually clean the number.",
-      "**💬 Actionable RCM error messages:** When RCM rejects a call, you now see a specific reason — e.g. \"RCM says: phone number not reachable\" — instead of a raw error code. Every error type (invalid number, auth failure, rate limit, server unavailable, timeout) has a tailored message with what to do next.",
-      "**🛡️ Shared validation module:** Aircall and RCM now share the same phone validation logic — consistent behaviour across both dialers.",
+      "**💬 Actionable Alternate Messenger error messages:** When Alternate Messenger rejects a call, you now see a specific reason — e.g. \"Alternate Messenger says: phone number not reachable\" — instead of a raw error code. Every error type (invalid number, auth failure, rate limit, server unavailable, timeout) has a tailored message with what to do next.",
+      "**🛡️ Shared validation module:** Aircall and Alternate Messenger now share the same phone validation logic — consistent behaviour across both dialers.",
       "**🧪 1,252 tests passing:** 91 new automated tests added covering all phone edge cases, error codes, and guard conditions. Zero regressions."
     ]
   },
@@ -1734,8 +4208,8 @@
     ],
     "title": null,
     "items": [
-      "**📊 New: Call Monitor (Admins only):** A dedicated **Call Monitor** page gives Super Admins and Pod Admins a real-time view of all dialer activity across the team — Aircall, RCM, and manual calls in one place. Includes stat cards (Total, Completed, Failed, Avg Duration), full filter bar, inline audio playback, and transcript preview.",
-      "**🔍 Filters:** Filter by SDR, Provider (Aircall / RCM / Manual), Direction (↗ Outbound / ↙ Inbound), Outcome, Date Range, and Has Recording — all filters can be combined. Invalid date ranges are blocked before the API call.",
+      "**📊 New: Call Monitor (Admins only):** A dedicated **Call Monitor** page gives Super Admins and Pod Admins a real-time view of all dialer activity across the team — Aircall, Alternate Messenger, and manual calls in one place. Includes stat cards (Total, Completed, Failed, Avg Duration), full filter bar, inline audio playback, and transcript preview.",
+      "**🔍 Filters:** Filter by SDR, Provider (Aircall / Alternate Messenger / Manual), Direction (↗ Outbound / ↙ Inbound), Outcome, Date Range, and Has Recording — all filters can be combined. Invalid date ranges are blocked before the API call.",
       "**🔄 Auto-refresh:** The page refreshes every 60 seconds automatically. A manual **🔄 Refresh** button is always available for immediate updates.",
       "**🛡️ Pod Admin Scoping:** Pod Admins only see calls from SDRs in their own pod. Cross-org Aircall data is automatically excluded.",
       "**⚡ Backend Optimised:** Stats cards now correctly reflect the active filters — previously the summary could show inflated totals when Direction or Has Recording filters were applied. COUNT query is also index-friendly (no full JOIN).",
@@ -1761,10 +4235,10 @@
     ],
     "title": null,
     "items": [
-      "**🔍 Dialer Errors Now Visible in System Logs:** When a RCM call fails to start, the exact error reason is now automatically logged under **System Logs → Error Logs** (filter by Dialer). Admins no longer need to check Render server logs to diagnose calling issues.",
-      "**📋 Call Logs Tab Upgraded:** The **System Logs → Call Logs** tab now shows a **Provider** filter (RCM / Aircall), a **Direction** column (outbound/inbound), and colour-coded provider badges. Failed calls are highlighted in red with the exact error message displayed inline — no guessing required.",
+      "**🔍 Dialer Errors Now Visible in System Logs:** When a Alternate Messenger call fails to start, the exact error reason is now automatically logged under **System Logs → Error Logs** (filter by Dialer). Admins no longer need to check Render server logs to diagnose calling issues.",
+      "**📋 Call Logs Tab Upgraded:** The **System Logs → Call Logs** tab now shows a **Provider** filter (Alternate Messenger / Aircall), a **Direction** column (outbound/inbound), and colour-coded provider badges. Failed calls are highlighted in red with the exact error message displayed inline — no guessing required.",
       "**🔴 Failed-Call Badge:** A red badge now appears on the 📞 Call Logs tab button showing the count of failed calls — identical to how the Error Logs badge works. Refreshes every 60 seconds automatically.",
-      "**🛠️ Silent Errors Fixed:** Network retries, unknown RCM webhook events, and credential decryption failures were previously swallowed silently. All now surface as warnings or errors in the logs."
+      "**🛠️ Silent Errors Fixed:** Network retries, unknown Alternate Messenger webhook events, and credential decryption failures were previously swallowed silently. All now surface as warnings or errors in the logs."
     ]
   },
   {
@@ -1786,10 +4260,10 @@
     ],
     "title": null,
     "items": [
-      "**📞 Call Duration Now Shows Correctly:** Calls from RCM were showing 0s instead of the real duration. This was caused by the RCM API using a different field name (`duration_seconds`) than expected. Duration now displays accurately — and if a recording exists, the duration is automatically read from the audio file.",
-      "**🏆 Leaderboard Dials Now Count Properly:** RCM and Aircall dials were not showing up in the Leaderboard. The leaderboard was only counting manual call logs — now it counts all dialer calls too. Your dials today will appear in real time.",
-      "**📊 Avg Duration Fixed:** The Avg Duration stat card on the Calls tab was showing 0s for leads with RCM calls. It now shows — when duration is unknown, and correctly averages only calls with known duration.",
-      "**🔄 Call History Sync Improved:** RCM calls that missed the disconnect event will now automatically recover their duration and ended time the next time you open that lead's page."
+      "**📞 Call Duration Now Shows Correctly:** Calls from Alternate Messenger were showing 0s instead of the real duration. This was caused by the Alternate Messenger API using a different field name (`duration_seconds`) than expected. Duration now displays accurately — and if a recording exists, the duration is automatically read from the audio file.",
+      "**🏆 Leaderboard Dials Now Count Properly:** Alternate Messenger and Aircall dials were not showing up in the Leaderboard. The leaderboard was only counting manual call logs — now it counts all dialer calls too. Your dials today will appear in real time.",
+      "**📊 Avg Duration Fixed:** The Avg Duration stat card on the Calls tab was showing 0s for leads with Alternate Messenger calls. It now shows — when duration is unknown, and correctly averages only calls with known duration.",
+      "**🔄 Call History Sync Improved:** Alternate Messenger calls that missed the disconnect event will now automatically recover their duration and ended time the next time you open that lead's page."
     ]
   },
   {
@@ -1833,11 +4307,11 @@
     ],
     "title": null,
     "items": [
-      "**🎙️ RCM Call Recordings Fixed:** Recordings from RCM calls were not appearing in the lead Calls tab. The recording refresh logic now uses the correct provider per call — recordings will appear on the next page load for completed calls.",
+      "**🎙️ Alternate Messenger Call Recordings Fixed:** Recordings from Alternate Messenger calls were not appearing in the lead Calls tab. The recording refresh logic now uses the correct provider per call — recordings will appear on the next page load for completed calls.",
       "**✅ Test Suite Isolation & Reliability:** Refactored backend public API key auth to inject the request's DB session dynamically, fixing database connection bleed and making the full backend unit test suite completely stable.",
       "**✅ Manual Dial Sync Active Hidden:** The Dial/Call buttons are now dynamically hidden on lead details and lists if a manual dial sync is actively running.",
       "**✅ Clear Filter Page Reload:** Clicking the \"Clear Filters\" button now triggers a clean page reload to completely reset all filter inputs and pagination states.",
-      "**✅ SDR Settings Dialer Toggle:** SDRs can now toggle the RCM WebRTC dialer widget on or off directly within their Settings panel.",
+      "**✅ SDR Settings Dialer Toggle:** SDRs can now toggle the Alternate Messenger WebRTC dialer widget on or off directly within their Settings panel.",
       "**✅ SDR Error Logs Resolve Cleaned:** Removed the redundant \"Resolve\" buttons from System Error Logs for SDR-role users.",
       "**✅ Compact Call Log Modal UI:** Streamlined the call log details modal to occupy less screen space and improve visual hierarchy."
     ]
@@ -1970,9 +4444,9 @@
     ],
     "title": null,
     "items": [
-      "**✅ Outcome modal now visible:** The post-call outcome modal was appearing behind the RCM widget (z-index 99,999) and instantly disappearing. Fixed — the modal now always renders on top (z-index 100,000).",
+      "**✅ Outcome modal now visible:** The post-call outcome modal was appearing behind the Alternate Messenger widget (z-index 99,999) and instantly disappearing. Fixed — the modal now always renders on top (z-index 100,000).",
       "**✅ Calls tab auto-opens after logging:** After submitting a call outcome, the app now navigates to the lead and automatically opens the Calls tab — no manual click required to see the new entry.",
-      "**✅ Declined call no longer stuck on Ringing:** Two-layer guard added — Guard 1 (backend: if `ended_at` is already set, return CALL_ENDED immediately) and Guard 2 (backend: auto-end any RCM call stuck in CALL_STARTED for >50 seconds). Client-side 45s timeout added as a third safety net.",
+      "**✅ Declined call no longer stuck on Ringing:** Two-layer guard added — Guard 1 (backend: if `ended_at` is already set, return CALL_ENDED immediately) and Guard 2 (backend: auto-end any Alternate Messenger call stuck in CALL_STARTED for >50 seconds). Client-side 45s timeout added as a third safety net.",
       "**✅ Calls tab refresh after call ends:** `_refreshCallsTab()` hook added — if the Calls tab is active when a call ends, it immediately re-fetches without requiring a page reload."
     ]
   },
@@ -1991,7 +4465,7 @@
     ],
     "title": null,
     "items": [
-      "**✅ Ringing timeout — backend Guard 2:** RCM calls stuck in `CALL_STARTED` for more than 50 seconds (no `ended_at`) are now automatically closed server-side. Prevents zombie calls from blocking the UI after a recipient declines and the webhook is delayed."
+      "**✅ Ringing timeout — backend Guard 2:** Alternate Messenger calls stuck in `CALL_STARTED` for more than 50 seconds (no `ended_at`) are now automatically closed server-side. Prevents zombie calls from blocking the UI after a recipient declines and the webhook is delayed."
     ]
   },
   {
@@ -2009,7 +4483,7 @@
     ],
     "title": null,
     "items": [
-      "**✅ Ringing stuck — backend Guard 1:** If a RCM call's `ended_at` is already written (by the disconnect endpoint or a webhook) but the status poll was still returning `CALL_STARTED` due to RCM API lag, the status endpoint now immediately returns `CALL_ENDED`. Verified live: call `3f6157e6` transitioned correctly 37s after start."
+      "**✅ Ringing stuck — backend Guard 1:** If a Alternate Messenger call's `ended_at` is already written (by the disconnect endpoint or a webhook) but the status poll was still returning `CALL_STARTED` due to Alternate Messenger API lag, the status endpoint now immediately returns `CALL_ENDED`. Verified live: call `3f6157e6` transitioned correctly 37s after start."
     ]
   },
   {
@@ -2027,7 +4501,7 @@
     ],
     "title": null,
     "items": [
-      "**✅ Calls tab refresh hook:** `window._refreshCallsTab(leadId)` is now exposed globally. After a RCM call ends, the hook is called — if the Calls tab is currently active it immediately re-fetches; otherwise it marks the tab stale so the next click fetches fresh data.",
+      "**✅ Calls tab refresh hook:** `window._refreshCallsTab(leadId)` is now exposed globally. After a Alternate Messenger call ends, the hook is called — if the Calls tab is currently active it immediately re-fetches; otherwise it marks the tab stale so the next click fetches fresh data.",
       "**✅ Manual dial Promise fix:** The \"Phone Bridge / Browser Call\" manual dial button was silently dropping the Promise result — `POST /api/calls/start` was never hit. Fixed by routing all manual dials through `showManualDialWidget()` which correctly handles the full async chain."
     ]
   },
@@ -2108,12 +4582,12 @@
         "variant": "danger"
       }
     ],
-    "title": "📞 RCM Dialer — Reliability, UX Polish & Performance",
+    "title": "📞 Alternate Messenger Dialer — Reliability, UX Polish & Performance",
     "items": [
-      "**✅ Call end detection fixed:** Webhook events (declined/no-answer/completed) now immediately close the dialer widget. Previously, RCM's status API returned stale data after the call ended, causing polling to overwrite the webhook update — widget stayed on \"Ringing\" forever.",
-      "**✅ Button clean-up:** For RCM users, the redundant \"Call via RCM\" and \"Message\" buttons are now hidden — the floating widget handles both. Aircall users with RCM messaging still see the Message button.",
+      "**✅ Call end detection fixed:** Webhook events (declined/no-answer/completed) now immediately close the dialer widget. Previously, Alternate Messenger's status API returned stale data after the call ended, causing polling to overwrite the webhook update — widget stayed on \"Ringing\" forever.",
+      "**✅ Button clean-up:** For Alternate Messenger users, the redundant \"Call via Alternate Messenger\" and \"Message\" buttons are now hidden — the floating widget handles both. Aircall users with Alternate Messenger messaging still see the Message button.",
       "**✅ Calls tab pagination:** Call history now loads 10 records at a time with an async \"Load more\" button. Previously all calls were loaded in one request.",
-      "**🔥 Hotfix — Calls were failing (v6.3.5):** The RCM `/calls/initiate` API returned 422 \"Unknown field\" for `agent_email` and `notify_url` fields that were incorrectly added in v6.3.3. Both were removed. Calls now initiate correctly.",
+      "**🔥 Hotfix — Calls were failing (v6.3.5):** The Alternate Messenger `/calls/initiate` API returned 422 \"Unknown field\" for `agent_email` and `notify_url` fields that were incorrectly added in v6.3.3. Both were removed. Calls now initiate correctly.",
       "**🔧 Status polling — no-downgrade guard:** Added a priority system (CALL_STARTED=0 → CALL_ANSWERED=1 → CALL_ENDED=2). Polling can only advance the status forward — never overwrite a webhook-set terminal state with a stale intermediate value."
     ]
   },
@@ -2138,7 +4612,7 @@
     "items": [
       "**✅ New Call Outcome Modal:** Binary \"Did the call connect?\" question → inline chip picker → Log Call. 3 clicks max. Keyboard shortcuts: Y/N to pick branch, 1–9 for outcomes, Enter to submit.",
       "**✅ Meeting Booked card:** Featured green card at the top of the Yes branch — tap it to expand a date + time picker inline. No separate screen.",
-      "**✅ Aircall Auto-Sync:** If you tag a call in Aircall, the outcome is automatically logged in RCM. The modal shows a quiet green dot while syncing, then dismisses itself.",
+      "**✅ Aircall Auto-Sync:** If you tag a call in Aircall, the outcome is automatically logged in Alternate CRM. The modal shows a quiet green dot while syncing, then dismisses itself.",
       "**✅ Prev / Next Lead navigation:** When browsing leads, use ← → arrow buttons in the header (or Alt+← / Alt+→ on keyboard) to move between leads without going back to the list.",
       "**✅ Multi-number call button:** If a lead has 2–3 phone numbers, a chevron ⌄ appears next to the Call button — tap it to choose which number to dial."
     ]
@@ -2256,11 +4730,11 @@
     ],
     "title": "📞 Automated Dialer Outcome Gate + Provider Test Buttons",
     "items": [
-      "**✅ Outcome Gate:** After every dialer-initiated call (Aircall or RCM), a sticky banner and outcome modal automatically appear — you can't accidentally skip logging a call result.",
+      "**✅ Outcome Gate:** After every dialer-initiated call (Aircall or Alternate Messenger), a sticky banner and outcome modal automatically appear — you can't accidentally skip logging a call result.",
       "**✅ Auto-recovery:** If you refresh the page mid-call, the banner reappears on reload and remains until the outcome is logged.",
       "**✅ Auto-dismiss note:** If you close the modal without logging, a timestamped note is automatically added to the lead so no context is lost.",
       "**✅ Aircall timing fix:** The outcome modal now opens immediately if Aircall hasn't registered the call yet (no `provider_call_id`) — you're never left waiting.",
-      "**🔧 Provider Test Buttons:** Admins can now test Aircall and RCM credentials independently in Settings — no more having to test both at once."
+      "**🔧 Provider Test Buttons:** Admins can now test Aircall and Alternate Messenger credentials independently in Settings — no more having to test both at once."
     ]
   },
   {
@@ -2339,7 +4813,7 @@
     "title": "🔧 Dialer Edge-Case Hardening — 5 Critical Fixes",
     "items": [
       "**Fixed: Aircall users no longer see \"Call via Aircall\" when dialer is inactive.** Call button correctly shows \"Log Call\" if your dialer is configured but disabled.",
-      "**Fixed: Messaging widget crash (classList error) eliminated.** The Message button is now hidden for Aircall and no-dialer users — only RCM users see it.",
+      "**Fixed: Messaging widget crash (classList error) eliminated.** The Message button is now hidden for Aircall and no-dialer users — only Alternate Messenger users see it.",
       "**Fixed: 403 errors on page load resolved.** Widget no longer hits an admin-only settings endpoint — sender configuration now comes directly from your per-user dialer status.",
       "**Fixed: \"Log Call\" button tooltip updated** to \"Log the outcome of a manual call\" when no active dialer is present.",
       "**Defensive: isDialerActive** now additionally checks the `active` flag, preventing any call routing to a misconfigured disabled dialer."
@@ -2356,9 +4830,9 @@
     ],
     "title": "📞 Aircall Routing Fix — Call Button Now Works Correctly",
     "items": [
-      "**Fixed:** Clicking \"Call via Aircall\" was incorrectly showing the RCM \"Phone Bridge / Browser Call\" modal — now skipped entirely for Aircall users.",
+      "**Fixed:** Clicking \"Call via Aircall\" was incorrectly showing the Alternate Messenger \"Phone Bridge / Browser Call\" modal — now skipped entirely for Aircall users.",
       "**Aircall flow:** Button click → direct call via Aircall Phone app → toast confirmation. No intermediate modal.",
-      "**RCM flow unchanged:** Mode selector still appears for RCM users to choose Phone Bridge or Browser Call."
+      "**Alternate Messenger flow unchanged:** Mode selector still appears for Alternate Messenger users to choose Phone Bridge or Browser Call."
     ]
   },
   {
@@ -2376,8 +4850,8 @@
     ],
     "title": "📞 Aircall UX — Provider-Aware Call Button & Widget Gate",
     "items": [
-      "**Smarter call button:** The \"Log Call\" button now clearly labels itself \"📞 Call via Aircall\" (green) or \"💬 Call via RCM\" (purple) — no more guessing which dialer is active.",
-      "**RCM widget suppressed:** The RCM floating messaging button (FAB) no longer appears for Aircall SDRs — it only initialises for RCM users.",
+      "**Smarter call button:** The \"Log Call\" button now clearly labels itself \"📞 Call via Aircall\" (green) or \"💬 Call via Alternate Messenger\" (purple) — no more guessing which dialer is active.",
+      "**Alternate Messenger widget suppressed:** The Alternate Messenger floating messaging button (FAB) no longer appears for Aircall SDRs — it only initialises for Alternate Messenger users.",
       "**No config changes needed:** Provider detection is automatic based on your admin dialer settings."
     ]
   },
@@ -2397,7 +4871,7 @@
     "title": "🩺 Integration Health Diagnostics — Dialer & Chat",
     "items": [
       "**GET /api/dialer/health:** Instantly check your Contact Center config — provider, API credentials, caller ID, and live API connectivity.",
-      "**GET /api/chat/health:** Check RCM messaging setup — enabled flag, api_key, user_id, account_id, sender_id, and live API ping.",
+      "**GET /api/chat/health:** Check Alternate Messenger messaging setup — enabled flag, api_key, user_id, account_id, sender_id, and live API ping.",
       "**Safe & masked:** No secrets exposed — credential values shown as `abc***xyz`. Auth required.",
       "**Status field:** Returns `\"ok\"` or `\"degraded\"` with per-check detail messages — great for debugging staging vs prod."
     ]
@@ -2415,13 +4889,13 @@
         "variant": "default"
       }
     ],
-    "title": "💬 RCM Floating Widget — Unified Messaging Surface",
+    "title": "💬 Alternate Messenger Floating Widget — Unified Messaging Surface",
     "items": [
-      "**💬 Message Button:** A green **Message** button on every lead detail page opens the floating RCM widget with the lead's name and phone pre-loaded.",
+      "**💬 Message Button:** A green **Message** button on every lead detail page opens the floating Alternate Messenger widget with the lead's name and phone pre-loaded.",
       "**🪟 Floating Widget:** The widget is now the only messaging surface — it floats over the page and supports active-call state (timer, disconnect button).",
       "**🚫 No-phone guard:** Leads without a phone number see a clear notice instead of a blank compose area.",
       "**📞 Timer sync:** Widget call timer anchors to the actual call start time — no drift between dialer and messaging UI.",
-      "**⚙️ Admin-Controlled:** Super Admins enable this via **Settings → Sync → RCM Messaging**. SDRs without it enabled see no UI change."
+      "**⚙️ Admin-Controlled:** Super Admins enable this via **Settings → Sync → Alternate Messenger Messaging**. SDRs without it enabled see no UI change."
     ]
   },
   {
@@ -2549,7 +5023,7 @@
       "**🏷️ Outcome Groups:** Each outcome belongs to a behavioral group (positive, negative, neutral, not_answered, terminal) with an associated action (continue, schedule_callback, disqualify).",
       "**🚪 Left the Company:** New builtin outcome that auto-disqualifies leads who have left their company.",
       "**📝 Notes Required:** Outcomes flagged as \"notes required\" block call logging until the SDR provides notes.",
-      "**📞 RCM Fix:** Fixed HTTP 400 errors from legacy DialerCall records storing phone numbers instead of call IDs.",
+      "**📞 Alternate Messenger Fix:** Fixed HTTP 400 errors from legacy DialerCall records storing phone numbers instead of call IDs.",
       "**🧪 827 Backend + 86 Playwright Tests Passing.**"
     ]
   },
@@ -2566,12 +5040,12 @@
         "variant": "default"
       }
     ],
-    "title": "📞 RCM Dialer — WebRTC Browser Calling & Call Mode Selector",
+    "title": "📞 Alternate Messenger Dialer — WebRTC Browser Calling & Call Mode Selector",
     "items": [
       "**🌐 LiveKit WebRTC:** Calls now use the LiveKit WebRTC SDK for real-time browser audio — sub-second voice connection with no external app.",
       "**📞 Call Mode Selector:** Before each call, choose between Browser Call (WebRTC) or Phone Bridge mode. Browser Call is the default.",
-      "**🔒 HMAC Auth:** All RCM API calls now use secure HMAC token authentication via RCMAuthManager.",
-      "**📦 Payload Alignment:** Cleaned up API payloads — removed legacy fields for strict RCM API v2 compliance.",
+      "**🔒 HMAC Auth:** All Alternate Messenger API calls now use secure HMAC token authentication via AlternateMessengerAuthManager.",
+      "**📦 Payload Alignment:** Cleaned up API payloads — removed legacy fields for strict Alternate Messenger API v2 compliance.",
       "**🧪 773 Tests Passing:** Updated edge case tests for HMAC auth and payload alignment. 0 failures."
     ]
   },
@@ -2588,15 +5062,15 @@
         "variant": "default"
       }
     ],
-    "title": "📞 RCM Contact Center Dialer — Dual-Dialer Architecture",
+    "title": "📞 Alternate Messenger Contact Center Dialer — Dual-Dialer Architecture",
     "items": [
-      "**📞 RCM Dialer:** Full integration with RCM Contact Center API for browser-based calling. SDRs assigned to RCM make calls directly in the browser — no external app needed.",
+      "**📞 Alternate Messenger Dialer:** Full integration with Alternate Messenger Contact Center API for browser-based calling. SDRs assigned to Alternate Messenger make calls directly in the browser — no external app needed.",
       "**🌐 In-Browser Call Widget:** A floating, draggable call widget with real-time duration timer, mute/hold/hangup controls, and recording indicator. Works on desktop and mobile.",
-      "**👤 Per-SDR Routing:** Each SDR can be assigned to either Aircall or RCM — the system dynamically picks the right provider at call time. Nothing changes for Aircall users.",
+      "**👤 Per-SDR Routing:** Each SDR can be assigned to either Aircall or Alternate Messenger — the system dynamically picks the right provider at call time. Nothing changes for Aircall users.",
       "**🔄 Dual Sync:** Call sync jobs now run for both providers independently — call history stays complete regardless of which dialer an SDR uses.",
-      "**🔗 Real-Time Webhooks:** RCM call events (started, answered, ended) are processed in real time — call logs update automatically.",
-      "**📋 Provider Badge:** Call history cards now show \"via RCM\" or \"via Aircall\" badges so you can see which dialer was used for each call.",
-      "**🧪 51 New Tests:** Comprehensive test suite covering all RCM provider operations, webhook parsing, retry logic, and edge cases. 701 total tests passing."
+      "**🔗 Real-Time Webhooks:** Alternate Messenger call events (started, answered, ended) are processed in real time — call logs update automatically.",
+      "**📋 Provider Badge:** Call history cards now show \"via Alternate Messenger\" or \"via Aircall\" badges so you can see which dialer was used for each call.",
+      "**🧪 51 New Tests:** Comprehensive test suite covering all Alternate Messenger provider operations, webhook parsing, retry logic, and edge cases. 701 total tests passing."
     ]
   },
   {
@@ -2903,7 +5377,7 @@
     ],
     "title": "Dialer Outcome Filter Fix + Task Notification Stability",
     "items": [
-      "**🔍 Dialer Outcome Filter:** Fixed a bug where clicking a call outcome filter (e.g. \"Call Back Later\") on the dashboard would miss leads called via Aircall or RCM dialer. All leads with that outcome now appear correctly regardless of which calling method was used",
+      "**🔍 Dialer Outcome Filter:** Fixed a bug where clicking a call outcome filter (e.g. \"Call Back Later\") on the dashboard would miss leads called via Aircall or Alternate Messenger dialer. All leads with that outcome now appear correctly regardless of which calling method was used",
       "**🔔 Task Notifications:** Fixed \"ghost task\" issue — snoozing or dismissing a task now only removes it from the notification panel when the server confirms the action. If there's a network issue, the button re-enables so you can try again",
       "**🧪 43 New Tests:** Backend test coverage added for task lifecycle (create, complete, snooze, dismiss) and outcome filtering across both manual and dialer call sources"
     ]
@@ -2923,7 +5397,7 @@
       "**🏢 Company Grouping:** Leads from the same company are always assigned to the same SDR — no more scattered outreach to the same hospital across multiple reps",
       "**👤 SDR Dropdown Retained:** Both \"Assign to Pod\" and \"Assign to SDR\" dropdowns available — mutually exclusive, selecting one auto-clears the other",
       "**🔄 Leads Follow User:** When an SDR is transferred between Pods, their active leads automatically move with them to the new Pod",
-      "**🎨 Branding Update:** Updated to \"RCM · Powered by RCM\" with new RCM favicon and logo across login page, sidebar, and browser tab"
+      "**🎨 Branding Update:** Updated to \"Alternate CRM · Powered by Alternate Messenger\" with new Alternate Messenger favicon and logo across login page, sidebar, and browser tab"
     ]
   },
   {
@@ -2971,7 +5445,7 @@
     "items": [
       "**📐 Collapsible Sidebar:** Toggle between expanded (260px with labels) and compact (72px icon-only) mode — state persists across sessions, hover tooltips in collapsed mode, works for all roles",
       "**✉️ Email Formatting:** Emails now preserve your line breaks and paragraphs — previously all formatting was lost when the recipient received the email",
-      "**📧 Origin Tagging:** Outbound emails include a subtle \"RCM · Powered by RCM\" footer and invisible X-Mailer header for tracking emails sent from the CRM"
+      "**📧 Origin Tagging:** Outbound emails include a subtle \"Alternate CRM · Powered by Alternate Messenger\" footer and invisible X-Mailer header for tracking emails sent from the CRM"
     ]
   },
   {
@@ -3034,7 +5508,7 @@
     ],
     "title": "Conversations Tab + Email Open Tracking",
     "items": [
-      "**💬 Conversations:** New tab on lead detail — message leads directly from RCM via the RCM messaging integration. Uses phone fallback and per-SDR identity tagging",
+      "**💬 Conversations:** New tab on lead detail — message leads directly from Alternate CRM via the Alternate Messenger messaging integration. Uses phone fallback and per-SDR identity tagging",
       "**📧 Email Open Tracking:** Outbound emails now track opens — a green \"Opened\" badge shows view count and first-opened time, gray \"Sent\" badge for unread emails",
       "**👁️ Per-SDR Identity:** Each SDR can be assigned a Conversations user ID in Admin panel for proper message attribution",
       "**📱 Phone Fallback:** Conversations uses secondary phone when primary is missing, so more leads can be reached",
@@ -3231,9 +5705,9 @@
     "version": "v3.6.0",
     "date": "March 23, 2026",
     "tags": [],
-    "title": "RCM Rebrand + Login Revamp",
+    "title": "Alternate CRM Rebrand + Login Revamp",
     "items": [
-      "**🚀 RCM Rebrand:** Renamed from \"RCM CRM\" to \"RCM\" across all user-facing surfaces",
+      "**🚀 Alternate CRM Rebrand:** Renamed from \"Alternate Messenger CRM\" to \"Alternate CRM\" across all user-facing surfaces",
       "**✨ Revamped Login Page:** New dark navy + amber/gold design with floating spark animations",
       "**Updated Tagline:** \"Turn raw leads into qualified prospects\""
     ]

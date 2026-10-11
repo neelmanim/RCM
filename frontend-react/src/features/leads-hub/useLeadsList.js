@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { LeadsService, AssignmentsService, TagsService, AdminService, DisqualifyService, CallsService } from '../../services/api';
+import { LeadsService, AssignmentsService, TagsService, AdminService, DisqualifyService, CallsService, CallListsService, SavedViewsService } from '../../services/api';
 
-const PER_PAGE = 20;
+export const PER_PAGE = 20;
 const SAVED_VIEWS_KEY = 'leadsHub.savedViews';
 // Transient view state (filters/search/sort/page) — sessionStorage, not
 // localStorage, on purpose: it should survive navigating to another CRM view
@@ -29,10 +29,6 @@ function loadSavedViews() {
   } catch {
     return [];
   }
-}
-
-function persistSavedViews(views) {
-  try { window.localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(views)); } catch { /* storage unavailable — views just won't persist */ }
 }
 
 function loadViewState() {
@@ -92,16 +88,44 @@ export function useLeadsList(isAdmin) {
 
   const [filters, setFilters] = useState(() => (restored?.filters ? { ...emptyFilters(), ...restored.filters } : emptyFilters()));
   const [activeFilterKeys, setActiveFilterKeys] = useState(restored?.activeFilterKeys || []);
+  // Dashboard click-through views that aren't a plain filter (Given today / Not yet called): { key, label, from?, to? }
+  const [smartView, setSmartView] = useState(restored?.smartView || null);
   // Pod Admins default to their own pod, matching the classic table — not
   // "Global" (everyone across every pod), which is what this used to default
   // to here regardless of role.
   const [globalView, setGlobalView] = useState(restored?.globalView ?? false);
 
-  const [savedViews, setSavedViews] = useState(loadSavedViews);
+  const [savedViews, setSavedViews] = useState([]);
+  // Views live on the server, per user. Any left in this browser from before are moved up once, then cleared.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let views = await SavedViewsService.list();
+        const legacy = loadSavedViews().filter((l) => l?.name && Array.isArray(l.keys) && l.keys.length);
+        if (legacy.length) {
+          const have = new Set(views.map((v) => v.name));
+          for (const l of legacy.filter((x) => !have.has(x.name))) {
+            await SavedViewsService.create({ name: l.name, filters: l.filters || {}, keys: l.keys, search: l.search || '' }).catch(() => {});
+          }
+          views = await SavedViewsService.list();
+          try { window.localStorage.removeItem(SAVED_VIEWS_KEY); } catch { /* nothing to clear */ }
+        }
+        if (!cancelled) setSavedViews(views);
+      } catch { /* offline: the Save view button reports the problem when used */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const [activeViewId, setActiveViewId] = useState('all');
 
   const [selected, setSelected] = useState(() => new Set());
   const [assignMode, setAssignMode] = useState(false);
+  // Independent from assignMode — a lighter, non-admin bulk-select mode for
+  // "Add to Call List" only. assignMode also unlocks Assign/Unassign (a real
+  // admin capability, reassigning leads across the team); selectMode must
+  // NOT expose that, so it's its own toggle rather than widening assignMode
+  // to every role.
+  const [selectMode, setSelectMode] = useState(false);
 
   // Column sort — only covers columns backed by a single Lead column
   // server-side (see GET /leads' _SORT_COLUMNS). "Assigned to" and
@@ -122,12 +146,15 @@ export function useLeadsList(isAdmin) {
   // view switch (see leads-entry.jsx), so this can't just live in React state.
   useEffect(() => {
     try {
-      window.sessionStorage.setItem(VIEW_STATE_KEY, JSON.stringify({ filters, activeFilterKeys, globalView, page, sort, searchTerm }));
+      window.sessionStorage.setItem(VIEW_STATE_KEY, JSON.stringify({ filters, activeFilterKeys, globalView, page, sort, searchTerm, smartView }));
     } catch { /* storage unavailable — state just won't persist across navigation */ }
-  }, [filters, activeFilterKeys, globalView, page, sort, searchTerm]);
+  }, [filters, activeFilterKeys, globalView, page, sort, searchTerm, smartView]);
 
+  // Not cached for the page's lifetime like the other reference lists: tags are created at upload time, so a
+  // page opened before a tag existed would never offer it. Re-fetched on mount and whenever the Tag filter opens.
   const [tags, setTags] = useState([]);
-  useEffect(() => { fetchOnce('tags', TagsService.list).then((d) => setTags(d.tags || [])).catch(() => {}); }, []);
+  const refreshTags = useCallback(() => { TagsService.list().then((d) => setTags(d.tags || [])).catch(() => {}); }, []);
+  useEffect(() => { refreshTags(); }, [refreshTags]);
 
   // GET /admin/users and GET /leads/upload-logs both require an admin role
   // server-side — fetching them for a non-admin would just be a guaranteed
@@ -222,6 +249,7 @@ export function useLeadsList(isAdmin) {
   const resetSearch = useCallback(() => { setSearchInput(''); setSearchTerm(''); }, []);
 
   const clearAllFilters = useCallback(() => {
+    setSmartView(null);
     setActiveFilterKeys([]);
     setFilters(emptyFilters());
     setActiveViewId('all');
@@ -231,6 +259,7 @@ export function useLeadsList(isAdmin) {
 
   const applyView = useCallback((viewId) => {
     setActiveViewId(viewId);
+    setSmartView(null);
     if (viewId === 'all') {
       setFilters(emptyFilters());
       setActiveFilterKeys([]);
@@ -246,23 +275,26 @@ export function useLeadsList(isAdmin) {
     setPage(1);
   }, [savedViews, resetSearch]);
 
-  const saveCurrentView = useCallback((name) => {
-    if (!activeFilterKeys.length || !name) return;
-    const view = { id: `v-${crypto.randomUUID()}`, name, filters: { ...filters }, keys: [...activeFilterKeys], search: searchTerm };
-    setSavedViews((views) => {
-      const next = [...views, view];
-      persistSavedViews(next);
-      return next;
-    });
-    setActiveViewId(view.id);
+  // Resolve to { error } on failure so the dialog can say what went wrong instead of silently doing nothing.
+  const saveCurrentView = useCallback(async (name) => {
+    if (!activeFilterKeys.length || !name) return { error: 'Add a filter first.' };
+    try {
+      const view = await SavedViewsService.create({ name, filters: { ...filters }, keys: [...activeFilterKeys], search: searchTerm });
+      setSavedViews((views) => [...views, view]);
+      setActiveViewId(view.id);
+      return {};
+    } catch (err) {
+      return { error: err?.response?.data?.detail || "Couldn't save the view — please try again." };
+    }
   }, [filters, activeFilterKeys, searchTerm]);
 
-  const removeView = useCallback((viewId) => {
-    setSavedViews((views) => {
-      const next = views.filter((v) => v.id !== viewId);
-      persistSavedViews(next);
-      return next;
-    });
+  const removeView = useCallback(async (viewId) => {
+    try {
+      await SavedViewsService.remove(viewId);
+    } catch (err) {
+      return { error: err?.response?.data?.detail || "Couldn't remove the view — please try again." };
+    }
+    setSavedViews((views) => views.filter((v) => v.id !== viewId));
     if (activeViewId === viewId) {
       setActiveViewId('all');
       setFilters(emptyFilters());
@@ -270,6 +302,7 @@ export function useLeadsList(isAdmin) {
       resetSearch();
       setPage(1);
     }
+    return {};
   }, [activeViewId, resetSearch]);
 
   const toggleGlobalView = useCallback(() => setGlobalView((g) => !g), []);
@@ -291,20 +324,32 @@ export function useLeadsList(isAdmin) {
     if (filters.dateFrom) p.date_from = filters.dateFrom;
     if (filters.dateTo) p.date_to = filters.dateTo;
     if (sort.key) { p.sort_by = sort.key; p.sort_dir = sort.dir; }
+    if (smartView) { p.smart = smartView.key; if (smartView.from) { p.smart_from = smartView.from; p.smart_to = smartView.to; } }
     return p;
-  }, [page, globalView, searchTerm, filters, sort]);
+  }, [page, globalView, searchTerm, filters, sort, smartView]);
 
   // Guards against a slower, now-stale request's response landing after a
   // newer one (e.g. rapid filter/tag toggling) and overwriting the table
   // with results for a filter combination the user already moved away from
   // — same requestIdRef pattern used in Analytics Hub's DashboardTab.jsx.
   const requestIdRef = useRef(0);
+  // Backlog fix: the requestIdRef guard above only discarded a stale
+  // response client-side — the superseded HTTP request kept running on the
+  // wire and tying up a connection/backend slot behind the newer one.
+  // Enough of these piling up (toggle Assign mode, then type a search) could
+  // starve the request that actually mattered, surfacing as "Couldn't load
+  // leads" even though the same query works fine standalone. Aborting the
+  // previous controller turns discard-on-arrival into real cancellation.
+  const abortRef = useRef(null);
   const fetchLeads = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     const myRequestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      const data = await LeadsService.getLeads(params);
+      const data = await LeadsService.getLeads(params, { signal: controller.signal });
       if (myRequestId !== requestIdRef.current) return; // superseded — discard
       const pages = data.pages || 1;
       // A page number restored from a previous session (see loadViewState
@@ -316,6 +361,7 @@ export function useLeadsList(isAdmin) {
       setTotalPages(pages);
     } catch (e) {
       if (myRequestId !== requestIdRef.current) return;
+      if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return; // our own abort, not a real failure
       setError(e?.response?.data?.detail || 'Failed to load leads');
     } finally {
       if (myRequestId === requestIdRef.current) setLoading(false);
@@ -340,6 +386,10 @@ export function useLeadsList(isAdmin) {
     setAssignMode((m) => !m);
     setSelected(new Set());
   }, []);
+  const toggleSelectMode = useCallback(() => {
+    setSelectMode((m) => !m);
+    setSelected(new Set());
+  }, []);
 
   // "Select all N matching" — a real cross-page fetch (GET /leads?ids_only=true
   // with the same active filters), not a client-side stub over the current page.
@@ -361,9 +411,16 @@ export function useLeadsList(isAdmin) {
     setLeads((ls) => ls.map((l) => (l.id === leadId ? { ...l, status } : l)));
   }, []);
   const setLeadAssignee = useCallback(async (leadId, userId) => {
-    if (userId) await AssignmentsService.bulkAssign(userId, [leadId]);
-    else await AssignmentsService.bulkUnassign([leadId]);
+    // RCA 2026-08-24 (live, prod): this used to discard the response, so a
+    // pod-locked/no-phone skip (a real HTTP 200, not an error) looked
+    // identical to a successful reassignment — the row just silently didn't
+    // change, with no toast either way. Return the result so the caller can
+    // tell the SDR why, same as the bulk-assign toolbar already does.
+    const result = userId
+      ? await AssignmentsService.bulkAssign(userId, [leadId])
+      : await AssignmentsService.bulkUnassign([leadId]);
     await fetchLeads();
+    return result;
   }, [fetchLeads]);
   const setLeadPriority = useCallback(async (leadId, score) => {
     await LeadsService.reprioritize(leadId, score);
@@ -402,19 +459,33 @@ export function useLeadsList(isAdmin) {
     []
   );
 
+  // "Save current filter as a Call List" — resolves the FULL filtered set
+  // (not just the current page) via the same ids_only fetch selectAllMatching
+  // uses, then bulk-adds every matching lead. `total` (from the normal
+  // paginated fetch) already gives the exact count for a confirmation prompt
+  // before this runs — no separate count-only request needed.
+  const saveFilterAsCallList = useCallback(async (callList) => {
+    const { page: _page, per_page: _perPage, ...filterParams } = params;
+    const data = await LeadsService.getLeads({ ...filterParams, ids_only: true });
+    const leadIds = (data.data || []).map((l) => l.id);
+    return CallListsService.addLeads(callList.id, leadIds);
+  }, [params]);
+
   return {
     leads, loading, error, total, page, setPage, totalPages, isAdmin,
     searchInput, setSearchInput,
     filters, setFilter, toggleMultiFilter, clearFilter,
-    activeFilterKeys, addFilterKey, removeFilterKey, clearAllFilters,
+    activeFilterKeys, addFilterKey, removeFilterKey, clearAllFilters, smartView, clearSmartView: () => { setSmartView(null); setPage(1); },
     globalView, toggleGlobalView,
     savedViews, activeViewId, applyView, saveCurrentView, removeView,
-    tags, sdrs, companies, uploadLogs, outcomes,
+    tags, refreshTags, sdrs, companies, uploadLogs, outcomes,
     selected, toggleSelect, selectAllVisible, clearSelection, assignMode, toggleAssignMode,
+    selectMode, toggleSelectMode,
     sort, toggleSort,
     selectAllMatching, selectingAllMatching,
     setLeadStatus, setLeadAssignee, setLeadPriority,
     bulkAssign, bulkUnassign, bulkDelete, autoAssignAll, requestDisqualifyAccount,
+    saveFilterAsCallList,
     refetch: fetchLeads,
   };
 }

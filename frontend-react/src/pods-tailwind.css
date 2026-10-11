@@ -1,0 +1,25 @@
+/*
+ * pods-tailwind.css
+ *
+ * Tailwind entry point for the Pods Hub IIFE bundle ONLY. Mirrors
+ * leads-tailwind.css exactly — omits @tailwind base to avoid leaking
+ * resets into the Vanilla JS shell, and reproduces just the border-reset
+ * half of Preflight, scoped to .podshub.
+ */
+.podshub, .podshub *, .podshub *::before, .podshub *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.podshub) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

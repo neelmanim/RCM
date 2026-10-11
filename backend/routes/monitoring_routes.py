@@ -32,6 +32,7 @@ from sqlalchemy import text
 import app_state
 import models
 from database import get_db
+from auth import authenticates_itself
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ def _verify_key(key: str) -> None:
 
 # ── Endpoint ───────────────────────────────────────────────────────────────────
 
-@router.get("/health")
+@router.get("/health", dependencies=[Depends(authenticates_itself)])
 def monitoring_health(
     key: str = Query(..., description="Monitoring API key (set via MONITORING_API_KEY env var)"),
     db: Session = Depends(get_db),
@@ -65,7 +66,7 @@ def monitoring_health(
     Returns an aggregated status across DB, tables, scheduler, data integrity.
 
     Configure in UptimeRobot as a Keyword monitor:
-        URL: https://api.alternatecrm.com/api/monitoring/health?key=<KEY>
+        URL: https://api.alternatecrm.staging.in/api/monitoring/health?key=<KEY>
         keyword_type: 2  (alert when keyword is NOT found)
         keyword_value: "status":"ok"
     """

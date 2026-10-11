@@ -17,7 +17,7 @@ Covers:
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from conftest import (
+from conftest import (create_test_booking,
     create_test_user, create_test_lead, create_test_call,
     create_sync_settings, SUPER_ADMIN, SDR_USER,
 )
@@ -214,6 +214,7 @@ class TestLeaderboardNineStage:
         sdr = create_test_user(db, email="lb9a@t.com", role="SDR", name="Disc SDR")
         lead = create_test_lead(db, email="lb9l1@t.com", status="1st Discovery Meeting")
         sdr.assigned_leads.append(lead)
+        create_test_booking(db, lead, sdr.id)
         db.commit()
 
         resp = client.get("/api/leaderboard")
@@ -225,6 +226,7 @@ class TestLeaderboardNineStage:
         sdr = create_test_user(db, email="lb9b@t.com", role="SDR", name="Demo SDR")
         lead = create_test_lead(db, email="lb9l2@t.com", status="Demo Done")
         sdr.assigned_leads.append(lead)
+        create_test_booking(db, lead, sdr.id)
         db.commit()
 
         resp = client.get("/api/leaderboard")
@@ -235,6 +237,7 @@ class TestLeaderboardNineStage:
         sdr = create_test_user(db, email="lb9c@t.com", role="SDR", name="Complete SDR")
         lead = create_test_lead(db, email="lb9l3@t.com", status="Completed")
         sdr.assigned_leads.append(lead)
+        create_test_booking(db, lead, sdr.id)
         db.commit()
 
         resp = client.get("/api/leaderboard")

@@ -1,8 +1,8 @@
-# RCM CRM — Agent Protocol (Single Source of Truth)
+# Alternate CRM CRM — Agent Protocol (Single Source of Truth)
 
 > **This is the only protocol file AI agents need to read.**
 > All other protocol docs (`MYAGENT.md`, `Dev_Protocol.md`, `DEPLOYMENT_PROTOCOL.md`) are deprecated and redirect here.
-> Last updated: 2026-05-22 — Staging gate added to pre-deploy checklist (RCA: 2026-05-22)
+> Last updated: 2026-08-18 — Rule 16 added: paired metrics must hold a superset/subset invariant (RCA: 2026-08-18)
 
 ---
 
@@ -46,9 +46,9 @@ Update it whenever env vars change, then `git stash` it (it's gitignored, keep l
 
 | Env | Branch | Backend URL | Frontend URL |
 |-----|--------|-------------|--------------|
-| **Develop** | `develop` | local only | https://rcm-frontend-develop.onrender.com |
-| **Staging** | `staging` | https://rcm-crm-staging.onrender.com | https://rcm-frontend-staging.onrender.com |
-| **Production** | `main` | https://api.alternatecrm.com | https://rcm.txtbox.in |
+| **Develop** | `develop` | local only | https://messenger-frontend-develop.onrender.com |
+| **Staging** | `staging` | https://messenger-crm-staging.onrender.com | https://messenger-frontend-staging.onrender.com |
+| **Production** | `main` | https://api.alternatecrm.staging.in | https://alternatecrm.staging.in |
 
 **GitHub repo:** https://github.com/neelmanimishrasf/crmalternate
 
@@ -56,8 +56,8 @@ Update it whenever env vars change, then `git stash` it (it's gitignored, keep l
 
 | DB | Plan | Used By |
 |----|------|---------|
-| `rcm-db-prod` | basic 256MB | Production backend |
-| `rcm-db-staging` | basic 256MB | Staging backend |
+| `messenger-db-prod` | basic 256MB | Production backend |
+| `messenger-db-staging` | basic 256MB | Staging backend |
 
 ### Architecture Notes
 
@@ -72,6 +72,22 @@ Update it whenever env vars change, then `git stash` it (it's gitignored, keep l
 ## 3. Code Exploration (MANDATORY — use graph before files)
 
 This project has a **code-review-graph knowledge graph**.
+
+### Setup (new machine / new team member)
+
+Full copy-pasteable walkthrough with exact click paths, both URLs (staging
++ prod), and the personal-config JSON: **`docs/MCP_SETUP.md`**. Summary:
+
+- **`code-review-graph`**: zero-config, `.mcp.json` at the repo root
+  already has it, starts automatically once `uvx`/`code-review-graph` is
+  on `PATH`. (RCA 2026-09-28: `.mcp.json` used to hardcode one person's
+  absolute machine path in a `cwd` field — broken for everyone else who
+  cloned it. Removed.)
+- **`alternatecrm` (Public API MCP, optional)**: personal, NOT in `.mcp.json`.
+  Key comes from **Control Center → Integrations → Public API card →
+  Generate New Key** (Super Admin only), then registered in your own,
+  un-committed MCP client config — never this repo's `.mcp.json`. See
+  `docs/MCP_SETUP.md` for the exact JSON and both base URLs.
 
 All agents MUST use graph tools **BEFORE** falling back to Grep/Glob/Read:
 
@@ -104,7 +120,7 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 
 ---
 
-## 4b. Secondary Mirror: txtbox GitLab (added 2026-08-10)
+## 4b. Secondary Mirror: staging GitLab (added 2026-08-10)
 
 Every push to `origin` (GitHub — the primary repo, used for all real
 development) must ALSO be mirrored to the company's internal GitLab
@@ -112,7 +128,7 @@ instance, by default, without being asked each time:
 
 | Our branch | GitLab repo | GitLab branch |
 |---|---|---|
-| `develop` | `git.alternatecrm.com:8080/rcm-org/rcm-backend` (remote name: `txtbox`) | `develop` |
+| `develop` | `git.staging.in:8080/messaging_providerportal/sdrcrm` (remote name: `staging`) | `develop` |
 | `staging` | same | `staging` |
 | `main` | same | `master` |
 
@@ -135,23 +151,23 @@ history sync:**
 # parentless commit-tree only worked the very first time (fresh branch,
 # no history yet); every sync after that is a real tip and a parentless
 # commit gets rejected as non-fast-forward.
-git fetch txtbox develop staging
+git fetch staging develop staging
 
 DEV_COMMIT=$(git commit-tree $(git rev-parse develop^{tree}) \
-  -p "$(git rev-parse txtbox/develop)" \
+  -p "$(git rev-parse staging/develop)" \
   -m "[Neelmani] SMRO-111111: sync develop branch codebase snapshot")
-git push txtbox "${DEV_COMMIT}:refs/heads/develop"
+git push staging "${DEV_COMMIT}:refs/heads/develop"
 
 STG_COMMIT=$(git commit-tree $(git rev-parse staging^{tree}) \
-  -p "$(git rev-parse txtbox/staging)" \
+  -p "$(git rev-parse staging/staging)" \
   -m "[Neelmani] SMRO-111111: sync staging branch codebase snapshot")
-git push txtbox "${STG_COMMIT}:refs/heads/staging"
+git push staging "${STG_COMMIT}:refs/heads/staging"
 
 # main -> master: protected, direct push always fails — open a Merge
 # Request from the already-pushed `staging` snapshot instead, and the
 # user approves/merges it in the GitLab UI:
-TOKEN=$(git remote get-url txtbox | sed -E 's#https://[^:]+:([^@]+)@.*#\1#')
-curl -s -X POST "https://git.alternatecrm.com:8080/api/v4/projects/rcm-org%2Frcm-backend/merge_requests" \
+TOKEN=$(git remote get-url staging | sed -E 's#https://[^:]+:([^@]+)@.*#\1#')
+curl -s -X POST "https://git.staging.in:8080/api/v4/projects/messaging_providerportal%2Fsdrcrm/merge_requests" \
   --header "PRIVATE-TOKEN: ${TOKEN}" \
   --data-urlencode "source_branch=staging" \
   --data-urlencode "target_branch=master" \
@@ -165,10 +181,10 @@ instead of requiring a destructive force-push. `develop`/`staging` had no
 prior history on that side, so their first sync there was just a fresh
 branch creation.
 
-**Never hardcode the `txtbox` token in this file, in commit messages, or in
-any other tracked doc.** It lives only in the `txtbox` remote's URL
+**Never hardcode the `staging` token in this file, in commit messages, or in
+any other tracked doc.** It lives only in the `staging` remote's URL
 (`git remote -v`) — read it at push time with
-`git remote get-url txtbox | sed -E 's#https://[^:]+:([^@]+)@.*#\1#'` as shown
+`git remote get-url staging | sed -E 's#https://[^:]+:([^@]+)@.*#\1#'` as shown
 above, never paste it literally.
 
 If the token's permissions are ever expanded to allow direct pushes to
@@ -208,7 +224,7 @@ develop → staging → main → production
    - `docs/release-notes.md`
    - `frontend-react/src/features/help-hub/data/releases.json` (in-app "What's New" section)
 8. Only then merge `staging → main` → production auto-deploys
-9. Mirror `develop`/`staging` to the txtbox GitLab and open the `staging → master` Merge Request there — see §4b. Default behavior, not conditional on being asked.
+9. Mirror `develop`/`staging` to the staging GitLab and open the `staging → master` Merge Request there — see §4b. Default behavior, not conditional on being asked.
 
 > **NEVER push to staging and production simultaneously.**
 
@@ -222,7 +238,7 @@ develop → staging → main → production
 
 > ⛔ **STAGING GATE — MANDATORY (RCA: 2026-05-22)**
 > Running tests against the staging URL is NOT the same as merging to `staging`.
-> The staging branch has its own database (`rcm-db-staging`).
+> The staging branch has its own database (`messenger-db-staging`).
 > DB migrations (indexes, columns) MUST be verified on staging DB before production.
 >
 > ```bash
@@ -232,7 +248,7 @@ develop → staging → main → production
 > git push origin staging
 >
 > # Step 2 — wait for Render staging deploy (~2 min), then verify
-> curl https://rcm-crm-staging.onrender.com/api/health/deep
+> curl https://messenger-crm-staging.onrender.com/api/health/deep
 > # Must return: {"db_tables_accessible": true}
 >
 > # Step 3 — ONLY THEN merge staging to main
@@ -258,6 +274,7 @@ develop → staging → main → production
 - [ ] `detect_changes` shows no HIGH-risk items unaddressed
 - [ ] Test coverage verified: `query_graph` with `tests_for` on changed code
 - [ ] User Guide (`docs/user-guide.md`) updated if feature impacts SDR workflow or admin controls
+- [ ] **[MANDATORY — §13 rule 5]** In-app interactive walkthrough added/extended for a significant new or changed UI screen (reuse the `GuidedTour.jsx` + `seenFlag.js` pattern) — a written guide alone does not satisfy this
 
 ### After deploy to prod:
 
@@ -288,12 +305,11 @@ Staging monitors have been removed — prod only.
 
 | Tier | Monitor | URL | Type | Why |
 |------|---------|-----|------|-----|
-| T1 | Frontend | https://rcm.txtbox.in | HTTP 200 | Entry point — down = all users locked out |
-| T1 | Backend reachable | https://api.alternatecrm.com/api/health | Keyword: `ok` | Shallow check — DB connected |
-| T2 | DB table accessible | https://api.alternatecrm.com/api/health/deep | Keyword: `true` | Catches DB lock (HTTP 200 but queries failing) |
-| T3 | App config endpoint | https://api.alternatecrm.com/api/config | HTTP 200 | Served only after `startup_complete=True` |
-| T4 | Login page | https://api.alternatecrm.com/api/auth/login | HTTP | Auth entry point — failure = no one can log in |
-| T5 | Public API (CMT↔SF) | https://api.alternatecrm.com/api/public/health | Keyword: `ok` | Bridge down = incoming CMT leads stop flowing |
+| T1 | Frontend | https://alternatecrm.staging.in | HTTP 200 | Entry point — down = all users locked out |
+| T1 | Backend reachable | https://api.alternatecrm.staging.in/api/health | Keyword: `ok` | Shallow check — DB connected |
+| T2 | DB table accessible | https://api.alternatecrm.staging.in/api/health/deep | Keyword: `true` | Catches DB lock (HTTP 200 but queries failing) |
+| T4 | Login page | https://api.alternatecrm.staging.in/api/auth/login | HTTP | Auth entry point — failure = no one can log in |
+| T5 | Public API (CMT↔SF) | https://api.alternatecrm.staging.in/api/public/health | Keyword: `ok` | Bridge down = incoming CMT leads stop flowing |
 | T6 | **Authenticated deep health** | `/api/monitoring/health?key=<MONITORING_API_KEY>` | Keyword: `"status":"ok"` | Full-stack: leads count, users count, last SF sync, scheduler alive |
 
 **Required Render env var:**
@@ -357,7 +373,7 @@ If you write an RCA and don't update this file, the RCA is incomplete.
 ### Rule 13 — Staging branch MUST be merged before production (RCA: 2026-05-22)
 Running Playwright tests against the staging **URL** is not a substitute for merging
 to the `staging` **branch**. The staging backend has its own PostgreSQL database
-(`rcm-db-staging`). DB migrations (new indexes, columns, data migrations) only
+(`messenger-db-staging`). DB migrations (new indexes, columns, data migrations) only
 apply to staging DB when code is actually deployed there via a branch push.
 
 **What happened (2026-05-22):** v6.4.4 through v6.5.0 (37 commits) were deployed
@@ -466,7 +482,7 @@ Or call `POST /api/admin/force-add-column` with a Super Admin JWT.
 
 ### Rule 14 — A capacity fix can mask a query-efficiency bug — check both (RCA: 2026-08-03)
 
-**What happened:** `rcm-crm-prod` failed its health check ("HTTP health
+**What happened:** `messenger-crm-prod` failed its health check ("HTTP health
 check failed (timed out after 5 seconds)") at 16:02 UTC and stayed down for
 1h12m. DB CPU stayed low the entire time (2-14%) — not a compute problem.
 DB memory climbed toward the `basic_256mb` plan's ceiling in the hour before
@@ -500,7 +516,7 @@ fix can silently paper over a query-efficiency bug that returns as traffic grows
 
 ### Rule 15 — Version/brand string MUST be updated via `VERSION` + `sync-version.mjs`, never hand-edited (RCA: 2026-08-04)
 
-The app version and "Powered by RCM" brand string were hardcoded
+The app version and "Powered by Alternate Messenger" brand string were hardcoded
 independently in 8 places across the frontend and backend, with no single
 source of truth. Two of those spots (the in-app Help footer and its own
 release-entry heading) had already drifted from each other and from the
@@ -526,6 +542,194 @@ to the existing in-app-release-notes checklist in §15 below):
 
 If either line is missing from the commit message → the release is incomplete.
 
+---
+
+### Rule 16 — Paired metrics with an overlapping definition MUST hold a superset/subset relationship (RCA: 2026-08-18)
+
+**What happened:** v11.4.8 fixed `dialer_call_connected()` to stop letting
+a raw telephony signal override an explicit SDR-logged "No Answer"/"Wrong
+Number" outcome. The very next day, Viren (a report consumer, not the
+agent) spotted that the fix was incomplete: `dialer_call_connected()` and
+`dialer_call_is_conversation()` are two different rules over the same
+`DialerCall` row, and by definition a real conversation (duration-based)
+is always a connection — but the null-outcome fallback branches of the
+two functions used different evidence (`provider_disposition == "ANSWERED"`
+vs. duration), so a real production row (Sumiti Dangi, 2026-08-17: 13
+conversations, 11 connected) violated that invariant. The bug was fixed
+the same day it shipped only because a stakeholder did the arithmetic on
+a screenshot — nothing in the test suite or the review caught it.
+
+**Checklist addition:** when two displayed metrics are both derived from
+the same underlying rows via *related but separately-defined* rules
+(e.g. "connected" vs. "conversations", "completed" vs. "connected"),
+explicitly check whether one is supposed to be a superset of the other,
+and add a test asserting that invariant directly — not just tests for
+each metric in isolation. A pair of metrics that individually pass their
+own tests can still contradict each other on a shared row.
+
+### Rule 17 — Run the test suite once, after development is complete, not after every partial edit (per user direction, 2026-08-19)
+
+**What happened:** The agent's habit of re-running the full (or scoped)
+test suite after each small incremental edit during active development
+was flagged directly by the user as wasted time — re-running tests
+against code that is known to still be mid-change (a helper added but
+not yet wired up everywhere, a component split not yet finished) adds no
+signal and burns minutes per iteration across a long session.
+
+**Checklist addition:** during active development on a feature/fix, make
+all the planned edits first — don't pause to run the test suite after
+each individual file change. Run the relevant test suite(s) once,
+**after the full set of changes for that unit of work is written and the
+agent believes it's complete**, immediately before moving to
+review/commit. This does not relax the requirement that tests pass
+before shipping (Rule 13's staging gate, the mandatory ponytail-review/
+audit pass, and "full suite green before promoting" are all unchanged) —
+it only changes *when* the suite is run relative to the edits, not
+whether it's run.
+
+---
+
+### Rule 18 — Schema-sensitive changes MUST also be checked against real Postgres, not SQLite alone (RCA: 2026-09-30)
+
+**What happened:** `routes/journey_routes.py::enroll_test_lead` (the Cadence/
+Messaging Sandbox's "enroll test lead" endpoint, added in v13.0.0) inserted a
+`Lead` without setting `sf_lead_id`. `models.py` declares that column
+`nullable=True`, and every backend test runs against `sqlite:///:memory:`
+(`tests/conftest.py`), which builds its schema straight from that same model —
+so 3099 passing tests never saw a problem. The real staging (and prod)
+Postgres database has `sf_lead_id NOT NULL` with no default (schema drift that
+predates `migrations.py` and was never reconciled with the model).
+`routes/lead_routes.py`'s own manual-create path already works around this
+with a synthetic `f"manual-{uuid4().hex[:8]}"` — proof someone already hit
+this once — but the sandbox endpoint added later never got the same
+treatment. The result: every real (Postgres) call to this endpoint 500'd from
+the moment v13.0.0 shipped it, invisible to CI, only caught by an end-to-end
+run against staging.
+
+**Standing infrastructure (do not recreate):** a local Postgres 16 is already
+installed via Homebrew, with two databases already set up —
+`crm_dev` (full schema, matches the real app) and `crm_test`. It is not
+started by default: `brew services start postgresql@16` (or `postgresql`),
+then `pg_isready` to confirm. `psql crm_dev` / `psql crm_test` connect
+directly. **Going forward this is the one local Postgres to use — don't spin
+up Docker or another instance.**
+
+**Checklist addition, going forward:**
+- Any change that touches a DB column's nullability, type, default, or a
+  `NOT NULL`/`UNIQUE` constraint — or adds a new raw `INSERT`/`Lead(...)`-style
+  model instantiation outside an existing, already-proven code path — gets a
+  real check against `crm_dev`'s actual schema (`psql crm_dev -c "\d
+  <table>"`, or point `DATABASE_URL` at it for one manual run) before it's
+  considered done. SQLite passing is necessary, not sufficient, for this class
+  of bug.
+- When in doubt whether a table might have drifted from its model (this one
+  clearly had), check `crm_dev` first — it's already there and already
+  correct enough to catch this exact class of gap.
+- This does not replace the SQLite-based unit suite (fast, still the default
+  for everything else) — it's an additional check specifically for schema-
+  shaped risk, run once per relevant change, same spirit as Rule 17.
+
+---
+
+### Rule 19 — A `render.yaml` service block referencing a deleted branch silently breaks Blueprint sync, and the next successful sync can retroactively enforce stale config (RCA: 2026-09-30)
+
+**What happened:** two dead service blocks (`messenger-api-react-staging`,
+`messenger-react-staging`) still referenced `branch: reactstaging`, a branch
+deleted long before. This broke Render's Blueprint sync — a reconciliation
+step separate from any individual service's own deploy status — with a hard
+error (`branch reactstaging could not be found`), visible only in the Render
+dashboard's own Blueprint sync-detail view, not the `/v1/blueprints/.../syncs/...`
+API (which 404s on it) and not reflected in any individual service's health
+(every service still showed "Deployed" and was fully healthy the whole time).
+Once the dead blocks were removed and sync started succeeding again, the
+*next* successful sync enforced `render.yaml`'s stale `plan: starter` on
+`messenger-crm-prod` — which had silently drifted from the actual (manually
+upgraded) live plan for months, because the unrelated sync failure had been
+preventing Blueprint from ever reconciling it — causing a real plan downgrade
+and measured production slowdown (1-4.5s on `/api/leads`) during business
+hours.
+
+**Checklist addition:**
+- The moment a branch is deleted, grep `render.yaml` for that branch name and
+  remove/update any service block referencing it immediately — this is not a
+  "someday" cleanup; an unrelated Blueprint sync failure can sit invisible
+  for months behind healthy-looking individual services.
+- After fixing any Blueprint sync failure, diff every service's declared
+  `plan:` against its actual live plan (`GET /v1/services/{id}` →
+  `serviceDetails.plan`) *before* trusting the next sync to be a no-op — a
+  sync failure for one unrelated reason can mask silent plan drift for an
+  arbitrarily long time.
+
+### Rule 20 — Every push to `main` triggers a full backend rebuild+restart, even for docs-only changes — treat it as a real availability-risk event, not a no-op (RCA: 2026-10-01)
+
+**What happened:** two purely-documentation commits (an internal skill-doc
+update, a `PROJECT_JOURNAL.md` entry) were pushed to `main` on 2026-09-30.
+`render.yaml` had no build-path filtering, so each one triggered a full
+container rebuild and restart on `messenger-crm-prod` exactly like a code
+change would — 5 redeploys that day in total, all from pushes to `main`. Two
+of those five produced a `server_failed` event (`HTTP health check failed
+(timed out after 5 seconds)`). The second one was investigated in full:
+Render's own log showed the instance serving traffic successfully for 37
+seconds after a clean boot, then restarting with zero application-level
+error, traceback, elevated memory (123MB of a 2GB plan), or elevated CPU
+(~2%) — ruling out an app bug, OOM, and CPU starvation. The restart lined up
+exactly with the tail end of that push's rolling deploy, on an instance that
+deploy had just created, pointing to Render's own deploy-orchestration
+cycling the instance rather than anything in application code. Either way,
+the deploy itself — not the content of the docs change — was what put prod
+at risk.
+
+**Checklist addition:**
+- A docs-only or `.claude/`-only commit is not "safe to push to `main`" just
+  because it can't break application logic — until a build filter is in
+  place, it still triggers a full prod restart with the same brief-outage
+  risk as any code deploy.
+- `render.yaml`'s `messenger-crm-prod`/`messenger-crm-staging` blocks now
+  carry a `buildFilter.ignoredPaths` for `docs/**`, `.claude/**`, root
+  `*.md`, and `tests/screenshots/**` (added same day as this RCA) — do not
+  remove it without re-introducing this exact risk. Note Render's own
+  behavior: a push that changes `render.yaml` itself always triggers a
+  Blueprint sync regardless of this filter — that's expected and does not
+  by itself rebuild unrelated services.
+- When in doubt whether a path is covered, check the filter before pushing
+  a docs/config-only change to `main` standalone — batching it into the
+  next real release's push is also a valid way to avoid a standalone
+  restart for non-urgent documentation.
+
+
+### Rule 21 — A number users watch (opens, clicks, replies, attempts) MUST be tested against the third party's REAL payload shape, and MUST have a live "is it arriving" signal (RCA: 2026-10-07)
+
+**What happened:** an AE ran a cadence on prod and reported 0% opens/clicks/replies, a cadence that
+stopped with "the lead replied" when nobody had replied, 27 clicks on a campaign with "no link",
+and "7 attempts" on a lead nobody had called 7 times. Root causes: the Nylas v3 `message.created`
+handler read `thread_id` off the envelope while the payload nests the message under `data.object`
+(opens/clicks already unwrapped it; every unit test used a flat shape, so webhook replies had never
+worked and nothing noticed); a "reply" was any mail involving the lead's address; the Unsubscribe
+link is tracked and mail scanners fetch it; a tagged Aircall call counted twice.
+
+**Checklist addition:**
+- Every webhook/poll handler gets at least one test built from the provider's documented
+  production payload (envelope included), not a hand-flattened one.
+- A counter shown to users says what it counts and whose it is ("call attempts logged on this lead
+  (all reps)", "tasks created") — never a label that implies something stronger.
+- An integration whose value is events we receive gets a health check that fails when the events
+  stop arriving (see `/api/email/health`: `webhook_secret_present`, `tracking_events_arriving`).
+- A state-changing action reachable from a plain GET (unsubscribe, confirm, opt-out) is a bug:
+  link previewers and security scanners follow every link.
+
+### Rule 22 — Anything that ENDS or STARTS a customer-facing process on an inferred event MUST carry its evidence and be tested against the near-misses (RCA: 2026-10-07)
+
+**What happened:** a cadence ended as "replied" (colleague mail / receipt read as a reply), and a
+"status = Calling" cadence enrolled leads already in Calling (a same-status "change" fired the
+trigger; a blank target status matched every change). Neither left a trace of *what* caused it.
+
+**Checklist addition:**
+- The log row for an automatic stop/enrol records the triggering message/event (id, thread, sender,
+  source — `journey_stopped` detail, `enrolled_via`), so the next report is answerable from data.
+- Tests cover the near-miss that *looks* like the trigger but isn't: a colleague's mail, a read
+  receipt, a bounce, a re-save of the same status, a blank trigger target.
+- Publish-time validation rejects a trigger that would match everything; client-side validation
+  mirrors the server's (a disabled Publish button hides the server's message).
 ---
 
 ## 8. P1 Incident Exception Path
@@ -596,7 +800,7 @@ When something fails:
 ## 12. Code Quality Rules
 
 - Write readable, modular code — each module has a single responsibility
-- Add logs on all external calls (Salesforce, Aircall, Nylas, RCM)
+- Add logs on all external calls (Salesforce, Aircall, Nylas, Alternate Messenger)
 - Avoid unnecessary abstractions or heavy frameworks without justification
 - Avoid duplicate logic — reuse existing utilities
 - Keep functions small and focused
@@ -621,7 +825,7 @@ A feature is **significant** if it:
 - Impacts SDR workflow
 - Changes lead lifecycle
 - Adds new UI screens/modules
-- Introduces new integrations (Salesforce, Aircall, Nylas, RCM)
+- Introduces new integrations (Salesforce, Aircall, Nylas, Alternate Messenger)
 - Affects admin controls or reporting
 
 For significant features, the AI Agent MUST:
@@ -630,9 +834,20 @@ For significant features, the AI Agent MUST:
 2. Update in-app release notes in `frontend-react/src/features/help-hub/data/releases.json` ("What's New" section)
 3. Update `docs/release-notes.md` with version, date, features, bug fixes, breaking changes
 4. Add a deploy-time entry to `docs/RELEASES.md`
+5. **Add or extend an in-app interactive walkthrough** for the new/changed UI —
+   not just static help text. RCA 2026-08-21: a rollout (the React leads
+   list) shipped with only a written guide; SDRs didn't read it and avoided
+   the feature over a change (company grouping) that was actually already
+   there. A homegrown, in-context tour — highlight a real element on the
+   actual page, a short card, Next/Skip — reaches people a doc page doesn't.
+   Reuse the existing pattern (`frontend-react/src/features/power-dialer-hub/
+   GuidedTour.jsx` + `utils/seenFlag.js`: `data-tour="..."` attributes on the
+   real targets, a `STEPS` array, shown once per browser via
+   `hasSeen`/`markSeen`) — do not add a new tour library for this.
 
 Documentation must be updated **BEFORE or ALONG WITH** production release.
-If documentation is missing → **STOP production deployment**.
+If documentation (including the walkthrough, for a significant new/changed
+UI screen) is missing → **STOP production deployment**.
 
 ### Screenshot Rules
 
@@ -773,7 +988,7 @@ Before implementing:
 - If a simpler approach exists, say so. **Push back when warranted.**
 - If something is unclear, stop. Name what's confusing. Ask.
 
-> ⚠️ This session (2026-06-11): We applied 6 patches to the RCM dialer
+> ⚠️ This session (2026-06-11): We applied 6 patches to the Alternate Messenger dialer
 > without fully understanding the machine state architecture first. Each patch
 > created a new edge case. Proper upfront analysis (which took 10min to do at
 > the end) revealed the correct fix was architectural, not patch-level.
@@ -832,9 +1047,9 @@ Weak criteria ("make it work") require constant clarification.
 > Always verify against REAL data from the live API before coding any integration.
 
 ### What happened (2026-06-12)
-The RCM `/calls/initiate` payload was coded based on developer-provided curl examples,
+The Alternate Messenger `/calls/initiate` payload was coded based on developer-provided curl examples,
 which showed `call_mode: "bridge"` and E.164 phone format. After 5+ failed fix attempts, we
-queried the **actual RCM call history** (`GET /calls`) and live-tested the endpoint.
+queried the **actual Alternate Messenger call history** (`GET /calls`) and live-tested the endpoint.
 
 The real contract (from 44 live calls + live API test that created call_id=93):
 ```json
@@ -854,17 +1069,17 @@ The real contract (from 44 live calls + live API test that created call_id=93):
 4. **Document the verified contract in the code** — include the live test result
    (e.g. `# LIVE-TESTED 2026-06-12: call_id=93 created OK`) so future agents don't re-investigate.
 
-### Case study: `webhook_url` on RCM `/calls/initiate` (resolved 2026-07-15)
+### Case study: `webhook_url` on Alternate Messenger `/calls/initiate` (resolved 2026-07-15)
 
 This field was a repeat offender for this rule — a good example of why "vendor confirmed it's live"
 is never sufficient evidence on its own:
 
 - **2026-07-09:** Vendor claimed `webhook_url` shipped. Live test → `422 {"errors":{"webhook_url":
-  ["Unknown field."]}}` on `app.bercm.com`. Reverted.
+  ["Unknown field."]}}` on `app.alternatecrm.com`. Reverted.
 - **2026-07-10:** Vendor re-confirmed it was live. Re-tested live → identical 422. Reverted again.
 - **2026-07-15:** Vendor reported it live a third time. This time verified with an actual live call
   placed against staging credentials (not just a code review) → real `200`, `call_id` returned, and
-  the test phone number actually rang. Kept enabled in `rcm_provider.py`.
+  the test phone number actually rang. Kept enabled in `messaging_provider.py`.
 
 The lesson isn't "the vendor eventually told the truth" — it's that the *only* thing that changed
 between attempt 2 and attempt 3 was a live test result, not vendor communication. Two "it's live now"
@@ -910,6 +1125,99 @@ promotion):
 **Not solved by this pass**: there is no ESLint rule, pre-commit hook, or
 CI check enforcing "check `components/ui/` first" — a future agent can
 still reinvent a pattern. Follow-up, not bundled here.
+
+### 19.1 — The unenforced convention bit again (2026-09-15, v12.5.1)
+
+Recording this because the paragraph above predicted it exactly, and the
+prediction came true on the very next two new surfaces.
+
+AE Pipeline and CSM Portal (v12.4.0) were both built on `components/ui/`
+for most of their surface and still hand-rolled four primitives that
+already existed: a raw native `<select>` for the call-outcome picker, four
+raw `<input type="date">` fields across the AE close-deal and CSM
+renewal/update modals, and a hand-styled back button. Worst case:
+`components/ui/StageSelect.jsx` — added in v12.5.0 *by a ponytail-review
+finding about duplication* — was itself rendering a raw native `<select>`
+from inside the component library. All fixed in v12.5.1.
+
+Two things worth carrying forward:
+
+- **This was not a rule being ignored.** The convention is documented here
+  and in `Select.jsx`'s own docstring ("The one dropdown every picker in
+  this app should render through"), and it still didn't hold, because
+  nothing mechanical checks it. Convention + docs is demonstrably not
+  enough at this repo's rate of new-surface creation.
+- **Writing the tests is what found it.** The raw `<select>` inside
+  `StageSelect` surfaced only when a test queried for `role="menuitem"`
+  and got nothing. Neither code review nor a visual pass had caught it
+  across two releases.
+
+**Closed in v12.5.2 — but not the way this section proposed.** The plan here
+was one ESLint `no-restricted-syntax` rule over `frontend-react/src/features/**`.
+That was checked before building and would have enforced nothing: `npm run lint`
+already exits with **147 pre-existing errors** (`no-undef` on `__dirname`/`global`
+in the vite configs, unused vars in tests) and is wired into no hook and no CI
+step. A 148th finding in a permanently-red lint run is not enforcement, and
+turning the rule on as `error` would only have made a red build redder.
+
+What shipped instead is a source-scanning guard in the suite that *is* green
+and *does* gate work: `src/test/components/componentLibraryUsage.test.jsx`,
+following the same mechanism as `hub-entry.test.jsx`'s `*-entry.jsx` check —
+this repo's one demonstrated way of enforcing a convention that reviewers keep
+missing.
+
+Three deliberate scope calls in it:
+
+- **`<input type="date">` is enforced repo-wide across `features/**`** — zero
+  existing violations once v12.5.1 fixed them, so it locks the fix in.
+- **Raw `<select>` is enforced with a frozen 8-file allowlist.** Those files
+  predate the convention; freezing them blocks new surfaces from adding to the
+  pile while keeping the debt enumerated. A companion assertion fails if an
+  allowlisted file is fixed or renamed, so the exemption list can't silently
+  rot into a no-op.
+- **Bare `<button>` is deliberately not checked.** ~130 occurrences in
+  `features/`, most legitimate (icon buttons, tab triggers, table-cell
+  affordances). A rule that has to exempt most of its own matches is not a rule.
+
+The lint run being red is a separate, still-open problem — worth its own pass,
+and worth noting that it is *why* the obvious fix here was the wrong one.
+
+## 20. The Alternate CRM Skill MUST Be Updated With Every Change (per user direction, 2026-09-09)
+
+`.claude/skills/alternatecrm/SKILL.md` is the map of how this app is actually
+assembled: the vanilla-JS shell, the React islands and the contract between
+them, which views are still legacy, what is dead code, and the landmines that
+have already caused production incidents.
+
+**It is not a snapshot. It is the handover document.** Any agent picking up
+this repo is expected to load it before touching the router, an entry shim, or
+a legacy view — so a stale entry in it is worse than no entry, because it will
+be trusted.
+
+### When you MUST update it
+
+- You change `frontend/js/app.js`'s router — a branch, a role gate, a
+  redirect, a `VIEW_HUBS` entry.
+- You add, delete, or re-point a React island (`*-entry.jsx`,
+  `vite.config.*.js`, a `build:*` script, an `index.html` script tag).
+- You migrate a legacy view to React, or change whether a surface is
+  React-primary, React-behind-a-flag, or legacy-only — **update the §2 status
+  table in the same commit**.
+- You delete or discover dead/unreachable code — update §3 with the line
+  counts, and strike it from the §4 recommended order once done.
+- You flip a beta flag default (`leadsHub`, `leadDetailHub`).
+- You hit a new class of failure in the shell/island boundary, the bundle
+  build, or a legacy↔React hand-off — add it to §5 with what it cost.
+
+### How
+
+Append a dated line to the skill's Maintenance log saying what changed, and
+edit the affected section rather than leaving the old text beside the new.
+Same commit as the change itself; do not defer it to a follow-up.
+
+The same standing rule already applies to `.claude/skills/settings-architecture/SKILL.md`
+for admin/config surfaces — that skill states it in its own Maintenance
+section. Rule 20 makes it explicit and non-optional for both.
 
 ## Deprecated Files (Do Not Edit)
 

@@ -53,10 +53,8 @@ describe('SendWindowSettings', () => {
     }} onSaved={() => {}} />);
 
     await user.click(screen.getByText('09:00–18:00'));
-    const selects = screen.getAllByRole('combobox');
-    // Timezone is a custom listbox now (not a native <select>), so the only
-    // comboboxes left are: selects[0] = start hour, selects[1] = end hour.
-    await user.selectOptions(selects[1], '5');
+    await user.click(screen.getByRole('button', { name: 'End hour' }));
+    await user.click(screen.getByRole('menuitem', { name: '05:00' }));
     await user.click(screen.getByText('Save'));
 
     expect(updateSettings).not.toHaveBeenCalled();
@@ -92,11 +90,13 @@ describe('SendWindowSettings — Timezone custom listbox', () => {
     }} onSaved={() => {}} />);
 
     await user.click(screen.getByText('09:00–18:00'));
-    await user.click(screen.getByRole('button', { name: /UTC/ }));
+    const tzButton = screen.getByRole('button', { name: 'Timezone' });
+    expect(tzButton).toHaveTextContent('UTC');
+    await user.click(tzButton);
     expect(screen.getByRole('listbox')).toBeInTheDocument();
 
     await user.click(screen.getByRole('option', { name: 'Asia/Kolkata' }));
-    expect(screen.getByRole('button', { name: /Asia\/Kolkata/ })).toBeInTheDocument();
+    expect(tzButton).toHaveTextContent('Asia/Kolkata');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 
@@ -107,7 +107,7 @@ describe('SendWindowSettings — Timezone custom listbox', () => {
     }} onSaved={() => {}} />);
 
     await user.click(screen.getByText('09:00–18:00'));
-    await user.click(screen.getByRole('button', { name: /UTC/ }));
+    await user.click(screen.getByRole('button', { name: 'Timezone' }));
     expect(screen.getByRole('listbox')).toBeInTheDocument();
 
     await user.keyboard('{Escape}');
@@ -123,12 +123,13 @@ describe('SendWindowSettings — Timezone custom listbox', () => {
     }} onSaved={() => {}} />);
 
     await user.click(screen.getByText('09:00–18:00'));
-    await user.click(screen.getByRole('button', { name: /UTC/ }));
+    const tzButton = screen.getByRole('button', { name: 'Timezone' });
+    await user.click(tzButton);
     expect(screen.getByRole('listbox')).toBeInTheDocument();
 
     await user.click(screen.getByText('Send Window'));
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /UTC/ })).toBeInTheDocument();
+    expect(tzButton).toHaveTextContent('UTC');
   });
 
   it('is disabled until a window is being configured', async () => {
@@ -136,7 +137,7 @@ describe('SendWindowSettings — Timezone custom listbox', () => {
     render(<SendWindowSettings journeyId="j1" journey={{}} onSaved={() => {}} />);
 
     await user.click(screen.getByText('Anytime'));
-    const tzButton = screen.getByRole('button', { name: /UTC/ });
+    const tzButton = screen.getByRole('button', { name: 'Timezone' });
     expect(tzButton).toBeDisabled();
 
     await user.click(tzButton);

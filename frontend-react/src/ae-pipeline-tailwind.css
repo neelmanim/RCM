@@ -1,0 +1,33 @@
+/*
+ * ae-pipeline-tailwind.css
+ *
+ * Tailwind entry point for the AE Pipeline IIFE bundle ONLY. Mirrors
+ * sdr-performance-tailwind.css exactly — omits @tailwind base to avoid
+ * leaking resets into the Vanilla JS shell, and reproduces just the
+ * border-reset half of Preflight, scoped to .ae-pipeline-hub.
+ */
+/*
+ * Radix (DropdownMenu/Popover) portals its content to document.body, so it
+ * renders as a sibling of .ae-pipeline-hub rather than a descendant — the
+ * shared literal class below is the same one every other bundle's tailwind
+ * entry scopes to, in case a components/ui/ primitive used here ever portals
+ * (see sales-tools-tailwind.css for the fuller explanation).
+ */
+.ae-pipeline-hub, .ae-pipeline-hub *, .ae-pipeline-hub *::before, .ae-pipeline-hub *::after,
+.activitymonitor-portal, .activitymonitor-portal *, .activitymonitor-portal *::before, .activitymonitor-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.ae-pipeline-hub, .activitymonitor-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

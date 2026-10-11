@@ -3,7 +3,14 @@ import { RefreshCw, ShieldAlert } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
+import { Select } from '../../../components/ui/Select';
 import { DialerService } from '../../../services/api';
+
+const DAYS_OPTIONS = [
+  { value: 7, label: 'Last 7 days' },
+  { value: 30, label: 'Last 30 days' },
+  { value: 90, label: 'Last 90 days' },
+];
 
 /**
  * Manager-facing read side of the skip data every rep's queue already
@@ -37,16 +44,12 @@ export function SkipReasonsPanel() {
           <ShieldAlert size={16} className="text-slate-400" /> Skip Reasons
         </h3>
         <div className="flex items-center gap-2">
-          <select
+          <Select
             value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            className="text-sm border border-slate-200 rounded-lg px-2 py-1 text-slate-600"
-            aria-label="Date range"
-          >
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={90}>Last 90 days</option>
-          </select>
+            onChange={setDays}
+            options={DAYS_OPTIONS}
+            ariaLabel="Date range"
+          />
           <Button variant="ghost" size="sm" onClick={() => fetchSummary(days)} disabled={loading}>
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </Button>

@@ -17,20 +17,23 @@ import csv
 import io
 import time
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from threading import Lock
 from typing import List as _List, Optional
 
 from pydantic import BaseModel
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, case, cast, String, distinct, text, and_, or_, exists, select
 from sqlalchemy.orm import Session
 
 from database import get_db
-from auth import require_admin, require_admin_or_ae
+from auth import require_admin, require_admin_or_ae, require_export_access
+from access_db import pod_of
+from routes.lead_helpers import authorize_lead
+from routes._admin_helpers import resolve_sort
 import models
 
 logger = logging.getLogger(__name__)
@@ -58,9 +61,19 @@ def _cache_get(key: str):
     return None
 
 
+# RCA 2026-08-26 (staging OOM): keys include free-form date-range/pod/sdr/
+# source/page combos — high cardinality, rarely re-read after expiry, so the
+# lazy delete-on-read in _cache_get never frees them. Same unbounded-growth
+# shape cache.py's _SWEEP_THRESHOLD fix already addressed for its own store.
+_CACHE_SWEEP_THRESHOLD = 500
+
 def _cache_set(key: str, data):
     with _cache_lock:
         _cache[key] = (data, time.time() + CACHE_TTL_SECONDS)
+        if len(_cache) > _CACHE_SWEEP_THRESHOLD:
+            now = time.time()
+            for k in [k for k, (_, exp) in _cache.items() if now > exp]:
+                del _cache[k]
 
 
 def _cache_invalidate_prefix(prefix: str):
@@ -72,19 +85,6 @@ def _cache_invalidate_prefix(prefix: str):
 
 
 # ─── Shared filter helpers ──────────────────────────────────────────────────
-
-# Outcomes that count as a LIVE CONNECT for connect-rate purposes
-# Mirrors ANSWERED_OUTCOMES in models.py
-CONNECT_OUTCOMES = {
-    "Call Back Later",
-    "Meeting Scheduled",
-    "Meeting Confirmed",
-    "Meeting Complete",      # v5.5 — SDR marks meeting actually happened
-    "Text Me",
-    "Not the Right Person",
-    "Referred Someone Else",
-}
-_CONNECT_OUTCOMES_LIST = list(CONNECT_OUTCOMES)  # SQLAlchemy .in_() needs a list, not a set
 
 # Statuses indicating a meeting was booked (reached or passed Meeting Scheduled)
 MEETING_REACHED_STATUSES = [
@@ -101,44 +101,6 @@ LEGACY_OUTCOME_MAP = {
     "Customer Declined": "Not Interested",
     "Callback Scheduled": "Call Back Later",
 }
-
-
-def _resolve_date_range(
-    date_from: Optional[str],
-    date_to: Optional[str],
-    preset: Optional[str],
-) -> tuple[Optional[datetime], Optional[datetime]]:
-    """
-    Return (start, end) as UTC-aware datetimes.
-    Preset values: '7d', '30d', '90d', 'all'
-    Custom: ISO date strings (YYYY-MM-DD)
-    """
-    now = datetime.now(timezone.utc)
-
-    if preset == "all":
-        return None, None
-    if preset == "7d":
-        return now.replace(hour=0, minute=0, second=0, microsecond=0).__class__(
-            now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc
-        ) - __import__("datetime").timedelta(days=6), now
-    if preset == "30d":
-        return now.__class__(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc) - __import__("datetime").timedelta(days=29), now
-    if preset == "90d":
-        return now.__class__(now.year, now.month, now.day, 0, 0, 0, tzinfo=timezone.utc) - __import__("datetime").timedelta(days=89), now
-
-    # Custom date range
-    start = end = None
-    if date_from:
-        try:
-            start = datetime.fromisoformat(date_from).replace(hour=0, minute=0, second=0, tzinfo=timezone.utc)
-        except ValueError:
-            pass
-    if date_to:
-        try:
-            end = datetime.fromisoformat(date_to).replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-        except ValueError:
-            pass
-    return start, end
 
 
 def _resolve_date_range_simple(
@@ -194,19 +156,30 @@ def _resolve_date_range_for_tz(
     their own midnight-to-midnight, not a UTC day that splits their real
     work day across two on-screen dates.
 
-    Presets (7d/30d/90d/all) are deliberately left UTC-anchored/unaffected:
-    they're a rolling window ending at `now` (an exact instant), not a
-    picked calendar day, so the day-boundary mismatch this fixes doesn't
-    apply to them the same way — scope kept to the custom-range case that
-    was actually reported.
+    RCA 2026-08-21 (live): presets (7d/30d/90d) used to be left UTC-anchored
+    here too, on the theory that a rolling window ending at `now` (an exact
+    instant) has no day-boundary to mismatch — but the START of that window
+    is still a picked calendar day ("N days ago, at midnight"), and that
+    midnight was UTC's, not the pod's. A US team whose shift runs into the
+    next UTC day had that boundary fall mid-shift, splitting one evening's
+    activity across two on-screen windows — exactly the reported symptom,
+    and exactly what this function already fixed for a custom date pick.
+    Presets now resolve their start boundary against the pod's own local
+    midnight too; `all` (no window) and the `now` end-instant are unaffected.
     """
-    if not (date_from or date_to):
-        return _resolve_date_range_simple(date_from, date_to, preset)
-
     try:
         tz = ZoneInfo(tz_name)
     except (ZoneInfoNotFoundError, ValueError):
         tz = timezone.utc
+
+    if not (date_from or date_to):
+        _preset_days = {"7d": 6, "30d": 29, "90d": 89}.get(preset)
+        if _preset_days is None:
+            return _resolve_date_range_simple(date_from, date_to, preset)  # "all" / unset → None, None
+        from datetime import timedelta
+        today_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        start = (today_local - timedelta(days=_preset_days)).astimezone(timezone.utc)
+        return start, datetime.now(timezone.utc)
 
     start = end = None
     if date_from:
@@ -228,23 +201,70 @@ def _resolve_date_range_for_tz(
     return start, end
 
 
+def _resolve_analytics_date_range(db, effective_pod, effective_sdr, date_from, date_to, preset):
+    """Resolve (date_start, date_end) against the SCOPED pod's own timezone
+    instead of a UTC-anchored day boundary.
+
+    RCA 2026-08-21 (live — reported as "call counts don't match within
+    Analytics Hub itself"): _compute_sdr_rows (the SDR table) already
+    grouped by pod timezone via _resolve_date_range_for_tz; get_funnel,
+    get_trend, get_email_breakdown, and get_batch_summary all still called
+    _resolve_date_range_simple directly, purely UTC. Two views in the same
+    Analytics Hub were using two different day-boundary rules on the same
+    underlying calls.
+
+    Scoped to a single pod or SDR — the common Pod Admin/AE/SDR view, and
+    the one actually reported. True org-wide aggregation across multiple
+    pods with DIFFERENT timezones at once is a separate, larger change
+    (see _compute_sdr_rows's per-timezone-group loop for that pattern) —
+    not attempted here; an org-wide view (no pod/SDR scope) falls back to
+    UTC, unchanged from before.
+    """
+    pod_id = effective_pod
+    if effective_sdr and not pod_id:
+        pod_id = db.query(models.User.pod_id).filter(models.User.id == effective_sdr).scalar()
+    tz_name = "UTC"
+    if pod_id:
+        tz_name = db.query(models.Pod.timezone).filter(models.Pod.id == pod_id).scalar() or "UTC"
+    return _resolve_date_range_for_tz(date_from, date_to, preset, tz_name)
+
+
 def _effective_pod_id(admin: dict, pod_id_param: Optional[str]) -> Optional[str]:
     """
     EC-6: Pod Admins are always scoped to their own pod.
     Super Admins respect the pod_id query param.
     """
     if admin.get("role") == "Pod Admin":
-        return admin.get("pod_id")  # force — ignore param entirely
+        return pod_of(admin)  # force — ignore param entirely; a pod-less Pod Admin matches nothing, never everything
     return pod_id_param or None
 
 
 def _effective_ae_sdr(admin: dict) -> Optional[str]:
-    """AE role: Analytics Hub is forced to that AE's own leads/calls only —
-    no pod-wide or cross-SDR visibility. Mirrors _effective_pod_id's
+    """AE/SDR role: Analytics Hub is forced to that user's own leads/calls
+    only — no pod-wide or cross-SDR visibility. Mirrors _effective_pod_id's
     force-ignore-the-param idiom, just scoped to self instead of a pod."""
-    if admin.get("role") == "AE":
+    if admin.get("role") in ("AE", "SDR"):
         return admin.get("sub")
     return None
+
+
+def _resolve_sdr_filter(admin: dict, sdr_id_param: Optional[str], db: Session) -> Optional[str]:
+    """The Analytics Hub "Rep" filter: an admin/pod-admin picking a specific
+    SDR/AE from the dropdown fed by get_filter_options' `sdrs` list. Self-scope
+    (AE/SDR) always wins and ignores the param, same as _effective_pod_id.
+    A Pod Admin can only pick a rep inside their own pod — get_filter_options
+    already only returns their own pod's reps, but a direct API call could
+    still pass an out-of-pod id, so it's re-checked here rather than trusted."""
+    self_scoped = _effective_ae_sdr(admin)
+    if self_scoped:
+        return self_scoped
+    if not sdr_id_param:
+        return None
+    if admin.get("role") == "Pod Admin":
+        target_pod = db.query(models.User.pod_id).filter(models.User.id == sdr_id_param).scalar()
+        if target_pod != admin.get("pod_id"):
+            return None
+    return sdr_id_param
 
 
 # ─── Source prefix mapping for normalized filter values ─────────────────────
@@ -287,11 +307,22 @@ def _pod_scope_lead_query(query, effective_pod, effective_sdr=None):
     effective_pod when both are given — callers null out effective_pod for
     an AE before calling this, but the explicit check keeps this function
     correct even if a future caller forgets that.
+
+    .correlate(models.Lead) below is load-bearing, not decoration: a caller
+    whose own query already joins lead_assignments directly (e.g.
+    get_batch_summary's per-SDR breakdown) makes that table ALSO visible to
+    SQLAlchemy's auto-correlation, which then correlates BOTH lead_assignments
+    and Lead away from this EXISTS — leaving it with zero FROM clauses and
+    raising InvalidRequestError. Confirmed live in production (three
+    occurrences, AE-role users on the batch-summary view) and reproduced
+    locally byte-for-byte before this fix. correlate(models.Lead) restricts
+    auto-correlation to just the intended column, keeping lead_assignments
+    as this subquery's own table regardless of what the outer query joins.
     """
     if effective_sdr:
         return query.filter(exists().where(
             models.lead_assignments.c.lead_id == models.Lead.id
-        ).where(models.lead_assignments.c.user_id == effective_sdr))
+        ).where(models.lead_assignments.c.user_id == effective_sdr).correlate(models.Lead))
     if not effective_pod:
         return query
     assignee_in_pod = exists().where(
@@ -300,7 +331,7 @@ def _pod_scope_lead_query(query, effective_pod, effective_sdr=None):
         models.lead_assignments.c.user_id.in_(
             select(models.User.id).where(models.User.pod_id == effective_pod)
         )
-    )
+    ).correlate(models.Lead)
     return query.filter(or_(models.Lead.pod_id == effective_pod, assignee_in_pod))
 
 
@@ -316,6 +347,33 @@ def _pod_scope_call_query(query, effective_pod, effective_sdr=None):
     if not effective_pod:
         return query
     return query.filter(or_(models.User.pod_id == effective_pod, models.Lead.pod_id == effective_pod))
+
+
+def _pod_scope_activity_query(query, effective_pod):
+    """Activity Monitor / Call Monitor scoping: a record belongs to the pod of the PERSON WHO DID IT. A Pod Admin must
+    not see another pod's reps just because they called a lead that sits in this pod. Records with no person (inbound
+    sync rows, Instantly) fall back to the pod of the lead's current owner. User and Lead must be (outer)joined.
+    (Analytics Hub keeps the lead-anchored _pod_scope_call_query: that is reporting on the pod's leads.)"""
+    if not effective_pod:
+        return query
+    owner_in_pod = models.Lead.id.in_(
+        select(models.lead_assignments.c.lead_id).join(models.User, models.User.id == models.lead_assignments.c.user_id)
+        .where(models.User.pod_id == effective_pod))
+    return query.filter(or_(models.User.pod_id == effective_pod, and_(models.User.id.is_(None), owner_in_pod)))
+
+
+def _sdr_dropdown(db, effective_pod):
+    """Rep filter-dropdown list, pod-scoped. Shared by list_call_logs
+    and Activity Monitor's email/message-logs endpoints — same role set,
+    same pod filter, same {id, name, email} shape.
+
+    Role list was SDR/Pod Admin/Admin only from when Activity Monitor was
+    SDR-only; CSM and AE reps now also make calls/send emails and were
+    invisible in this dropdown despite having logged activity."""
+    q = db.query(models.User).filter(models.User.role.in_(["SDR", "Pod Admin", "Admin", "CSM", "AE"])).order_by(models.User.name)
+    if effective_pod:
+        q = q.filter(models.User.pod_id == effective_pod)
+    return [{"id": u.id, "name": u.name, "email": u.email} for u in q.all()]
 
 
 def _lead_closed_date_expr():
@@ -357,48 +415,22 @@ def _normalised_outcome_expr():
     )
 
 
-# ─── Endpoint 1: KPI Funnel ──────────────────────────────────────────────────
+def _cl_connected(norm_expr):
+    """CallLog "connected" check on an already-normalised outcome expression —
+    mirrors models.call_log_is_conversation()'s exclusion rule."""
+    return func.lower(norm_expr).notin_(models.NOT_ANSWERED_OUTCOMES_LOWER)
 
-@router.get("/funnel")
-def get_funnel(
-    preset: Optional[str] = Query(None, description="7d | 30d | 90d | all"),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    pod_id: Optional[str] = Query(None),
-    lead_source: Optional[str] = Query(None),
-    upload_log_id: Optional[str] = Query(None),
-    admin: dict = Depends(require_admin_or_ae),
-    db: Session = Depends(get_db),
-):
-    """
-    Returns 7 KPI metrics for the funnel cards.
 
-    Date scoping (EC-5):
-    - leads_assigned   → filtered by leads.created_at
-    - calls_made       → filtered by dialer_calls.created_at (Aircall webhook timestamp)
-    - emails_sent      → filtered by lead_email_activity.timestamp
-    - meetings_booked  → filtered by leads.lead_closed_at
-    """
-    effective_pod = _effective_pod_id(admin, pod_id)
-    effective_sdr = _effective_ae_sdr(admin)
-    if effective_sdr:
-        effective_pod = None  # AE: self-scope only, no pod-wide visibility
-    date_start, date_end = _resolve_date_range_simple(date_from, date_to, preset)
+# ─── Extracted scalar computations (reused by get_funnel AND the analytics
+# semantic layer's Connect Rate / Leads Assigned adapters — see
+# backend/analytics/adapters.py). Extraction is behavior-preserving: same
+# queries, same math, just callable outside get_funnel(). ────────────────────
 
-    ckey = _cache_key("funnel", effective_pod, effective_sdr, lead_source, upload_log_id, date_from or preset, date_to)
-    cached = _cache_get(ckey)
-    if cached:
-        logger.debug("analytics/funnel cache HIT key=%s", ckey)
-        return cached
-
-    logger.info("analytics/funnel QUERY pod=%s source=%s preset=%s batch=%s", effective_pod, lead_source, preset, upload_log_id)
-
-    # ── 1. Leads Assigned (EC-5: scoped to leads.created_at) ─────────────────
-    # Bug-3 fix: When a specific batch is selected, the batch itself provides
-    # complete scoping — skip the date filter on leads so we don't get 0 leads
-    # when the batch upload date falls outside the selected date window.
+def _compute_leads_assigned_count(db, effective_pod, effective_sdr, date_start, date_end, lead_source, upload_log_id):
+    """Canonical Leads Assigned: entity count of leads created in the period,
+    excluding parked/test/deleted leads. Matches master-doc definition 5.4
+    verbatim — no semantic change from the existing Dashboard behavior."""
     lead_q = db.query(func.count(models.Lead.id).label("total"))
-    # Exclude parked leads (e.g. "No Phone - Parked") from analytics
     lead_q = lead_q.filter(~models.Lead.status.in_(models.PARKED_STATUSES))
     if not upload_log_id:
         if date_start:
@@ -406,15 +438,122 @@ def get_funnel(
         if date_end:
             lead_q = lead_q.filter(models.Lead.created_at <= date_end)
     lead_q = _pod_scope_lead_query(lead_q, effective_pod, effective_sdr)
-    lead_q = models.exclude_test_leads(lead_q)
+    lead_q = models.exclude_test_and_deleted_leads(lead_q)
     if lead_source:
         lead_q = _lead_source_filter(lead_q, lead_source)
     if upload_log_id:
         lead_q = lead_q.filter(models.Lead.upload_log_id == upload_log_id)
+    return lead_q.scalar() or 0
 
-    leads_assigned = lead_q.scalar() or 0
 
-    # ── 3. Emails (EC-5: scoped to lead_email_activity.timestamp) ─────────────
+def _compute_calls_and_connect_rate(db, effective_pod, effective_sdr, date_start, date_end,
+                                     lead_source, upload_log_id, conversation_min_seconds):
+    """Canonical Calls Made / Connect Rate: DialerCall + pure-manual CallLog
+    union, deduped via CallLog.dialer_call_id.is_(None) so an Aircall-mirrored
+    CallLog row is never double-counted. Matches master-doc definitions 5.1/5.5
+    verbatim — no semantic change from the existing Dashboard behavior."""
+    _dc_q = db.query(
+        func.count(models.DialerCall.id).label("total"),
+        func.count(
+            case((models.DialerCall.outcome.isnot(None), models.DialerCall.id))
+        ).label("with_outcome"),
+        func.count(
+            case((models.dialer_call_connected(conversation_min_seconds), models.DialerCall.id))
+        ).label("connected"),
+        func.count(
+            case((models.dialer_call_is_conversation(conversation_min_seconds), models.DialerCall.id))
+        ).label("conversations"),
+        func.count(
+            case((models.DialerCall.outcome.is_(None), models.DialerCall.id))
+        ).label("null_outcome"),
+        func.count(distinct(models.DialerCall.lead_id)).label("unique_leads"),
+    ).join(
+        models.User, models.User.id == models.DialerCall.user_id
+    ).filter(
+        models.DialerCall.direction == "outbound"
+    )
+    _dc_q = models.exclude_test_and_deleted_leads(_dc_q, models.DialerCall)
+    if date_start:
+        _dc_q = _dc_q.filter(models.dialer_call_event_time() >= date_start)
+    if date_end:
+        _dc_q = _dc_q.filter(models.dialer_call_event_time() <= date_end)
+    if effective_pod or effective_sdr or upload_log_id or lead_source:
+        _dc_q = _dc_q.outerjoin(
+            models.Lead, models.Lead.id == models.DialerCall.lead_id
+        )
+        if effective_sdr:
+            _dc_q = _dc_q.filter(models.DialerCall.user_id == effective_sdr)
+        elif effective_pod:
+            _dc_q = _dc_q.filter(
+                (models.User.pod_id == effective_pod) |
+                (models.Lead.pod_id == effective_pod)
+            )
+        if upload_log_id:
+            _dc_q = _dc_q.filter(models.Lead.upload_log_id == upload_log_id)
+        if lead_source:
+            _dc_q = _lead_source_filter(_dc_q, lead_source)
+    _dc = _dc_q.one()
+
+    _cl_q = db.query(
+        func.count(models.CallLog.id).label("total"),
+        func.count(
+            case((models.CallLog.outcome.isnot(None), models.CallLog.id))
+        ).label("with_outcome"),
+        func.count(distinct(models.CallLog.lead_id)).label("unique_leads"),
+        func.count(
+            case((_cl_connected(_normalised_outcome_expr()), models.CallLog.id))
+        ).label("connected"),
+        func.count(
+            case((models.call_log_is_conversation(), models.CallLog.id))
+        ).label("conversations"),
+    ).filter(models.CallLog.dialer_call_id.is_(None))
+    _cl_q = models.exclude_test_and_deleted_leads(_cl_q, models.CallLog)
+    if date_start:
+        _cl_q = _cl_q.filter(models.CallLog.called_at >= date_start)
+    if date_end:
+        _cl_q = _cl_q.filter(models.CallLog.called_at <= date_end)
+    if effective_pod or effective_sdr or upload_log_id or lead_source:
+        _cl_q = _cl_q.join(
+            models.Lead, models.Lead.id == models.CallLog.lead_id
+        )
+        if effective_pod or effective_sdr:
+            _cl_q = _cl_q.outerjoin(models.User, models.User.id == models.CallLog.user_id)
+            _cl_q = _pod_scope_call_query(_cl_q, effective_pod, effective_sdr)
+        if upload_log_id:
+            _cl_q = _cl_q.filter(models.Lead.upload_log_id == upload_log_id)
+        if lead_source:
+            _cl_q = _lead_source_filter(_cl_q, lead_source)
+    _cl = _cl_q.one()
+
+    calls_made         = (_dc.total or 0) + (_cl.total or 0)
+    calls_with_outcome = (_dc.with_outcome or 0) + (_cl.with_outcome or 0)
+    calls_connected    = (_dc.connected or 0) + (_cl.connected or 0)
+    conversations      = (_dc.conversations or 0) + (_cl.conversations or 0)
+    calls_null_outcome = calls_made - calls_with_outcome
+    unique_leads_called = (_dc.unique_leads or 0) + (_cl.unique_leads or 0)
+    avg_calls_per_lead = round(calls_made / unique_leads_called, 1) if unique_leads_called > 0 else 0
+    connect_rate = round(calls_connected / calls_made * 100, 1) if calls_made > 0 else None
+
+    return {
+        "calls_made": calls_made,
+        "calls_with_outcome": calls_with_outcome,
+        "calls_connected": calls_connected,
+        "conversations": conversations,
+        "calls_null_outcome": calls_null_outcome,
+        "unique_leads_called": unique_leads_called,
+        "avg_calls_per_lead": avg_calls_per_lead,
+        "connect_rate": connect_rate,
+    }
+
+
+def _compute_email_stats(db, effective_pod, effective_sdr, date_start, date_end, lead_source, upload_log_id):
+    """Canonical Email Sent / Opened / Replied: extracted verbatim from
+    get_funnel()'s email block, unchanged — includes the lead_source-on-replies
+    fix (RCA 2026-07-27) and test/deleted-lead exclusion. Phase 2: also reused
+    by the semantic layer's email adapters, which is what lets Ask AI's
+    separately-implemented email queries (smart_analytics.py's
+    _q_email_open_rate/_q_email_reply_rate, missing both of those) be rewired
+    onto this already-correct definition instead of drifting further."""
     email_q = db.query(
         func.count(models.LeadEmailActivity.id).label("sent"),
         func.count(models.LeadEmailActivity.opened_at).label("opened"),
@@ -426,7 +565,7 @@ def get_funnel(
     if date_end:
         email_q = email_q.filter(models.LeadEmailActivity.timestamp <= date_end)
     email_q = _pod_scope_lead_query(email_q, effective_pod, effective_sdr)
-    email_q = models.exclude_test_leads(email_q)
+    email_q = models.exclude_test_and_deleted_leads(email_q)
     if lead_source:
         email_q = _lead_source_filter(email_q, lead_source)
     if upload_log_id:
@@ -441,7 +580,7 @@ def get_funnel(
         models.Lead, models.Lead.id == models.LeadEmailActivity.lead_id
     ).filter(models.LeadEmailActivity.direction == "inbound")
     reply_q = _pod_scope_lead_query(reply_q, effective_pod, effective_sdr)
-    reply_q = models.exclude_test_leads(reply_q)
+    reply_q = models.exclude_test_and_deleted_leads(reply_q)
     if lead_source:
         # RCA 2026-07-27: was the only email metric not scoped to lead_source —
         # sent/opened correctly shrank when filtering by source, replied didn't.
@@ -450,147 +589,41 @@ def get_funnel(
         reply_q = reply_q.filter(models.Lead.upload_log_id == upload_log_id)
     emails_replied = reply_q.scalar() or 0
 
-    # ── 4. Calls — UNION of dialer_calls + pure-manual call_logs
-    # RCA-2026-05-22: call_logs alone = 19 (US Team) — missed all Aircall calls.
-    # Strategy: two separate ORM queries (SQLite-safe), summed in Python.
-    #   A) dialer_calls outbound — covers all Aircall/RCM calls
-    #   B) call_logs where no matching dialer_call for same user+lead+date — covers manual calls
-    # Only 1 overlap found org-wide — the NOT EXISTS gate prevents double-counting.
-
-    # A) Dialer calls
-    _dc_q = db.query(
-        func.count(models.DialerCall.id).label("total"),
-        func.count(
-            case((models.DialerCall.outcome.isnot(None), models.DialerCall.id))
-        ).label("with_outcome"),
-        func.count(
-            case((models.dialer_call_connected(_CONNECT_OUTCOMES_LIST), models.DialerCall.id))
-        ).label("connected"),
-        func.count(
-            case((models.DialerCall.outcome.is_(None), models.DialerCall.id))
-        ).label("null_outcome"),
-        func.count(distinct(models.DialerCall.lead_id)).label("unique_leads"),
-    ).join(
-        models.User, models.User.id == models.DialerCall.user_id
-    ).filter(
-        models.DialerCall.direction == "outbound"
-    )
-    _dc_q = models.exclude_test_leads(_dc_q, models.DialerCall)
-    if date_start:
-        _dc_q = _dc_q.filter(models.dialer_call_event_time() >= date_start)
-    if date_end:
-        _dc_q = _dc_q.filter(models.dialer_call_event_time() <= date_end)
-    if effective_pod or effective_sdr or upload_log_id or lead_source:
-        # Explicitly outerjoin Lead so the pod filter doesn't create an implicit
-        # cartesian product in the FROM clause (which taints subsequent queries).
-        _dc_q = _dc_q.outerjoin(
-            models.Lead, models.Lead.id == models.DialerCall.lead_id
-        )
-        if effective_sdr:
-            _dc_q = _dc_q.filter(models.DialerCall.user_id == effective_sdr)
-        elif effective_pod:
-            _dc_q = _dc_q.filter(
-                (models.User.pod_id == effective_pod) |
-                (models.Lead.pod_id == effective_pod)
-            )
-        if upload_log_id:
-            # Bug: calls_made/unique_leads_called ignored the batch filter entirely,
-            # so selecting a specific batch still showed org/pod-wide call totals.
-            _dc_q = _dc_q.filter(models.Lead.upload_log_id == upload_log_id)
-        if lead_source:
-            # RCA 2026-07-27: Calls Made/Connected/Connect Rate ignored the lead
-            # source filter entirely — every other funnel card correctly shrank
-            # when filtering by source, Calls silently stayed org-wide.
-            _dc_q = _lead_source_filter(_dc_q, lead_source)
-    _dc = _dc_q.one()
-
-    # B) Pure-manual call_logs (no matching dialer_call for same user+lead+date)
-    # Strategy: count ALL call_logs in scope, then subtract the overlap with dialer_calls.
-    # This avoids complex LEFT JOIN + IS NULL patterns that produce duplicate rows in SQLite.
-    _cl_q = db.query(
-        func.count(models.CallLog.id).label("total"),
-        func.count(
-            case((models.CallLog.outcome.isnot(None), models.CallLog.id))
-        ).label("with_outcome"),
-        func.count(distinct(models.CallLog.lead_id)).label("unique_leads"),
-    )
-    _cl_q = models.exclude_test_leads(_cl_q, models.CallLog)
-    if date_start:
-        _cl_q = _cl_q.filter(models.CallLog.called_at >= date_start)
-    if date_end:
-        _cl_q = _cl_q.filter(models.CallLog.called_at <= date_end)
-    if effective_pod or effective_sdr or upload_log_id or lead_source:
-        # Filter by the lead's pod (original behaviour) — SDRs may not have pod_id set
-        _cl_q = _cl_q.join(
-            models.Lead, models.Lead.id == models.CallLog.lead_id
-        )
-        if effective_pod or effective_sdr:
-            # Mirrors _dc_q's OR-fallback above: the logging user's pod OR the lead's pod
-            # (or, for an AE, self-scope to just their own user_id).
-            _cl_q = _cl_q.outerjoin(models.User, models.User.id == models.CallLog.user_id)
-            _cl_q = _pod_scope_call_query(_cl_q, effective_pod, effective_sdr)
-        if upload_log_id:
-            _cl_q = _cl_q.filter(models.Lead.upload_log_id == upload_log_id)
-        if lead_source:
-            _cl_q = _lead_source_filter(_cl_q, lead_source)
-
-    # Count the overlap: call_logs that already exist as a dialer_call for the same
-    # user+lead on the same date. This prevents double-counting the ~1 org-wide overlap.
-    _overlap_q = db.query(func.count(models.CallLog.id)).join(
-        models.DialerCall,
-        (models.CallLog.user_id == models.DialerCall.user_id) &
-        (models.CallLog.lead_id == models.DialerCall.lead_id) &
-        (func.date(models.CallLog.called_at) == func.date(models.dialer_call_event_time())),
-    ).filter(models.DialerCall.direction == "outbound")
-    _overlap_q = models.exclude_test_leads(_overlap_q, models.CallLog)
-    if date_start:
-        _overlap_q = _overlap_q.filter(models.CallLog.called_at >= date_start)
-    if date_end:
-        _overlap_q = _overlap_q.filter(models.CallLog.called_at <= date_end)
-    if effective_pod or effective_sdr or upload_log_id or lead_source:
-        # RCA 2026-07-22: this was unscoped while _dc_q/_cl_q above were already
-        # batch/pod-scoped — subtracting an org-wide overlap count from a single
-        # batch's (much smaller) totals could go negative, and did (Analytics Hub
-        # showed "Calls Made: -31" for the Klenty backfill batch).
-        # RCA 2026-07-27: same gap existed for lead_source — never closed then.
-        _overlap_q = _overlap_q.join(models.Lead, models.Lead.id == models.CallLog.lead_id)
-        if effective_pod or effective_sdr:
-            _overlap_q = _overlap_q.outerjoin(models.User, models.User.id == models.CallLog.user_id)
-            _overlap_q = _pod_scope_call_query(_overlap_q, effective_pod, effective_sdr)
-        if upload_log_id:
-            _overlap_q = _overlap_q.filter(models.Lead.upload_log_id == upload_log_id)
-        if lead_source:
-            _overlap_q = _lead_source_filter(_overlap_q, lead_source)
-    _overlap_count = _overlap_q.scalar() or 0
-
-    _cl = _cl_q.one()
-
-    calls_made         = (_dc.total or 0) + (_cl.total or 0) - _overlap_count
-    calls_with_outcome = (_dc.with_outcome or 0) + (_cl.with_outcome or 0)
-    calls_connected    = _dc.connected or 0  # models.dialer_call_connected(): outcome OR provider_disposition
-    calls_null_outcome = calls_made - calls_with_outcome
-    unique_leads_called = (_dc.unique_leads or 0) + (_cl.unique_leads or 0)
-    avg_calls_per_lead = round(calls_made / unique_leads_called, 1) if unique_leads_called > 0 else 0
-
-
-    # Connect rate = live Aircall answers / total calls made
-    connect_rate = round(calls_connected / calls_made * 100, 1) if calls_made > 0 else None
-
-    # Average retries (call_attempt_count on lead)
-    avg_q = db.query(func.avg(models.Lead.call_attempt_count))
-    avg_q = _pod_scope_lead_query(avg_q, effective_pod, effective_sdr)
-    avg_q = models.exclude_test_leads(avg_q)
+    # Reply rate denominator: distinct outbound THREADS, not raw send rows —
+    # matches smart_analytics.py's original _q_email_reply_rate definition
+    # (a thread with 3 outbound touches that gets one reply is a 100% reply
+    # rate, not 33%). Same scope filters as above, just a different count shape.
+    sent_threads_q = db.query(func.count(distinct(models.LeadEmailActivity.nylas_thread_id))).join(
+        models.Lead, models.Lead.id == models.LeadEmailActivity.lead_id
+    ).filter(models.LeadEmailActivity.direction == "outbound")
+    sent_threads_q = _pod_scope_lead_query(sent_threads_q, effective_pod, effective_sdr)
+    sent_threads_q = models.exclude_test_and_deleted_leads(sent_threads_q)
     if lead_source:
-        # RCA 2026-07-27: was unscoped by lead_source, unlike every other funnel card.
-        avg_q = _lead_source_filter(avg_q, lead_source)
+        sent_threads_q = _lead_source_filter(sent_threads_q, lead_source)
     if upload_log_id:
-        avg_q = avg_q.filter(models.Lead.upload_log_id == upload_log_id)
-    avg_retries = round(avg_q.scalar() or 0, 1)
+        sent_threads_q = sent_threads_q.filter(models.Lead.upload_log_id == upload_log_id)
+    sent_threads = sent_threads_q.scalar() or 0
 
-    # ── 5. Meetings (EC-3: status=Meeting Scheduled, no-show as sub-stat) ────
-    # Date-scoped via COALESCE(lead_closed_at, status_changed_at) — matches
-    # trend's meetings query (v9.7.1) so a lead with no lead_closed_at doesn't
-    # appear in one chart's meeting count and not the other's.
+    open_rate = round(emails_opened / emails_sent * 100, 1) if emails_sent > 0 else None
+    reply_rate = round(emails_replied / sent_threads * 100, 1) if sent_threads > 0 else None
+
+    return {
+        "emails_sent": emails_sent,
+        "emails_opened": emails_opened,
+        "emails_replied": emails_replied,
+        "sent_threads": sent_threads,
+        "open_rate": open_rate,
+        "reply_rate": reply_rate,
+    }
+
+
+def _compute_meetings_booked_snapshot(db, effective_pod, effective_sdr, date_start, date_end, lead_source, upload_log_id):
+    """Legacy Dashboard 'Meetings' definition: leads CURRENTLY at-or-past the
+    Meeting Scheduled stage, date-scoped by COALESCE(lead_closed_at,
+    status_changed_at). This is a current-state snapshot, NOT the canonical
+    event metric (see backend/analytics/adapters.py:meetings_scheduled, which
+    uses Lead.meeting_scheduled_at instead) — kept as-is, unchanged, still used
+    by the existing Dashboard funnel card."""
     _meeting_date = _lead_closed_date_expr()
     meeting_q = db.query(
         func.count(models.Lead.id).label("meetings"),
@@ -601,24 +634,29 @@ def get_funnel(
     if date_end:
         meeting_q = meeting_q.filter(_meeting_date <= date_end)
     meeting_q = _pod_scope_lead_query(meeting_q, effective_pod, effective_sdr)
-    meeting_q = models.exclude_test_leads(meeting_q)
+    meeting_q = models.exclude_test_and_deleted_leads(meeting_q)
     if lead_source:
         meeting_q = _lead_source_filter(meeting_q, lead_source)
     if upload_log_id:
         meeting_q = meeting_q.filter(models.Lead.upload_log_id == upload_log_id)
-
     meeting_row = meeting_q.one()
-    meetings_booked = meeting_row.meetings or 0
-    no_shows        = int(meeting_row.no_shows or 0)
+    return meeting_row.meetings or 0, int(meeting_row.no_shows or 0)
 
-    # ── 6. Disqualified leads (terminal: Disqualified + Not Interested + legacy) ──
-    # Same COALESCE fallback as meetings above, for the same reason.
+
+def _compute_disqualified_snapshot(db, effective_pod, effective_sdr, date_start, date_end, lead_source, upload_log_id):
+    """Legacy Dashboard 'Disqualified' definition: leads currently in one of
+    DISQUALIFIED_STATUSES (4 values, 3 of them legacy outcome-as-status data),
+    date-scoped by COALESCE(lead_closed_at, status_changed_at). Kept as-is,
+    unchanged, still used by the existing Dashboard funnel card. The canonical
+    event metric (backend/analytics/adapters.py:disqualified) uses only
+    status == "Disqualified" + Lead.lead_closed_at instead — see Phase 1 plan
+    open question #2."""
     _disq_date = _lead_closed_date_expr()
     disq_q = db.query(func.count(models.Lead.id)).filter(
         models.Lead.status.in_(DISQUALIFIED_STATUSES)
     )
     disq_q = _pod_scope_lead_query(disq_q, effective_pod, effective_sdr)
-    disq_q = models.exclude_test_leads(disq_q)
+    disq_q = models.exclude_test_and_deleted_leads(disq_q)
     if lead_source:
         disq_q = _lead_source_filter(disq_q, lead_source)
     if upload_log_id:
@@ -627,7 +665,120 @@ def get_funnel(
         disq_q = disq_q.filter(_disq_date >= date_start)
     if date_end:
         disq_q = disq_q.filter(_disq_date <= date_end)
-    disqualified = disq_q.scalar() or 0
+    return disq_q.scalar() or 0
+
+
+# ─── Endpoint 1: KPI Funnel ──────────────────────────────────────────────────
+
+@router.get("/funnel")
+def get_funnel(
+    preset: Optional[str] = Query(None, description="7d | 30d | 90d | all"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    pod_id: Optional[str] = Query(None),
+    lead_source: Optional[str] = Query(None),
+    upload_log_id: Optional[str] = Query(None),
+    sdr_id: Optional[str] = Query(None, description="Scope to a single rep (Analytics Hub Rep filter)"),
+    admin: dict = Depends(require_admin_or_ae),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns 7 KPI metrics for the funnel cards.
+
+    Date scoping (EC-5):
+    - leads_assigned   → filtered by leads.created_at
+    - calls_made       → filtered by dialer_calls.created_at (Aircall webhook timestamp)
+    - emails_sent      → filtered by lead_email_activity.timestamp
+    - meetings_booked  → filtered by leads.lead_closed_at
+    """
+    effective_pod = _effective_pod_id(admin, pod_id)
+    effective_sdr = _resolve_sdr_filter(admin, sdr_id, db)
+    if effective_sdr:
+        effective_pod = None  # AE: self-scope only, no pod-wide visibility
+    date_start, date_end = _resolve_analytics_date_range(db, effective_pod, effective_sdr, date_from, date_to, preset)
+
+    from routes._admin_helpers import get_conversation_min_seconds
+    conversation_min_seconds = get_conversation_min_seconds(db)
+
+    ckey = _cache_key("funnel", effective_pod, effective_sdr, lead_source, upload_log_id, date_from or preset, date_to)
+    cached = _cache_get(ckey)
+    if cached:
+        logger.debug("analytics/funnel cache HIT key=%s", ckey)
+        return cached
+
+    logger.info("analytics/funnel QUERY pod=%s source=%s preset=%s batch=%s", effective_pod, lead_source, preset, upload_log_id)
+
+    # ── 1. Leads Assigned (EC-5: scoped to leads.created_at) ─────────────────
+    # Bug-3 fix: When a specific batch is selected, the batch itself provides
+    # complete scoping — skip the date filter on leads so we don't get 0 leads
+    # when the batch upload date falls outside the selected date window.
+    leads_assigned = _compute_leads_assigned_count(
+        db, effective_pod, effective_sdr, date_start, date_end, lead_source, upload_log_id
+    )
+
+    # ── 3. Emails (EC-5: scoped to lead_email_activity.timestamp) ─────────────
+    _emails = _compute_email_stats(
+        db, effective_pod, effective_sdr, date_start, date_end, lead_source, upload_log_id
+    )
+    emails_sent    = _emails["emails_sent"]
+    emails_opened  = _emails["emails_opened"]
+    emails_replied = _emails["emails_replied"]
+
+    # ── 4. Calls — UNION of dialer_calls + pure-manual call_logs
+    # RCA-2026-05-22: call_logs alone = 19 (US Team) — missed all Aircall calls.
+    # Strategy: two separate ORM queries (SQLite-safe), summed in Python.
+    #   A) dialer_calls outbound — covers all Aircall/Alternate Messenger calls
+    #   B) call_logs with no dialer_call_id — covers manual (non-Aircall) calls only.
+    # RCA 2026-08-25: this used to count ALL call_logs, then subtract a
+    # date-based heuristic overlap count from calls_made only — calls_connected
+    # was never de-duped at all, so any auto-tagged Aircall call (CallLog rows
+    # _auto_log_outcome creates with dialer_call_id set, mirroring a DialerCall)
+    # got its connect counted twice once calls_connected started summing
+    # dc.connected + cl.connected, inflating connect_rate. _compute_sdr_rows and
+    # get_batch_summary already avoid this correctly via dialer_call_id.is_(None)
+    # — use that same precise filter here instead of the heuristic.
+
+    # A+B) DialerCall + pure-manual CallLog, deduped — see
+    # _compute_calls_and_connect_rate for the RCA history preserved inline there.
+    _calls = _compute_calls_and_connect_rate(
+        db, effective_pod, effective_sdr, date_start, date_end,
+        lead_source, upload_log_id, conversation_min_seconds
+    )
+    calls_made          = _calls["calls_made"]
+    calls_with_outcome  = _calls["calls_with_outcome"]
+    calls_connected     = _calls["calls_connected"]
+    calls_null_outcome  = _calls["calls_null_outcome"]
+    unique_leads_called = _calls["unique_leads_called"]
+    avg_calls_per_lead  = _calls["avg_calls_per_lead"]
+    connect_rate        = _calls["connect_rate"]
+
+    # Average retries (call_attempt_count on lead)
+    avg_q = db.query(func.avg(models.Lead.call_attempt_count))
+    avg_q = _pod_scope_lead_query(avg_q, effective_pod, effective_sdr)
+    avg_q = models.exclude_test_and_deleted_leads(avg_q)
+    if lead_source:
+        # RCA 2026-07-27: was unscoped by lead_source, unlike every other funnel card.
+        avg_q = _lead_source_filter(avg_q, lead_source)
+    if upload_log_id:
+        avg_q = avg_q.filter(models.Lead.upload_log_id == upload_log_id)
+    avg_retries = round(avg_q.scalar() or 0, 1)
+
+    # ── 5. Meetings (EC-3: status=Meeting Scheduled, no-show as sub-stat) ────
+    # Date-scoped via COALESCE(lead_closed_at, status_changed_at) — matches
+    # trend's meetings query (v9.7.1) so a lead with no lead_closed_at doesn't
+    # appear in one chart's meeting count and not the other's. This is the
+    # legacy current-state snapshot — see _compute_meetings_booked_snapshot's
+    # docstring for why it's kept separate from the canonical event metric.
+    meetings_booked, no_shows = _compute_meetings_booked_snapshot(
+        db, effective_pod, effective_sdr, date_start, date_end, lead_source, upload_log_id
+    )
+
+    # ── 6. Disqualified leads (terminal: Disqualified + Not Interested + legacy) ──
+    # Same COALESCE fallback as meetings above, for the same reason. Legacy
+    # current-state snapshot — see _compute_disqualified_snapshot's docstring.
+    disqualified = _compute_disqualified_snapshot(
+        db, effective_pod, effective_sdr, date_start, date_end, lead_source, upload_log_id
+    )
 
     # ── 7. Opportunity outcomes (Won/Lost) — post-meeting conversion ──────────
     opp_q = db.query(
@@ -635,7 +786,7 @@ def get_funnel(
         func.count(case((models.Lead.opportunity_status == "Lost", models.Lead.id))).label("lost"),
     )
     opp_q = _pod_scope_lead_query(opp_q, effective_pod, effective_sdr)
-    opp_q = models.exclude_test_leads(opp_q)
+    opp_q = models.exclude_test_and_deleted_leads(opp_q)
     if lead_source:
         opp_q = _lead_source_filter(opp_q, lead_source)
     if upload_log_id:
@@ -714,7 +865,9 @@ def get_trend(
     if effective_sdr:
         effective_pod = None  # AE: self-scope only, no pod-wide visibility
         sdr_id = effective_sdr  # force — ignore the query param, same idiom as _effective_pod_id
-    date_start, date_end = _resolve_date_range_simple(date_from, date_to, preset)
+    # sdr_id may be an admin-picked filter even when effective_sdr (self-scope) is
+    # None — resolve the actually-viewed SDR's own pod timezone either way.
+    date_start, date_end = _resolve_analytics_date_range(db, effective_pod, effective_sdr or sdr_id, date_from, date_to, preset)
 
     ckey = _cache_key("trend", effective_pod, lead_source, upload_log_id, date_from or preset, date_to, sdr_id)
     cached = _cache_get(ckey)
@@ -745,7 +898,7 @@ def get_trend(
     ).join(
         models.User, models.User.id == models.DialerCall.user_id
     ).filter(models.DialerCall.direction == "outbound")
-    _dc_trend_q = models.exclude_test_leads(_dc_trend_q, models.DialerCall)
+    _dc_trend_q = models.exclude_test_and_deleted_leads(_dc_trend_q, models.DialerCall)
     if date_start:
         _dc_trend_q = _dc_trend_q.filter(models.dialer_call_event_time() >= date_start)
     if date_end:
@@ -785,7 +938,7 @@ def get_trend(
         (models.CallLog.lead_id == _existing_dc_t.c.lead_id) &
         (func.date(models.CallLog.called_at) == _existing_dc_t.c.call_date),
     ).filter(_existing_dc_t.c.user_id.is_(None))
-    _cl_trend_q = models.exclude_test_leads(_cl_trend_q, models.CallLog)
+    _cl_trend_q = models.exclude_test_and_deleted_leads(_cl_trend_q, models.CallLog)
     if date_start:
         _cl_trend_q = _cl_trend_q.filter(models.CallLog.called_at >= date_start)
     if date_end:
@@ -828,7 +981,7 @@ def get_trend(
     if date_end:
         email_q = email_q.filter(models.LeadEmailActivity.timestamp <= date_end)
     email_q = _pod_scope_lead_query(email_q, effective_pod, effective_sdr)
-    email_q = models.exclude_test_leads(email_q)
+    email_q = models.exclude_test_and_deleted_leads(email_q)
     if lead_source:
         email_q = _lead_source_filter(email_q, lead_source)
     if upload_log_id:
@@ -856,7 +1009,7 @@ def get_trend(
     if date_end:
         meeting_q = meeting_q.filter(_meeting_date <= date_end)
     meeting_q = _pod_scope_lead_query(meeting_q, effective_pod, effective_sdr)
-    meeting_q = models.exclude_test_leads(meeting_q)
+    meeting_q = models.exclude_test_and_deleted_leads(meeting_q)
     if lead_source:
         meeting_q = _lead_source_filter(meeting_q, lead_source)
     if upload_log_id:
@@ -883,7 +1036,7 @@ def get_trend(
     if date_end:
         disq_q = disq_q.filter(_disq_date <= date_end)
     disq_q = _pod_scope_lead_query(disq_q, effective_pod, effective_sdr)
-    disq_q = models.exclude_test_leads(disq_q)
+    disq_q = models.exclude_test_and_deleted_leads(disq_q)
     if lead_source:
         disq_q = _lead_source_filter(disq_q, lead_source)
     if upload_log_id:
@@ -953,10 +1106,10 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
     team's own calendar day is what should be filtered, not one shared UTC
     day that splits a US team's real work day across two dates."""
     from datetime import timedelta
-    from routes._admin_helpers import _get_or_create_sync_settings
+    from routes._admin_helpers import get_conversation_min_seconds
 
     ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=90)
-    conversation_min_seconds = _get_or_create_sync_settings(db).conversation_min_seconds or models.CONVERSATION_MIN_SECONDS
+    conversation_min_seconds = get_conversation_min_seconds(db)
 
     user_q = db.query(models.User).filter(models.User.role.in_(["SDR", "AE"]))
     if effective_sdr:
@@ -964,6 +1117,8 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
     elif effective_pod:
         user_q = user_q.filter(models.User.pod_id == effective_pod)
     sdrs = user_q.all()
+    from services import offboarding
+    gone = offboarding.left_ids(db, sdrs)     # marked "left" on the row so a leaver is not mistaken for an idle rep
 
     # Group SDRs by their pod's timezone (default UTC) so each group's date
     # range is resolved against its own local day, not a single global one.
@@ -1005,7 +1160,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
             .join(models.Lead, models.Lead.id == models.lead_assignments.c.lead_id)
             .filter(~models.Lead.status.in_(models.PARKED_STATUSES))
         )
-        lead_count_q = models.exclude_test_leads(lead_count_q)
+        lead_count_q = models.exclude_test_and_deleted_leads(lead_count_q)
         if date_start:
             lead_count_q = lead_count_q.filter(models.Lead.created_at >= date_start)
         if date_end:
@@ -1017,28 +1172,24 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
         lead_count_q = lead_count_q.filter(models.lead_assignments.c.user_id.in_(sdr_ids))
         lead_counts.update(dict(lead_count_q.group_by(models.lead_assignments.c.user_id).all()))
 
-        # ── Meetings per SDR (date-filtered by lead_closed_at) ─────────────
+        # ── Meetings per SDR = meetings THEY booked in the window (lead_meetings), not leads they currently hold ──
+        # (v13.12.1: the old query credited the lead's current owner and dated it by status_changed_at, which moves on any
+        # later touch — so a rep with no calls showed meetings.) Same definition as the Leaderboard.
         meeting_q = (
-            db.query(
-                models.lead_assignments.c.user_id,
-                func.count(distinct(models.Lead.id)).label("meetings"),
-            )
-            .join(models.Lead, models.Lead.id == models.lead_assignments.c.lead_id)
-            .filter(
-                models.lead_assignments.c.user_id.in_(sdr_ids),
-                models.Lead.status.in_(MEETING_REACHED_STATUSES),
-            )
+            db.query(models.LeadMeeting.booked_by_user_id, func.count(models.LeadMeeting.id))
+            .join(models.Lead, models.Lead.id == models.LeadMeeting.lead_id)
+            .filter(models.LeadMeeting.booked_by_user_id.in_(sdr_ids), models.LeadMeeting.status != "cancelled")
         )
-        meeting_q = models.exclude_test_leads(meeting_q)
+        meeting_q = models.exclude_test_and_deleted_leads(meeting_q)
         if date_start:
-            meeting_q = meeting_q.filter(models.Lead.lead_closed_at >= date_start)
+            meeting_q = meeting_q.filter(models.LeadMeeting.booked_at >= date_start)
         if date_end:
-            meeting_q = meeting_q.filter(models.Lead.lead_closed_at <= date_end)
+            meeting_q = meeting_q.filter(models.LeadMeeting.booked_at <= date_end)
         if lead_source:
             meeting_q = _lead_source_filter(meeting_q, lead_source)
         if upload_log_id:
             meeting_q = meeting_q.filter(models.Lead.upload_log_id == upload_log_id)
-        meeting_counts.update(dict(meeting_q.group_by(models.lead_assignments.c.user_id).all()))
+        meeting_counts.update(dict(meeting_q.group_by(models.LeadMeeting.booked_by_user_id).all()))
 
         # ── Call aggregates per SDR (dialer + manual combined) ─────────────
         _dc_sdr_q = (
@@ -1046,7 +1197,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
                 models.DialerCall.user_id,
                 func.count(models.DialerCall.id).label("total"),
                 func.count(case((
-                    models.dialer_call_connected(_CONNECT_OUTCOMES_LIST), models.DialerCall.id
+                    models.dialer_call_connected(conversation_min_seconds), models.DialerCall.id
                 ))).label("connected"),
                 func.count(case((
                     models.DialerCall.outcome.isnot(None), models.DialerCall.id
@@ -1060,7 +1211,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
                 models.DialerCall.direction == "outbound",
             )
         )
-        _dc_sdr_q = models.exclude_test_leads(_dc_sdr_q, models.DialerCall)
+        _dc_sdr_q = models.exclude_test_and_deleted_leads(_dc_sdr_q, models.DialerCall)
         if date_start:
             _dc_sdr_q = _dc_sdr_q.filter(models.dialer_call_event_time() >= date_start)
         if date_end:
@@ -1075,7 +1226,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
                 models.CallLog.user_id,
                 func.count(models.CallLog.id).label("total"),
                 func.count(case((
-                    norm_sdr.in_(_CONNECT_OUTCOMES_LIST), models.CallLog.id
+                    _cl_connected(norm_sdr), models.CallLog.id
                 ))).label("connected"),
                 func.count(case((
                     models.CallLog.outcome.isnot(None), models.CallLog.id
@@ -1084,9 +1235,16 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
                     models.call_log_is_conversation(), models.CallLog.id
                 ))).label("conversations"),
             )
-            .filter(models.CallLog.user_id.in_(sdr_ids))
+            # RCA 2026-08-20: exclude CallLog rows auto-created from a
+            # DialerCall (dialer_call_id set by _auto_log_outcome) — without
+            # this, every auto-tagged Aircall call is summed on both sides
+            # below (dc_sdr_agg + cl_sdr_agg) and double-counted.
+            .filter(
+                models.CallLog.user_id.in_(sdr_ids),
+                models.CallLog.dialer_call_id.is_(None),
+            )
         )
-        _cl_sdr_q = models.exclude_test_leads(_cl_sdr_q, models.CallLog)
+        _cl_sdr_q = models.exclude_test_and_deleted_leads(_cl_sdr_q, models.CallLog)
         if date_start:
             _cl_sdr_q = _cl_sdr_q.filter(models.CallLog.called_at >= date_start)
         if date_end:
@@ -1117,7 +1275,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
                 models.LeadEmailActivity.direction == "outbound",
             )
         )
-        email_q = models.exclude_test_leads(email_q, models.LeadEmailActivity)
+        email_q = models.exclude_test_and_deleted_leads(email_q, models.LeadEmailActivity)
         if date_start:
             email_q = email_q.filter(models.LeadEmailActivity.timestamp >= date_start)
         if date_end:
@@ -1132,7 +1290,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
                 func.count(distinct(func.lower(models.Lead.company))).label("acct_called"),
                 func.count(
                     distinct(case(
-                        (models.dialer_call_connected(_CONNECT_OUTCOMES_LIST), func.lower(models.Lead.company)),
+                        (models.dialer_call_connected(conversation_min_seconds), func.lower(models.Lead.company)),
                         else_=None
                     ))
                 ).label("acct_connected"),
@@ -1145,7 +1303,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
                 models.Lead.company != "",
             )
         )
-        _dc_company_q = models.exclude_test_leads(_dc_company_q)
+        _dc_company_q = models.exclude_test_and_deleted_leads(_dc_company_q)
         if date_start:
             _dc_company_q = _dc_company_q.filter(models.dialer_call_event_time() >= date_start)
         if date_end:
@@ -1165,7 +1323,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
                 func.count(distinct(func.lower(models.Lead.company))).label("acct_called"),
                 func.count(
                     distinct(case(
-                        (norm_sdr.in_(_CONNECT_OUTCOMES_LIST), func.lower(models.Lead.company)),
+                        (_cl_connected(norm_sdr), func.lower(models.Lead.company)),
                         else_=None
                     ))
                 ).label("acct_connected"),
@@ -1177,7 +1335,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
                 models.Lead.company != "",
             )
         )
-        _cl_company_q = models.exclude_test_leads(_cl_company_q)
+        _cl_company_q = models.exclude_test_and_deleted_leads(_cl_company_q)
         if date_start:
             _cl_company_q = _cl_company_q.filter(models.CallLog.called_at >= date_start)
         if date_end:
@@ -1235,6 +1393,7 @@ def _compute_sdr_rows(db, effective_pod, date_from, date_to, preset, upload_log_
             "sdr_id": sdr.id,
             "sdr_name": sdr.name or sdr.email,
             "pod_id": sdr.pod_id,
+            "left": sdr.id in gone,
             "is_inactive": is_inactive,
             "leads_assigned": leads_count,
             "calls_made": calls_made,
@@ -1261,6 +1420,7 @@ def get_sdr_table(
     pod_id: Optional[str] = Query(None),
     lead_source: Optional[str] = Query(None),
     upload_log_id: Optional[str] = Query(None),
+    sdr_id: Optional[str] = Query(None, description="Scope to a single rep (Analytics Hub Rep filter)"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     sort_by: str = Query("calls_made", description="calls_made | emails_sent | meetings | connect_rate | leads_assigned | account_connect_rate"),
@@ -1279,7 +1439,7 @@ def get_sdr_table(
     from datetime import timedelta
 
     effective_pod = _effective_pod_id(admin, pod_id)
-    effective_sdr = _effective_ae_sdr(admin)
+    effective_sdr = _resolve_sdr_filter(admin, sdr_id, db)
     if effective_sdr:
         effective_pod = None  # AE: self-scope only, no pod-wide visibility
 
@@ -1345,7 +1505,7 @@ def get_email_breakdown(
     effective_sdr = _effective_ae_sdr(admin)
     if effective_sdr:
         effective_pod = None  # AE: self-scope only, no pod-wide visibility
-    date_start, date_end = _resolve_date_range_simple(date_from, date_to, preset)
+    date_start, date_end = _resolve_analytics_date_range(db, effective_pod, effective_sdr, date_from, date_to, preset)
 
     ckey = _cache_key("email_breakdown", effective_pod, effective_sdr, lead_source, upload_log_id, date_from or preset, date_to)
     cached = _cache_get(ckey)
@@ -1622,6 +1782,7 @@ def get_filter_options(
             batch_ids = [r.id for r in batch_rows]
             pod_counts_by_batch: dict = {}
             pod_name_by_id: dict = {}
+            sdr_counts_by_batch: dict = {}
             if batch_ids:
                 count_rows = (
                     db.query(models.Lead.upload_log_id, models.Lead.pod_id, func.count(models.Lead.id))
@@ -1638,10 +1799,27 @@ def get_filter_options(
                         db.query(models.Pod.id, models.Pod.name).filter(models.Pod.id.in_(all_pod_ids)).all()
                     )
 
+                if effective_sdr:
+                    # AE/SDR self-scope: count only leads in this batch assigned to them,
+                    # not every lead in the batch org-wide.
+                    sdr_count_rows = (
+                        db.query(models.Lead.upload_log_id, func.count(distinct(models.Lead.id)))
+                        .join(models.lead_assignments, models.lead_assignments.c.lead_id == models.Lead.id)
+                        .filter(
+                            models.Lead.upload_log_id.in_(batch_ids),
+                            models.lead_assignments.c.user_id == effective_sdr,
+                        )
+                        .group_by(models.Lead.upload_log_id)
+                        .all()
+                    )
+                    sdr_counts_by_batch = dict(sdr_count_rows)
+
             for r in batch_rows:
                 pod_breakdown = pod_counts_by_batch.get(r.id, [])
                 if effective_pod:
                     lead_count = sum(cnt for pid, cnt in pod_breakdown if pid == effective_pod)
+                elif effective_sdr:
+                    lead_count = sdr_counts_by_batch.get(r.id, 0)
                 else:
                     lead_count = sum(cnt for _, cnt in pod_breakdown)
                 if lead_count == 0:
@@ -1653,13 +1831,14 @@ def get_filter_options(
                 src_label = _batch_source_label(r.filename or "")
                 upload_date_str = r.created_at.strftime("%b %-d") if r.created_at else "Unknown"
 
-                label_parts = [src_label, upload_date_str]
+                label_parts = [r.filename or src_label, upload_date_str]
                 if pod_name:
                     label_parts.append(pod_name)
 
                 batches.append({
                     "id": r.id,
                     "label": " \u00b7 ".join(label_parts),
+                    "filename": r.filename,
                     "source": src_label,
                     "upload_date": r.created_at.strftime("%Y-%m-%d") if r.created_at else None,
                     "upload_date_display": upload_date_str,
@@ -1676,13 +1855,14 @@ def get_filter_options(
 
 # ─── Endpoint 6: CSV Export (streaming) ──────────────────────────────────────
 
-@router.get("/export")
+@router.get("/export", dependencies=[Depends(require_export_access)])
 def export_csv(
     preset: Optional[str] = Query("30d"),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     pod_id: Optional[str] = Query(None),
     lead_source: Optional[str] = Query(None),
+    sdr_id: Optional[str] = Query(None, description="Scope to a single rep (Analytics Hub Rep filter)"),
     admin: dict = Depends(require_admin_or_ae),
     db: Session = Depends(get_db),
 ):
@@ -1691,7 +1871,7 @@ def export_csv(
     Uses chunked query to avoid loading full dataset into memory.
     """
     effective_pod = _effective_pod_id(admin, pod_id)
-    effective_sdr = _effective_ae_sdr(admin)
+    effective_sdr = _resolve_sdr_filter(admin, sdr_id, db)
     if effective_sdr:
         effective_pod = None  # AE: self-scope only, no pod-wide visibility
 
@@ -1752,6 +1932,7 @@ def get_batch_summary(
     pod_id: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    sdr_id: Optional[str] = Query(None, description="Scope to a single rep (Analytics Hub Rep filter)"),
     admin: dict = Depends(require_admin_or_ae),
     db: Session = Depends(get_db),
 ):
@@ -1760,10 +1941,13 @@ def get_batch_summary(
     Columns: batch label, leads, calls, connect_rate, meetings, disqualified, research_done.
     """
     effective_pod = _effective_pod_id(admin, pod_id)
-    effective_sdr = _effective_ae_sdr(admin)
+    effective_sdr = _resolve_sdr_filter(admin, sdr_id, db)
     if effective_sdr:
         effective_pod = None  # AE: self-scope only, no pod-wide visibility
-    date_start, date_end = _resolve_date_range_simple(date_from, date_to, None)
+    date_start, date_end = _resolve_analytics_date_range(db, effective_pod, effective_sdr, date_from, date_to, None)
+
+    from routes._admin_helpers import get_conversation_min_seconds
+    conversation_min_seconds = get_conversation_min_seconds(db)
 
     def _with_date_bound(condition, date_col):
         """AND a date range onto a CASE condition. RCA 2026-07-27: per-batch
@@ -1812,24 +1996,31 @@ def get_batch_summary(
             .filter(models.Lead.upload_log_id.in_(batch_ids))
         )
         lead_q = _pod_scope_lead_query(lead_q, effective_pod, effective_sdr)
-        lead_q = models.exclude_test_leads(lead_q)
+        lead_q = models.exclude_test_and_deleted_leads(lead_q)
         lead_counts = dict(lead_q.group_by(models.Lead.upload_log_id).all())
 
         # ── BULK QUERY 2: Call aggregates per batch (dialer + manual) ──
-        # Previously CallLog-only, which misses all Aircall/Klenty/RCM
+        # Previously CallLog-only, which misses all Aircall/Klenty/Alternate CRM
         # calls in dialer_calls — same gap as the old /export bug.
         norm = _normalised_outcome_expr()
         _cl_call_q = (
             db.query(
                 models.Lead.upload_log_id,
                 func.count(models.CallLog.id).label("total"),
-                func.count(case((norm.in_(_CONNECT_OUTCOMES_LIST), models.CallLog.id))).label("connected"),
+                func.count(case((_cl_connected(norm), models.CallLog.id))).label("connected"),
             )
             .join(models.Lead, models.Lead.id == models.CallLog.lead_id)
-            .filter(models.Lead.upload_log_id.in_(batch_ids))
+            # RCA 2026-08-20: exclude CallLog rows auto-created from a
+            # DialerCall (dialer_call_id set by _auto_log_outcome) — without
+            # this, every auto-tagged Aircall call is summed twice below
+            # (_cl_call_agg + _dc_call_agg).
+            .filter(
+                models.Lead.upload_log_id.in_(batch_ids),
+                models.CallLog.dialer_call_id.is_(None),
+            )
         )
         _cl_call_q = _pod_scope_lead_query(_cl_call_q, effective_pod, effective_sdr)
-        _cl_call_q = models.exclude_test_leads(_cl_call_q)
+        _cl_call_q = models.exclude_test_and_deleted_leads(_cl_call_q)
         if date_start:
             _cl_call_q = _cl_call_q.filter(models.CallLog.called_at >= date_start)
         if date_end:
@@ -1844,7 +2035,7 @@ def get_batch_summary(
                 models.Lead.upload_log_id,
                 func.count(models.DialerCall.id).label("total"),
                 func.count(case((
-                    models.dialer_call_connected(_CONNECT_OUTCOMES_LIST), models.DialerCall.id
+                    models.dialer_call_connected(conversation_min_seconds), models.DialerCall.id
                 ))).label("connected"),
             )
             .join(models.Lead, models.Lead.id == models.DialerCall.lead_id)
@@ -1854,7 +2045,7 @@ def get_batch_summary(
             )
         )
         _dc_call_q = _pod_scope_lead_query(_dc_call_q, effective_pod, effective_sdr)
-        _dc_call_q = models.exclude_test_leads(_dc_call_q)
+        _dc_call_q = models.exclude_test_and_deleted_leads(_dc_call_q)
         if date_start:
             _dc_call_q = _dc_call_q.filter(models.dialer_call_event_time() >= date_start)
         if date_end:
@@ -1894,10 +2085,50 @@ def get_batch_summary(
             .filter(models.Lead.upload_log_id.in_(batch_ids))
         )
         status_q = _pod_scope_lead_query(status_q, effective_pod, effective_sdr)
-        status_q = models.exclude_test_leads(status_q)
+        status_q = models.exclude_test_and_deleted_leads(status_q)
         status_agg = {}
         for row in status_q.group_by(models.Lead.upload_log_id).all():
             status_agg[row[0]] = {"meetings": row[1] or 0, "disqualified": row[2] or 0, "research": row[3] or 0}
+
+        # ── BULK QUERY 4: Qualified/disqualified per (batch, SDR) ────────
+        # RCA 2026-08-17: stakeholder ask — "analytics on qualified/
+        # disqualified accounts & leads by list/SDR/time period". List and
+        # period already existed above (upload_log_id + date bounding); SDR
+        # was the missing axis. "Qualified" = reached MEETING_REACHED_STATUSES,
+        # same bar /funnel and this endpoint's own "meetings" column already
+        # use — not a new definition.
+        sdr_q = (
+            db.query(
+                models.Lead.upload_log_id,
+                models.User.id,
+                models.User.name,
+                func.count(case((
+                    _with_date_bound(models.Lead.status.in_(MEETING_REACHED_STATUSES), models.Lead.lead_closed_at),
+                    models.Lead.id
+                ))).label("qualified"),
+                func.count(case((
+                    _with_date_bound(models.Lead.status.in_(DISQUALIFIED_STATUSES), models.Lead.lead_closed_at),
+                    models.Lead.id
+                ))).label("disqualified"),
+            )
+            .join(models.lead_assignments, models.lead_assignments.c.lead_id == models.Lead.id)
+            .join(models.User, models.User.id == models.lead_assignments.c.user_id)
+            .filter(models.Lead.upload_log_id.in_(batch_ids))
+        )
+        sdr_q = _pod_scope_lead_query(sdr_q, effective_pod, effective_sdr)
+        sdr_q = models.exclude_test_and_deleted_leads(sdr_q)
+        sdr_agg = {}
+        for bid, sdr_id, sdr_name, qualified, disqualified in sdr_q.group_by(
+            models.Lead.upload_log_id, models.User.id, models.User.name
+        ).all():
+            if not qualified and not disqualified:
+                continue  # no qualifying activity for this SDR in this batch — skip the noise
+            sdr_agg.setdefault(bid, []).append({
+                "sdr_id": sdr_id,
+                "sdr_name": sdr_name,
+                "qualified": qualified or 0,
+                "disqualified": disqualified or 0,
+            })
 
         # ── Assemble rows ───────────────────────────────────────────────
         result_rows = []
@@ -1927,6 +2158,7 @@ def get_batch_summary(
                 "meetings": s["meetings"],
                 "disqualified": s["disqualified"],
                 "research_done": s["research"],
+                "by_sdr": sdr_agg.get(b.id, []),
             })
 
     # Totals row
@@ -1951,3 +2183,258 @@ def get_batch_summary(
     _cache_set(ckey, result)
     return result
 
+
+# ─── Endpoint 10: Lead Activity (Analytics Hub drill-down) ────────────────────
+#
+# Per-lead assignment + call activity, scoped by the same POD/date/batch/rep
+# filters as the rest of the hub. Reuses get_upload_batch_leads' assignment
+# shape (admin_upload_routes.py) and Lead's own call_attempt_count/
+# last_call_timestamp tracking instead of re-deriving call counts from
+# call_logs — those fields are already kept in sync on every logged call.
+
+@router.get("/leads")
+def get_lead_activity(
+    pod_id: Optional[str] = Query(None),
+    preset: Optional[str] = Query(None, description="7d | 30d | 90d | all"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    upload_log_id: Optional[str] = Query(None),
+    sdr_id: Optional[str] = Query(None, description="Scope to a single rep (Analytics Hub Rep filter)"),
+    sort_by: Optional[str] = Query(
+        None, description="company | status | calls | last_activity (prefix '-' for descending); default -created_at"
+    ),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    admin: dict = Depends(require_admin_or_ae),
+    db: Session = Depends(get_db),
+):
+    """Per-lead rows for the Analytics Hub 'Lead Activity' panel: who's
+    assigned, how many calls, what the last outcome was.
+
+    sort_by only covers columns that live directly on Lead (company, status,
+    call_attempt_count, last_call_timestamp) — email_count/last_call_outcome/
+    last_email_status/assigned_to are computed in a second bulk pass after
+    pagination (see below) and would need real query restructuring to sort
+    on; skipped for now as a lazy-but-correct call, not an oversight."""
+    effective_pod = _effective_pod_id(admin, pod_id)
+    effective_sdr = _resolve_sdr_filter(admin, sdr_id, db)
+    if effective_sdr:
+        effective_pod = None
+    date_start, date_end = _resolve_analytics_date_range(db, effective_pod, effective_sdr, date_from, date_to, preset)
+
+    query = db.query(models.Lead)
+    query = _pod_scope_lead_query(query, effective_pod, effective_sdr)
+    query = models.exclude_test_and_deleted_leads(query)
+    if upload_log_id:
+        # Batch scoping overrides date scoping — a batch can predate the
+        # selected window (same rule as _compute_leads_assigned_count).
+        query = query.filter(models.Lead.upload_log_id == upload_log_id)
+    else:
+        if date_start:
+            query = query.filter(models.Lead.created_at >= date_start)
+        if date_end:
+            query = query.filter(models.Lead.created_at <= date_end)
+
+    total = query.count()
+    sort_columns = {
+        "company": models.Lead.company,
+        "status": models.Lead.status,
+        "calls": models.Lead.call_attempt_count,
+        "last_activity": models.Lead.last_call_timestamp,
+    }
+    sort_col, sort_desc = resolve_sort(sort_by, sort_columns)
+    if sort_col is not None:
+        query = query.order_by(sort_col.desc() if sort_desc else sort_col.asc(), models.Lead.id)
+    else:
+        query = query.order_by(models.Lead.created_at.desc(), models.Lead.id)
+    leads = (
+        query.offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    # Last call outcome per lead — one bulk query, not N+1. Leads in a single
+    # page rarely have more than a handful of calls each, so fetching every
+    # matching call_logs row and keeping the last one in Python is simpler
+    # and just as cheap as a DISTINCT ON that only Postgres (not the SQLite
+    # test DB) supports.
+    lead_ids = [l.id for l in leads]
+    last_outcome_by_lead = {}
+    if lead_ids:
+        call_rows = (
+            db.query(models.CallLog.lead_id, models.CallLog.outcome)
+            .filter(models.CallLog.lead_id.in_(lead_ids))
+            .order_by(models.CallLog.called_at.asc())
+            .all()
+        )
+        for lid, outcome in call_rows:
+            last_outcome_by_lead[lid] = outcome  # last write per lead_id wins
+
+    # Email activity per lead, same bulk-not-N+1 shape as calls above. Status
+    # is the furthest stage reached (sent < opened < clicked), not the last
+    # email chronologically — a lead with 3 sends where only the 1st was
+    # opened should still show "opened", not silently regress to "sent".
+    email_count_by_lead = {}
+    email_status_by_lead = {}
+    if lead_ids:
+        email_rows = (
+            db.query(
+                models.LeadEmailActivity.lead_id,
+                models.LeadEmailActivity.clicked_at,
+                models.LeadEmailActivity.opened_at,
+            )
+            .filter(
+                models.LeadEmailActivity.lead_id.in_(lead_ids),
+                models.LeadEmailActivity.direction == "outbound",
+            )
+            .all()
+        )
+        stage_rank = {"sent": 0, "opened": 1, "clicked": 2}
+        for lid, clicked_at, opened_at in email_rows:
+            email_count_by_lead[lid] = email_count_by_lead.get(lid, 0) + 1
+            stage = "clicked" if clicked_at else ("opened" if opened_at else "sent")
+            if stage_rank[stage] > stage_rank.get(email_status_by_lead.get(lid), -1):
+                email_status_by_lead[lid] = stage
+
+    # Connects vs logged outcomes — "did anyone actually tag what happened on
+    # this connect" (dialer_call_connected() is the single source of truth
+    # for what counts as a connect, shared with the funnel/SDR-table so this
+    # can't silently disagree with those). One query over every filtered
+    # lead (not just this page) feeds both the header aggregate and each
+    # page row's flag, instead of querying the same table twice.
+    from routes._admin_helpers import get_conversation_min_seconds
+    conversation_min_seconds = get_conversation_min_seconds(db)
+
+    all_ids = [row[0] for row in query.with_entities(models.Lead.id).all()]
+    connect_no_outcome_by_lead = {}
+    total_connects = 0
+    connects_with_outcome = 0
+    if all_ids:
+        for lid, outcome in (
+            db.query(models.DialerCall.lead_id, models.DialerCall.outcome)
+            .filter(models.DialerCall.lead_id.in_(all_ids), models.dialer_call_connected(conversation_min_seconds))
+            .all()
+        ):
+            total_connects += 1
+            if outcome is None:
+                connect_no_outcome_by_lead[lid] = True
+            else:
+                connects_with_outcome += 1
+                connect_no_outcome_by_lead.setdefault(lid, False)
+
+    rows = []
+    for lead in leads:
+        assigned = [{"id": u.id, "name": u.name or u.email} for u in (lead.assigned_users or [])]
+        rows.append({
+            "id": lead.id,
+            "name": f"{lead.first_name or ''} {lead.last_name or ''}".strip() or lead.email,
+            "company": lead.company,
+            "status": lead.status,
+            "assigned_to": assigned,
+            "call_count": lead.call_attempt_count or 0,
+            "last_call_outcome": last_outcome_by_lead.get(lead.id),
+            "last_activity_at": str(lead.last_call_timestamp) if lead.last_call_timestamp else None,
+            "email_count": email_count_by_lead.get(lead.id, 0),
+            "last_email_status": email_status_by_lead.get(lead.id),
+            "connect_no_outcome": connect_no_outcome_by_lead.get(lead.id, False),
+        })
+
+    return {
+        "leads": rows,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+        "total_connects": total_connects,
+        "connects_with_outcome": connects_with_outcome,
+    }
+
+
+@router.get("/leads/{lead_id}/timeline")
+def get_lead_timeline(
+    lead_id: str,
+    admin: dict = Depends(require_admin_or_ae),
+    db: Session = Depends(get_db),
+):
+    """Chronological status-change + call history for one lead — the
+    expand-row detail behind the Lead Activity panel."""
+    lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(admin, lead)
+
+    effective_sdr = _effective_ae_sdr(admin)
+    if effective_sdr:
+        if effective_sdr not in {u.id for u in (lead.assigned_users or [])}:
+            raise HTTPException(status_code=403, detail="Not your lead")
+    else:
+        effective_pod = _effective_pod_id(admin, None)
+        if effective_pod and lead.pod_id != effective_pod:
+            raise HTTPException(status_code=403, detail="Lead is outside your pod")
+
+    events = []
+    for sl in db.query(models.LeadStatusLog).filter(models.LeadStatusLog.lead_id == lead_id).all():
+        events.append({
+            "type": "status_change",
+            "at": str(sl.changed_at) if sl.changed_at else None,
+            "detail": f"{sl.from_status or 'New'} → {sl.to_status}",
+            "by": sl.changed_by,
+        })
+
+    call_user_ids = set()
+    call_logs = db.query(models.CallLog).filter(models.CallLog.lead_id == lead_id).all()
+    call_user_ids.update(cl.user_id for cl in call_logs if cl.user_id)
+    dialer_calls = db.query(models.DialerCall).filter(models.DialerCall.lead_id == lead_id).all()
+    call_user_ids.update(dc.user_id for dc in dialer_calls if dc.user_id)
+    user_name_by_id = {
+        u.id: (u.name or u.email)
+        for u in db.query(models.User).filter(models.User.id.in_(call_user_ids)).all()
+    } if call_user_ids else {}
+
+    for cl in call_logs:
+        events.append({
+            "type": "call",
+            "at": str(cl.called_at) if cl.called_at else None,
+            "detail": cl.outcome,
+            "notes": cl.notes,
+            "by": user_name_by_id.get(cl.user_id),
+        })
+    for dc in dialer_calls:
+        event_time = dc.started_at or dc.created_at
+        events.append({
+            "type": "dialer_call",
+            "at": str(event_time) if event_time else None,
+            "detail": dc.outcome or dc.provider_disposition,
+            "notes": None,
+            "by": user_name_by_id.get(dc.user_id),
+        })
+
+    email_user_ids = set()
+    emails = db.query(models.LeadEmailActivity).filter(models.LeadEmailActivity.lead_id == lead_id).all()
+    email_user_ids.update(e.user_id for e in emails if e.user_id)
+    if email_user_ids - call_user_ids:
+        user_name_by_id.update({
+            u.id: (u.name or u.email)
+            for u in db.query(models.User).filter(models.User.id.in_(email_user_ids - call_user_ids)).all()
+        })
+    for e in emails:
+        if e.direction == "outbound":
+            stage = "clicked" if e.clicked_at else ("opened" if e.opened_at else "sent")
+            events.append({
+                "type": "email",
+                "at": str(e.timestamp) if e.timestamp else None,
+                "detail": f"{e.subject or '(no subject)'} — {stage}",
+                "notes": None,
+                "by": user_name_by_id.get(e.user_id),
+            })
+        else:
+            events.append({
+                "type": "email_reply",
+                "at": str(e.timestamp) if e.timestamp else None,
+                "detail": e.subject or "(no subject)",
+                "notes": None,
+                "by": e.from_email,
+            })
+
+    events.sort(key=lambda e: e["at"] or "")
+    return {"lead_id": lead_id, "timeline": events}

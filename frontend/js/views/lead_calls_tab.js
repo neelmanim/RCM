@@ -1,6 +1,7 @@
 // ── views/lead_calls_tab.js — Calls tab lazy-loader + call card rendering ─────
 import * as api from '../api.js';
 import { ensureUTC, bindRecordingRetry, downloadRecordingFresh, parseTranscript, escapeHtml as _esc } from '../utils.js';
+import { openCallModal } from './modals.js';
 
 // ── Format helpers (module-scoped so _appendPage can reuse them) ────────────
 const _fmtDur = (secs) => {
@@ -53,8 +54,8 @@ const _initials = (name) => {
 };
 const _callCard = (c) => {
     const dot      = _statusDot(c);
-    const provCls  = c.provider === 'aircall' ? 'aircall' : c.provider === 'rcm' ? 'rcm' : 'manual';
-    const provLabel= c.provider === 'aircall' ? 'via Aircall' : c.provider === 'rcm' ? 'via RCM' : 'Manual Log';
+    const provCls  = c.provider === 'aircall' ? 'aircall' : c.provider === 'messenger' ? 'messenger' : 'manual';
+    const provLabel= c.provider === 'aircall' ? 'via Aircall' : c.provider === 'messenger' ? 'via Alternate Messenger' : 'Manual Log';
     const durStr   = _fmtDur(c.duration);
     const dateStr  = _fmtDate(c.created_at);
 
@@ -93,7 +94,7 @@ const _callCard = (c) => {
     if (c.transcript) {
         let transcriptBody = '';
         // RCA 2026-07-22: this assumed transcript was a plain [{speaker,text}]
-        // array — RCM's real shape is {"transcription": [{role, content,
+        // array — Alternate Messenger's real shape is {"transcription": [{role, content,
         // start_time}]}, so a real transcript silently rendered nothing here.
         const lines = parseTranscript(c.transcript);
         if (lines.length > 0) {
@@ -137,6 +138,8 @@ const _callCard = (c) => {
         ${c.outcome ? `<div class="call-outcome-row">
             ${_outcomeBadge(c.outcome)}
             ${c.notes ? `<span class="call-notes">${c.notes}</span>` : ''}
+            ${c.source === 'dialer' ? `<span class="call-edit-outcome" data-edit-call-id="${c.id}" data-provider="${c.provider || ''}"
+                style="cursor:pointer;font-size:0.75rem;color:var(--text-muted);text-decoration:underline;margin-left:4px;">Edit</span>` : ''}
         </div>` : ''}
         ${recordingHTML}
         ${transcriptHTML}
@@ -225,6 +228,7 @@ export async function loadCallsTab(leadId) {
         // Filter pill handlers
         _bindFilters(el);
         _bindRecordingLinks(el);
+        _bindEditOutcome(el);
 
         // Load more handler
         const loadMoreBtn = document.getElementById('load-more-calls-btn');
@@ -266,6 +270,7 @@ async function _loadMoreCalls() {
             });
             list.appendChild(fragment);
             _bindRecordingLinks(list);
+            _bindEditOutcome(list);
         }
 
         // Update or remove the Load more button
@@ -294,6 +299,23 @@ function _bindRecordingLinks(container) {
     container.querySelectorAll('audio[data-call-id]').forEach(a => bindRecordingRetry(a, a.dataset.callId));
     container.querySelectorAll('a[data-download-call-id]').forEach(a => {
         a.addEventListener('click', (e) => downloadRecordingFresh(e, a.dataset.downloadCallId, a.href));
+    });
+}
+
+/** Bind "Edit" click on a dialer call's outcome — reopens the same log-call
+ * modal against that specific DialerCall so the SDR can correct a wrong or
+ * auto-logged (Aircall tag) outcome. RCA 2026-08-19: previously there was no
+ * way to fix an outcome once set, including ones the system guessed. */
+function _bindEditOutcome(container) {
+    if (!container) return;
+    container.querySelectorAll('[data-edit-call-id]').forEach(el => {
+        el.addEventListener('click', () => {
+            const lead = window._currentLead;
+            if (!lead || !_currentLeadId) return;
+            const fullName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || 'Unknown';
+            const phone = lead.phone || lead.phone_secondary || lead.company_phone || '';
+            openCallModal(_currentLeadId, fullName, phone, lead, el.dataset.editCallId, el.dataset.provider);
+        });
     });
 }
 

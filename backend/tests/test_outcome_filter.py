@@ -64,7 +64,7 @@ class TestOutcomeFilter:
 
         dc = models.DialerCall(
             lead_id=lead.id,
-            provider="rcm",
+            provider="messenger",
             status="CALL_ENDED",
             outcome="No Answer",
         )

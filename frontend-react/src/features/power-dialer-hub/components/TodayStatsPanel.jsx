@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { RefreshCw, Search, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCw, Download } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from '../../../components/ui/Table';
 import { Button } from '../../../components/ui/Button';
+import { Select } from '../../../components/ui/Select';
+import { SearchInput } from '../../../components/ui/SearchInput';
+import { Pagination } from '../../../components/ui/Pagination';
+import { DatePicker } from '../../../components/ui/DatePicker';
 import { Skeleton, SkeletonMetricCard, SkeletonCallRow } from '../../../components/ui/Skeleton';
 import { CallsService } from '../../../services/api';
 
@@ -123,8 +127,8 @@ export function TodayStatsPanel({ onTotalChange }) {
   useEffect(() => {
     if (!isToday) return;
     const handleResolved = () => fetchStats(date);
-    window.addEventListener('rcm:call-outcome-resolved', handleResolved);
-    return () => window.removeEventListener('rcm:call-outcome-resolved', handleResolved);
+    window.addEventListener('alternate:call-outcome-resolved', handleResolved);
+    return () => window.removeEventListener('alternate:call-outcome-resolved', handleResolved);
   }, [isToday, date, fetchStats]);
 
   // Distinct outcomes actually present today — the filter dropdown only ever
@@ -160,13 +164,11 @@ export function TodayStatsPanel({ onTotalChange }) {
           {isToday ? "Today's Calls" : 'Calls'}
         </h3>
         <div className="flex items-center gap-2">
-          <input
-            type="date"
+          <DatePicker
             value={date}
             max={todayLocalISO()}
-            onChange={e => e.target.value && setDate(e.target.value)}
-            className="text-sm border border-slate-200 rounded-lg px-2 py-1 text-slate-600"
-            aria-label="Select date"
+            onChange={v => v && setDate(v)}
+            ariaLabel="Select date"
           />
           {!isToday && (
             <Button variant="ghost" size="sm" onClick={() => setDate(todayLocalISO())}>
@@ -210,27 +212,21 @@ export function TodayStatsPanel({ onTotalChange }) {
           ) : (
             <>
               <div className="flex items-center gap-2 flex-wrap">
-                <div className="relative flex-1 min-w-[160px]">
-                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search name, company, phone…"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    className="w-full pl-7 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20"
-                  />
-                </div>
-                <select
+                <SearchInput
+                  placeholder="Search name, company, phone…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="flex-1 min-w-[160px]"
+                />
+                <Select
                   value={outcomeFilter}
-                  onChange={e => {
-                    setOutcomeFilter(e.target.value);
-                    try { window.mixpanel?.track('Today Calls Filtered', { outcome: e.target.value || 'all' }); } catch {}
+                  onChange={v => {
+                    setOutcomeFilter(v);
+                    try { window.mixpanel?.track('Today Calls Filtered', { outcome: v || 'all' }); } catch {}
                   }}
-                  className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600"
-                >
-                  <option value="">All outcomes</option>
-                  {outcomeOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
+                  options={[{ value: '', label: 'All outcomes' }, ...outcomeOptions.map(o => ({ value: o, label: o }))]}
+                  placeholder="All outcomes"
+                />
               </div>
 
               {filteredCalls.length === 0 ? (
@@ -268,20 +264,13 @@ export function TodayStatsPanel({ onTotalChange }) {
                   </Table>
 
                   {totalPages > 1 && (
-                    <div className="flex items-center justify-between text-xs text-slate-500">
-                      <span>
-                        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredCalls.length)} of {filteredCalls.length}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}>
-                          <ChevronLeft size={14} />
-                        </Button>
-                        <span className="px-1">Page {page} of {totalPages}</span>
-                        <Button variant="ghost" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
-                          <ChevronRight size={14} />
-                        </Button>
-                      </div>
-                    </div>
+                    <Pagination
+                      page={page}
+                      pages={totalPages}
+                      total={filteredCalls.length}
+                      perPage={PAGE_SIZE}
+                      onChange={setPage}
+                    />
                   )}
                 </>
               )}

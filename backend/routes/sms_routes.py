@@ -1,11 +1,11 @@
 """
 routes/sms_routes.py
 ────────────────────
-POST /api/sms/send — send an SMS to a lead via the RCM Floating Widget.
+POST /api/sms/send — send an SMS to a lead via the Alternate Messenger Floating Widget.
 
 Rules:
   • Any authenticated user can send (SDRs included).
-  • Requires rcm_enabled = True and api_key configured.
+  • Requires messenger_enabled = True and api_key configured.
   • Logs every attempt to sms_logs regardless of outcome.
 """
 
@@ -16,14 +16,15 @@ from sqlalchemy.orm import Session
 from typing import Union
 
 import models
-import rcm_sms_service as sms_service          # noqa: F401 (used by tests via patch)
+import sms_service as sms_service          # noqa: F401 (used by tests via patch)
 from database import get_db
 from auth import get_current_user
+from routes.lead_helpers import load_lead
 from routes._admin_helpers import _get_or_create_sync_settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/sms", tags=["SMS – RCM Widget"])
+router = APIRouter(prefix="/api/sms", tags=["SMS – Alternate Messenger Widget"])
 
 
 class SmsSendRequest(BaseModel):
@@ -37,18 +38,16 @@ def send_sms_to_lead(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Send an outbound SMS to a lead via RCM."""
+    """Send an outbound SMS to a lead via Alternate Messenger."""
     lead_id_str = str(body.lead_id)
 
     # ── 1. Resolve API credentials (soft guard) ────────────────────────────
     settings = _get_or_create_sync_settings(db)
-    api_key = getattr(settings, "rcm_api_key", None) or ""
-    from_number = getattr(settings, "rcm_from_number", None) or ""
+    api_key = getattr(settings, "messenger_api_key", None) or ""
+    from_number = getattr(settings, "messenger_from_number", None) or ""
 
     # ── 2. Resolve lead ─────────────────────────────────────────────────────
-    lead = db.query(models.Lead).filter_by(id=lead_id_str).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    lead = load_lead(db, current_user, lead_id_str, edit=True)  # texting a lead is a change to it
 
     to_number = (lead.phone or "").strip()
     if not to_number:
@@ -70,6 +69,7 @@ def send_sms_to_lead(
         status=log_status,
         phone_number=to_number,
         message_text=body.message,
+        failure_reason=None if result["success"] else result.get("error"),
     )
     db.add(sms_log)
     db.commit()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-UptimeRobot Monitor Setup — RCM CRM (PRODUCTION ONLY)
+UptimeRobot Monitor Setup — Alternate CRM CRM (PRODUCTION ONLY)
 ============================================================
 Provisions all critical production monitors via the UptimeRobot v2 API.
 Idempotent: skips monitors that already exist (matched by URL).
@@ -10,7 +10,7 @@ Usage:
     python3 scripts/setup_uptimerobot.py --dry-run    # preview, no API writes
     python3 scripts/setup_uptimerobot.py --list       # list all + current status
     python3 scripts/setup_uptimerobot.py --fix        # patch keyword_type on existing monitors
-    python3 scripts/setup_uptimerobot.py --cleanup    # remove staging monitors
+    python3 scripts/setup_uptimerobot.py --cleanup    # remove staging + retired-endpoint monitors
     python3 scripts/setup_uptimerobot.py --delete-all # ⚠ delete everything
 
 keyword_type semantics (UptimeRobot v2):
@@ -39,8 +39,8 @@ import urllib.parse
 # ── Config ─────────────────────────────────────────────────────────────────────
 API_KEY        = "u3486919-d589aa2cc8ccc819ddc3bd2d"
 BASE_URL       = "https://api.uptimerobot.com/v2"
-PROD_BASE      = "https://api.alternatecrm.com"
-FRONTEND_URL   = "https://rcm.txtbox.in"
+PROD_BASE      = "https://api.alternatecrm.staging.in"
+FRONTEND_URL   = "https://alternatecrm.staging.in"
 
 # UptimeRobot monitor type constants
 TYPE_HTTP    = 1   # HTTP(s) — alerts on non-2xx or connection failure
@@ -56,8 +56,15 @@ INTERVAL = 300
 # Staging URL fragments — used to identify monitors to remove
 STAGING_PATTERNS = [
     "staging.onrender.com",
-    "rcm-frontend-staging",
-    "rcm-crm-staging",
+    "messenger-frontend-staging",
+    "messenger-crm-staging",
+]
+
+# Endpoints that no longer exist — --cleanup deletes their monitors so they
+# don't page as "down". /api/config went with demo login (2026-09-29); the
+# startup gate it proxied was removed earlier (RCA-RC2), /api/health covers it.
+RETIRED_PATTERNS = [
+    "/api/config",
 ]
 
 # ── Monitoring API key ─────────────────────────────────────────────────────────
@@ -73,14 +80,14 @@ MONITORING_KEY = os.getenv("MONITORING_API_KEY", "ls-monitor-v1-2026")
 MONITORS = [
     # ── T1: Surface availability ────────────────────────────────────────────
     {
-        "friendly_name": "RCM — Frontend",
+        "friendly_name": "Alternate CRM — Frontend",
         "url": FRONTEND_URL,
         "type": TYPE_HTTP,
         "tier": "T1",
         "rationale": "Entry point for all SDRs. Down = 100% of users locked out.",
     },
     {
-        "friendly_name": "RCM — Backend reachable (/api/health)",
+        "friendly_name": "Alternate CRM — Backend reachable (/api/health)",
         "url": f"{PROD_BASE}/api/health",
         "type": TYPE_KEYWORD,
         "keyword_type": KW_ALERT_WHEN_NOT_FOUND,
@@ -91,7 +98,7 @@ MONITORS = [
 
     # ── T2: Database health ─────────────────────────────────────────────────
     {
-        "friendly_name": "RCM — DB table accessible (/api/health/deep)",
+        "friendly_name": "Alternate CRM — DB table accessible (/api/health/deep)",
         "url": f"{PROD_BASE}/api/health/deep",
         "type": TYPE_KEYWORD,
         "keyword_type": KW_ALERT_WHEN_NOT_FOUND,
@@ -100,18 +107,9 @@ MONITORS = [
         "rationale": "Deep check with 2s query timeout — catches DB locks returning HTTP 200.",
     },
 
-    # ── T3: Application startup ─────────────────────────────────────────────
-    {
-        "friendly_name": "RCM — App config endpoint (/api/config)",
-        "url": f"{PROD_BASE}/api/config",
-        "type": TYPE_HTTP,
-        "tier": "T3",
-        "rationale": "Served only after startup_complete=True. Proxy for 'app fully initialized'.",
-    },
-
     # ── T4: Auth ────────────────────────────────────────────────────────────
     {
-        "friendly_name": "RCM — Login page reachable (/api/auth/login)",
+        "friendly_name": "Alternate CRM — Login page reachable (/api/auth/login)",
         "url": f"{PROD_BASE}/api/auth/login",
         "type": TYPE_HTTP,
         "tier": "T4",
@@ -120,7 +118,7 @@ MONITORS = [
 
     # ── T5: Public API (CMT↔SF bridge) ─────────────────────────────────────
     {
-        "friendly_name": "RCM — Public API health (/api/public/health)",
+        "friendly_name": "Alternate CRM — Public API health (/api/public/health)",
         "url": f"{PROD_BASE}/api/public/health",
         "type": TYPE_KEYWORD,
         "keyword_type": KW_ALERT_WHEN_NOT_FOUND,
@@ -131,7 +129,7 @@ MONITORS = [
 
     # ── T6: Authenticated deep health (via monitoring API key) ──────────────
     {
-        "friendly_name": "RCM — Authenticated deep health (/api/monitoring/health)",
+        "friendly_name": "Alternate CRM — Authenticated deep health (/api/monitoring/health)",
         "url": f"{PROD_BASE}/api/monitoring/health?key={MONITORING_KEY}",
         "type": TYPE_KEYWORD,
         "keyword_type": KW_ALERT_WHEN_NOT_FOUND,
@@ -252,7 +250,7 @@ def cmd_list() -> None:
     for url, m in existing.items():
         if any(p in url for p in STAGING_PATTERNS):
             staging.append((url, m))
-        elif "rcm" in url:
+        elif "alternatecrm" in url:
             prod.append((url, m))
         else:
             other.append((url, m))
@@ -277,7 +275,7 @@ def cmd_list() -> None:
 
 def cmd_setup(dry_run: bool) -> None:
     label = "(DRY RUN) " if dry_run else ""
-    print(f"\n🔧  {label}Provisioning RCM PRODUCTION monitors...\n")
+    print(f"\n🔧  {label}Provisioning Alternate CRM PRODUCTION monitors...\n")
     existing = get_existing_monitors()
     existing_urls = set(existing.keys())
 
@@ -341,11 +339,12 @@ def cmd_fix(dry_run: bool = False) -> None:
 
 
 def cmd_cleanup() -> None:
-    print("\n🧹  Removing staging monitors...\n")
+    print("\n🧹  Removing staging + retired-endpoint monitors...\n")
     existing = get_existing_monitors()
-    to_delete = [(url, m) for url, m in existing.items() if any(p in url for p in STAGING_PATTERNS)]
+    to_delete = [(url, m) for url, m in existing.items()
+                 if any(p in url for p in STAGING_PATTERNS + RETIRED_PATTERNS)]
     if not to_delete:
-        print("  No staging monitors found.\n")
+        print("  No staging or retired monitors found.\n")
         return
     for url, m in to_delete:
         delete_monitor(m["id"], m["friendly_name"])
@@ -367,7 +366,7 @@ def cmd_delete_all() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="RCM production monitor provisioner (UptimeRobot v2)",
+        description="Alternate CRM production monitor provisioner (UptimeRobot v2)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

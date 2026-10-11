@@ -11,7 +11,7 @@ import pytest
 from datetime import datetime, timezone
 
 # Reuse conftest factories
-from conftest import (
+from conftest import (create_test_booking,
     create_test_user, create_test_lead, create_test_call,
     create_sync_settings, SUPER_ADMIN, SDR_USER,
 )
@@ -382,6 +382,8 @@ class TestLeaderboardMeetingCount:
 
         l3 = create_test_lead(db, first_name="C", company="Co3", status="Meeting Scheduled", email="c@test.com")
         _assign_lead_to_user(db, l3, sdr2)
+        for lead_, sdr_ in ((l1, sdr1), (l2, sdr1), (l3, sdr2)):
+            create_test_booking(db, lead_, sdr_.id)       # the Leaderboard counts bookings by the person who booked
 
         resp = client.get("/api/leaderboard?range=0")
         assert resp.status_code == 200
@@ -407,6 +409,8 @@ class TestLeaderboardMeetingCount:
 
         l3 = create_test_lead(db, first_name="Z", company="CoZ", status="Calling", email="z@test.com")
         _assign_lead_to_user(db, l3, sdr1)
+        create_test_booking(db, l1, sdr2.id)
+        create_test_booking(db, l2, sdr2.id)
 
         resp = client.get("/api/leaderboard?range=0")
         data = resp.json()

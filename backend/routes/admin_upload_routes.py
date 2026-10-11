@@ -7,18 +7,20 @@ import csv
 import io
 import re
 from datetime import datetime, timezone, timedelta
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, text, case, literal_column
 from sqlalchemy.orm import Session
 
+import ownership_history as oh
+import access_db
 import models
 from database import get_db
 from auth import require_admin
 from salesforce import create_new_lead_in_salesforce
 from routes._admin_helpers import (
-    _get_active_lead_cap, _active_lead_count, _get_or_create_sync_settings,
     _is_valid_email, _has_valid_phone, _lead_data_has_phone,
-    _assign_lead_round_robin, COLUMN_MAP, PHONE_COLUMNS
+    _assign_lead_round_robin, COLUMN_MAP, PHONE_COLUMNS, LEAD_CSV_FIELDS, resolve_sort
 )
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,31 @@ router = APIRouter(prefix="/api/admin", tags=["Admin – Uploads"])
 
 
 # ── Lead Upload (Enriched Sheets) ────────────────────────────────────────────
+
+
+
+def _pod_admin_pod(admin):
+    """A Pod Admin's own pod (NO_POD matches nothing); None for roles that aren't pod-scoped."""
+    return (access_db.pod_of(admin)) if admin.get("role") == "Pod Admin" else None
+
+
+def _require_own_pod_target(admin, assign_to_pod_id):
+    """A Pod Admin may only seed leads into their own pod (v13.12.1 — any pod id used to be accepted)."""
+    pod = _pod_admin_pod(admin)
+    if pod and assign_to_pod_id and assign_to_pod_id != pod:
+        raise HTTPException(status_code=403, detail="You can only upload leads into your own POD.")
+
+
+def _pod_may_touch(admin, lead):
+    """update_existing must not overwrite (or re-point) a lead that belongs to another pod — Pod Admin only."""
+    pod = _pod_admin_pod(admin)
+    return not pod or lead.pod_id in (None, pod)
+
+
+def _pod_batch_ids(db, pod):
+    """Upload batches that touched this pod's leads (same rule get_upload_logs applies)."""
+    return db.query(models.Lead.upload_log_id).filter(
+        models.Lead.pod_id == pod, models.Lead.upload_log_id.isnot(None)).distinct()
 
 
 @router.post("/leads/upload-preview")
@@ -74,13 +101,7 @@ def upload_preview(body: dict, admin: dict = Depends(require_admin)):
         "phone_column_detected": phone_column_detected,
         "rows_without_phone": rows_without_phone,
         "total_rows": len(all_rows),
-        "available_fields": [
-            "first_name", "last_name", "email", "phone", "phone_secondary", "company", "title",
-            "linkedin_url", "person_linkedin", "website", "city", "state", "country",
-            "industry", "employee_count", "annual_revenue", "total_funding",
-            "company_phone", "company_linkedin", "company_street", "company_city",
-            "company_postal_code", "company_state", "company_country", "company_founded"
-        ]
+        "available_fields": LEAD_CSV_FIELDS,
     }
 
 
@@ -98,6 +119,7 @@ def upload_enriched_sheet(body: dict, db: Session = Depends(get_db), admin: dict
     update_existing = body.get("update_existing", False)
     assign_to_user_id = body.get("assign_to_user_id")  # Legacy single SDR assignment
     assign_to_pod_id = body.get("assign_to_pod_id")     # Pod-based round-robin assignment
+    _require_own_pod_target(admin, assign_to_pod_id)
     tag = (body.get("tag") or "").strip()[:50] or None   # V26: optional upload tag
     lead_tag_names = list(dict.fromkeys(
         t.strip() for t in (body.get("tags") or []) if isinstance(t, str) and t.strip()
@@ -331,7 +353,7 @@ def upload_enriched_sheet(body: dict, db: Session = Depends(get_db), admin: dict
 
         if is_dup:
             # ── Update existing mode: update the matching lead ──
-            if update_existing and existing_lead:
+            if update_existing and existing_lead and _pod_may_touch(admin, existing_lead):
                 fields_updated = []
                 for field, value in lead_data.items():
                     if field in UPDATABLE_FIELDS and value:
@@ -353,17 +375,15 @@ def upload_enriched_sheet(body: dict, db: Session = Depends(get_db), admin: dict
                     if not already_in_pod:
                         existing_lead.pod_id = assign_to_pod_id
                         company_key = (lead_data.get("company") or "").strip().lower()
-                        cap = _get_active_lead_cap(db, pod_sdrs[0])
                         chosen_sdr = _assign_lead_round_robin(
-                            db, existing_lead, pod_sdrs, pod_batch_counts, pod_company_sdr_map, company_key, cap
+                            db, existing_lead, pod_sdrs, pod_batch_counts, pod_company_sdr_map, company_key
                         )
                         if chosen_sdr:
-                            db.execute(
-                                models.lead_assignments.insert().values(user_id=chosen_sdr.id, lead_id=existing_lead.id)
-                            )
-                            assigned_now = True
+                            # assign_lead, not a raw insert — replaces the lead's
+                            # previous SDR instead of adding a second one.
+                            assigned_now = models.assign_lead(chosen_sdr, existing_lead, reason=oh.R_UPLOAD, actor_id=admin["sub"])
                 elif assign_user:
-                    assigned_now = models.assign_lead(assign_user, existing_lead)
+                    assigned_now = models.assign_lead(assign_user, existing_lead, reason=oh.R_UPLOAD, actor_id=admin["sub"])
 
                 if fields_updated or assigned_now:
                     updated += 1
@@ -430,18 +450,20 @@ def upload_enriched_sheet(body: dict, db: Session = Depends(get_db), admin: dict
             db.flush()
             if lead_tag_objs:
                 new_lead.tags = lead_tag_objs
+                models.record_lead_history(db, new_lead.id, "tags", None, ", ".join(lead_tag_names),
+                                           f"{admin.get('name') or admin.get('email')} (upload)")
             # Pod-based round-robin assignment (preferred)
             if pod_sdrs:
                 new_lead.pod_id = assign_to_pod_id
                 company_key = (lead_data.get("company") or "").strip().lower()
-                cap = _get_active_lead_cap(db, pod_sdrs[0])  # Pod-level cap is same for all SDRs
 
                 chosen_sdr = _assign_lead_round_robin(
                     db, new_lead, pod_sdrs, pod_batch_counts,
-                    pod_company_sdr_map, company_key, cap
+                    pod_company_sdr_map, company_key
                 )
                 if chosen_sdr:
                     # Use direct SQL insert to avoid stale ORM relationship issues
+                    oh.set_assignment_context(db, oh.R_UPLOAD, admin["sub"])
                     db.execute(
                         models.lead_assignments.insert().values(
                             user_id=chosen_sdr.id, lead_id=new_lead.id
@@ -450,7 +472,7 @@ def upload_enriched_sheet(body: dict, db: Session = Depends(get_db), admin: dict
                 # If all SDRs at cap, lead goes unassigned but still in the pod
             elif assign_user:
                 # Legacy single-user assignment
-                models.assign_lead(assign_user, new_lead)
+                models.assign_lead(assign_user, new_lead, reason=oh.R_UPLOAD, actor_id=admin["sub"])
             savepoint.commit()
             created += 1
             created_lead_ids.append(new_lead.id)
@@ -516,15 +538,23 @@ def upload_enriched_sheet(body: dict, db: Session = Depends(get_db), admin: dict
 def get_upload_logs(
     page: int = Query(1, ge=1, description="Page number"),
     per_page: int = Query(10, ge=1, le=50, description="Items per page"),
+    sort_by: Optional[str] = Query(None, description="filename | status | created_at (prefix '-' for descending)"),
     db: Session = Depends(get_db),
     admin: dict = Depends(require_admin),
 ):
-    """Return paginated upload history ordered by most recent, with rollback eligibility."""
+    """Return paginated upload history ordered by most recent, with rollback eligibility.
+    Pod Admins only see batches that touched their own pod's leads."""
     base_q = db.query(models.LeadUploadLog)
+    if admin.get("role") == "Pod Admin" and admin.get("pod_id"):
+        pod_batch_ids = db.query(models.Lead.upload_log_id).filter(
+            models.Lead.pod_id == admin.get("pod_id"),
+            models.Lead.upload_log_id.isnot(None),
+        ).distinct()
+        base_q = base_q.filter(models.LeadUploadLog.id.in_(pod_batch_ids))
     total = base_q.count()
 
-    # Aggregate summary stats across ALL logs (not just current page)
-    summary = db.query(
+    # Aggregate summary stats across ALL logs (not just current page), same pod scope
+    summary = base_q.with_entities(
         func.count(models.LeadUploadLog.id).label('total_uploads'),
         func.coalesce(func.sum(models.LeadUploadLog.total_rows), 0).label('total_rows'),
         func.coalesce(func.sum(models.LeadUploadLog.created), 0).label('total_created'),
@@ -533,8 +563,14 @@ def get_upload_logs(
         func.coalesce(func.sum(models.LeadUploadLog.errors), 0).label('total_errors'),
     ).first()
 
+    sort_columns = {
+        "filename": models.LeadUploadLog.filename,
+        "status": models.LeadUploadLog.status,
+        "created_at": models.LeadUploadLog.created_at,
+    }
+    sort_col, sort_desc = resolve_sort(sort_by, sort_columns, models.LeadUploadLog.created_at)
     logs = (base_q
-            .order_by(models.LeadUploadLog.created_at.desc())
+            .order_by(sort_col.desc() if sort_desc else sort_col.asc())
             .offset((page - 1) * per_page)
             .limit(per_page)
             .all())
@@ -598,6 +634,9 @@ def get_upload_batch_metrics(
 ):
     """Return upload batch metrics summary, optionally filtered by pod and date range."""
     query = db.query(models.LeadUploadLog).order_by(models.LeadUploadLog.created_at.desc())
+    if _pod_admin_pod(admin):
+        pod_id = _pod_admin_pod(admin)
+        query = query.filter(models.LeadUploadLog.id.in_(_pod_batch_ids(db, pod_id)))
 
     if date_range == "today":
         cutoff = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -662,6 +701,8 @@ def get_upload_batch_leads(
     log = db.query(models.LeadUploadLog).filter(models.LeadUploadLog.id == log_id).first()
     if not log:
         raise HTTPException(status_code=404, detail="Upload log not found")
+    if _pod_admin_pod(admin):
+        pod_id = _pod_admin_pod(admin)          # always their own pod, whatever the caller asked for
 
     filename = log.filename or ""
     if not filename:
@@ -698,7 +739,10 @@ def get_upload_batch_leads(
         query = query.filter(models.Lead.pod_id == pod_id)
 
     total = query.count()
-    leads = query.order_by(models.Lead.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    # RCA 2026-08-20: same-batch leads land in a narrow, often-identical
+    # created_at window (see window_start/window_end above) — add a stable
+    # tiebreaker so ties can't duplicate/skip rows across pages.
+    leads = query.order_by(models.Lead.created_at.desc(), models.Lead.id).offset((page - 1) * per_page).limit(per_page).all()
 
     lead_list = []
     for lead in leads:
@@ -803,6 +847,9 @@ def rollback_upload_batch(
 
     if not log:
         raise HTTPException(status_code=404, detail="Upload log not found")
+    _pod = _pod_admin_pod(admin)
+    if _pod and not db.query(_pod_batch_ids(db, _pod).filter(models.Lead.upload_log_id == log.id).exists()).scalar():
+        raise HTTPException(status_code=404, detail="Upload log not found")     # not their pod's batch
     if log.status == "rolled_back":
         raise HTTPException(status_code=400, detail="This batch has already been rolled back")
     if not log.created_at:
@@ -1015,13 +1062,7 @@ def gsheet_preview(body: dict, admin: dict = Depends(require_admin)):
         "phone_column_detected": phone_column_detected,
         "rows_without_phone": rows_without_phone,
         "large_sheet": total_rows > 5000,
-        "available_fields": [
-            "first_name", "last_name", "email", "phone", "phone_secondary", "company", "title",
-            "linkedin_url", "person_linkedin", "website", "city", "state", "country",
-            "industry", "employee_count", "annual_revenue", "total_funding",
-            "company_phone", "company_linkedin", "company_street", "company_city",
-            "company_postal_code", "company_state", "company_country", "company_founded"
-        ]
+        "available_fields": LEAD_CSV_FIELDS,
     }
 
 
@@ -1036,6 +1077,7 @@ def gsheet_import(body: dict, db: Session = Depends(get_db), admin: dict = Depen
     sheet_name = body.get("sheet_name", "Google Sheet")
     assign_to_user_id = body.get("assign_to_user_id")  # Legacy single SDR assignment
     assign_to_pod_id = body.get("assign_to_pod_id")     # Pod-based round-robin assignment
+    _require_own_pod_target(admin, assign_to_pod_id)
     tag = (body.get("tag") or "").strip()[:50] or None   # V26: optional upload tag
     lead_tag_names = list(dict.fromkeys(
         t.strip() for t in (body.get("tags") or []) if isinstance(t, str) and t.strip()
@@ -1232,7 +1274,7 @@ def gsheet_import(body: dict, db: Session = Depends(get_db), admin: dict = Depen
                     is_dup, dup_reason = True, f"name+company: {first} {last} @ {company}"
 
         if is_dup:
-            if update_existing and existing_lead:
+            if update_existing and existing_lead and _pod_may_touch(admin, existing_lead):
                 fields_updated = []
                 for field, value in lead_data.items():
                     if field in UPDATABLE_FIELDS and value:
@@ -1253,17 +1295,15 @@ def gsheet_import(body: dict, db: Session = Depends(get_db), admin: dict = Depen
                     if not already_in_pod:
                         existing_lead.pod_id = assign_to_pod_id
                         company_key = (lead_data.get("company") or "").strip().lower()
-                        cap = _get_active_lead_cap(db, gs_pod_sdrs[0])
                         chosen_sdr = _assign_lead_round_robin(
-                            db, existing_lead, gs_pod_sdrs, gs_batch_counts, gs_company_sdr_map, company_key, cap
+                            db, existing_lead, gs_pod_sdrs, gs_batch_counts, gs_company_sdr_map, company_key
                         )
                         if chosen_sdr:
-                            db.execute(
-                                models.lead_assignments.insert().values(user_id=chosen_sdr.id, lead_id=existing_lead.id)
-                            )
-                            assigned_now = True
+                            # assign_lead, not a raw insert — replaces the lead's
+                            # previous SDR instead of adding a second one.
+                            assigned_now = models.assign_lead(chosen_sdr, existing_lead, reason=oh.R_UPLOAD, actor_id=admin["sub"])
                 elif assign_user:
-                    assigned_now = models.assign_lead(assign_user, existing_lead)
+                    assigned_now = models.assign_lead(assign_user, existing_lead, reason=oh.R_UPLOAD, actor_id=admin["sub"])
 
                 if fields_updated or assigned_now:
                     updated += 1
@@ -1315,18 +1355,20 @@ def gsheet_import(body: dict, db: Session = Depends(get_db), admin: dict = Depen
             db.flush()
             if lead_tag_objs:
                 new_lead.tags = lead_tag_objs
+                models.record_lead_history(db, new_lead.id, "tags", None, ", ".join(lead_tag_names),
+                                           f"{admin.get('name') or admin.get('email')} (upload)")
             # Pod-based round-robin assignment (preferred)
             if gs_pod_sdrs:
                 new_lead.pod_id = assign_to_pod_id
                 company_key = (lead_data.get("company") or "").strip().lower()
-                cap = _get_active_lead_cap(db, gs_pod_sdrs[0])  # Pod-level cap is same for all SDRs
 
                 chosen_sdr = _assign_lead_round_robin(
                     db, new_lead, gs_pod_sdrs, gs_batch_counts,
-                    gs_company_sdr_map, company_key, cap
+                    gs_company_sdr_map, company_key
                 )
                 if chosen_sdr:
                     # Use direct SQL insert to avoid stale ORM relationship issues
+                    oh.set_assignment_context(db, oh.R_UPLOAD, admin["sub"])
                     db.execute(
                         models.lead_assignments.insert().values(
                             user_id=chosen_sdr.id, lead_id=new_lead.id
@@ -1334,7 +1376,7 @@ def gsheet_import(body: dict, db: Session = Depends(get_db), admin: dict = Depen
                     )
             elif assign_user:
                 # Legacy single-user assignment
-                models.assign_lead(assign_user, new_lead)
+                models.assign_lead(assign_user, new_lead, reason=oh.R_UPLOAD, actor_id=admin["sub"])
             savepoint.commit()
             created += 1
             created_lead_ids.append(new_lead.id)

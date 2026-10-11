@@ -22,16 +22,24 @@
  *   - EC-06: auto-submit initialQuery with 500ms delay after filters settle
  *   - EC-12: AbortController cleanup on every unmount
  */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  Sparkles, Send, Trash2, BookOpen, ChevronRight,
+  Sparkles, Send, Trash2, Bookmark,
   BarChart2, Save, Pin, Edit3, Loader2, X,
   HelpCircle, AlertCircle, CheckCircle2,
 } from 'lucide-react';
 import { SmartAnalyticsService } from '../../services/api';
 import { AiResultChart } from './AiResultChart';
+import { Card, CardHeader, CardContent } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from '../../components/ui/Table';
+import { Skeleton, SkeletonText, SkeletonCard } from '../../components/ui/Skeleton';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
+import { Popover, PopoverContent } from '../../components/ui/Popover';
 
-/* ── Suggestion chips ────────────────────────────────────── */
+/* ── Suggestion prompts (shown in the query typeahead) ───── */
 const SUGGESTIONS = [
   'Calls made by each SDR this week',
   'Top performers vs target this month',
@@ -54,15 +62,16 @@ const ScopingBanner = ({ filters, onEdit }) => {
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-700 font-semibold mb-4">
-      <span className="text-indigo-400">⬡</span>
       <span>Scoped to: <strong>{label}</strong></span>
-      <button
-        onClick={onEdit}
-        title="Edit filters in Dashboard tab"
-        className="ml-auto text-indigo-400 hover:text-indigo-600 transition-colors"
-      >
-        <Edit3 size={12} />
-      </button>
+      {onEdit && (
+        <button
+          onClick={onEdit}
+          title="Edit filters in Dashboard tab"
+          className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg border border-indigo-200 bg-white text-indigo-500 hover:bg-indigo-100 hover:text-indigo-700 transition-colors"
+        >
+          <Edit3 size={11} /> Edit
+        </button>
+      )}
     </div>
   );
 };
@@ -78,21 +87,22 @@ const ClarifyCard = ({ question, onSend }) => {
       </div>
       <p className="text-sm text-slate-700 leading-relaxed">{question}</p>
       <div className="flex items-center gap-2">
-        <input
+        <Input
           type="text"
           value={reply}
           onChange={e => setReply(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && reply.trim() && onSend(reply.trim())}
           placeholder="Type your answer…"
-          className="flex-1 text-xs border border-amber-300 rounded-lg px-3 py-1.5 outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20 bg-white"
+          containerClassName="flex-1 mb-0"
+          className="border-amber-300 bg-white"
         />
-        <button
+        <Button
           onClick={() => reply.trim() && onSend(reply.trim())}
           disabled={!reply.trim()}
-          className="px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white rounded-lg disabled:opacity-50"
+          size="sm"
         >
           Send
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -129,8 +139,9 @@ const SavedReportItem = ({ report, onRun, onDelete }) => {
       : null;                                     // short identical → no subtitle (clean)
 
   return (
-    <div className="py-2.5 px-1 border-b border-slate-100 last:border-0 group">
-      <div className="flex items-start justify-between gap-1">
+    <div className="group rounded-lg hover:bg-slate-50 transition-colors">
+      <div className="flex items-start gap-1.5 px-1.5 py-2">
+        <Bookmark size={12} className="text-indigo-300 shrink-0 mt-0.5" />
         <button
           className="flex-1 min-w-0 text-left"
           onClick={() => onRun(report)}
@@ -142,19 +153,76 @@ const SavedReportItem = ({ report, onRun, onDelete }) => {
           ) : (
             <p className="text-[10px] text-slate-300 mt-0.5 italic leading-snug">tap to run</p>
           )}
+          {report.is_pinned && (
+            <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-indigo-400 mt-0.5">
+              <Pin size={8} /> pinned
+            </span>
+          )}
         </button>
         <button
           onClick={() => onDelete(report.id)}
-          className="mt-0.5 p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+          className="mt-0.5 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all shrink-0"
           title="Delete"
         >
           <Trash2 size={11} />
         </button>
       </div>
-      {report.is_pinned && (
-        <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-indigo-400 mt-0.5">
-          <Pin size={8} /> pinned
-        </span>
+    </div>
+  );
+};
+
+/* ── Query typeahead — saved reports + suggestions, filtered live ── */
+const QueryTypeahead = ({ query, savedReports, onSelectSaved, onSelectSuggestion }) => {
+  const q = query.trim().toLowerCase();
+  const matchedSaved = useMemo(() => (
+    (q
+      ? savedReports.filter(r =>
+          (r.name || '').toLowerCase().includes(q) ||
+          (r.natural_language_query || '').toLowerCase().includes(q))
+      : savedReports
+    ).slice(0, 5)
+  ), [q, savedReports]);
+  const matchedSuggestions = useMemo(() => (
+    q ? SUGGESTIONS.filter(s => s.toLowerCase().includes(q)) : SUGGESTIONS
+  ), [q]);
+
+  if (matchedSaved.length === 0 && matchedSuggestions.length === 0) {
+    return <div className="px-3 py-4 text-xs text-slate-400 text-center">No matches</div>;
+  }
+
+  return (
+    <div className="max-h-80 overflow-y-auto py-1">
+      {matchedSaved.length > 0 && (
+        <div className="pb-1">
+          <p className="px-3 pt-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Saved Reports</p>
+          {matchedSaved.map(r => (
+            <button
+              key={r.id}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); onSelectSaved(r); }}
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-slate-50 text-sm text-slate-700"
+            >
+              <Bookmark size={13} className="text-indigo-400 shrink-0" />
+              <span className="truncate">{r.name || r.natural_language_query}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {matchedSuggestions.length > 0 && (
+        <div>
+          <p className="px-3 pt-2 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Try asking</p>
+          {matchedSuggestions.map(s => (
+            <button
+              key={s}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); onSelectSuggestion(s); }}
+              className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-slate-50 text-sm text-slate-700"
+            >
+              <Sparkles size={13} className="text-slate-300 shrink-0" />
+              <span className="truncate">{s}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -163,7 +231,7 @@ const SavedReportItem = ({ report, onRun, onDelete }) => {
 /* ══════════════════════════════════════════════════════════ */
 /* ── AskAiTab ────────────────────────────────────────────── */
 /* ══════════════════════════════════════════════════════════ */
-export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
+export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess, onEditFilters }) => {
   const [queryText, setQueryText]       = useState(initialQuery || '');
   const [isRunning, setIsRunning]       = useState(false);
   const [result, setResult]             = useState(null);
@@ -178,8 +246,13 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
   const [isPinning,   setIsPinning]   = useState(false);
   const [pinToast,    setPinToast]    = useState('');     // toast message
   const [savedReportId, setSavedReportId] = useState(null); // id after auto-save
+  const [suggestOpen, setSuggestOpen] = useState(false); // query typeahead dropdown
 
   const abortRef = useRef(null);
+  const queryInputRef = useRef(null);
+  // Radix outside-detection exemption for the query typeahead — see the
+  // comment at its PopoverContent call site for why this is needed.
+  const exemptQueryInput = e => { if (queryInputRef.current?.contains(e.target)) e.preventDefault(); };
 
   // Load saved reports on mount
   useEffect(() => {
@@ -327,7 +400,14 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
   }, [queryText, history, filters, isRunning]);
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runQuery(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setSuggestOpen(false); runQuery(); }
+    if (e.key === 'Escape') setSuggestOpen(false);
+  };
+
+  const handleSelectSuggestion = (s) => {
+    setSuggestOpen(false);
+    setQueryText(s);
+    runQuery(s);
   };
 
   // BUG-4 FIX: saveReport backend expects (name, natural_language_query, dsl_json, chart_type)
@@ -393,6 +473,7 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
   const handleRunSaved = async (report) => {
     const q = report.natural_language_query || report.query || '';
     if (!q) return;
+    setSuggestOpen(false);
     setQueryText(q);
     await runQuery(q);
   };
@@ -415,50 +496,66 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
       {/* ── Main Column ─────────────────────────────── */}
       <div className="flex-1 min-w-0 space-y-4">
         {/* Scoping banner */}
-        <ScopingBanner filters={filters} onEdit={undefined} />
+        <ScopingBanner filters={filters} onEdit={onEditFilters} />
 
         {/* Query input card */}
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4">
+        <Card>
+          <CardContent className="!py-4">
           <div className="flex items-start gap-3">
             <Sparkles size={18} className="text-indigo-500 shrink-0 mt-1" />
-            <textarea
-              id="ai-query-input"
-              rows={2}
-              value={queryText}
-              onChange={e => setQueryText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask your pipeline anything… e.g. Which SDRs had the most calls last week?"
-              className="flex-1 resize-none text-sm text-slate-700 placeholder-slate-400 outline-none bg-transparent leading-relaxed"
-            />
-            <button
+            <Popover open={suggestOpen} onOpenChange={setSuggestOpen}>
+              <PopoverPrimitive.Anchor asChild>
+                <textarea
+                  id="ai-query-input"
+                  ref={queryInputRef}
+                  rows={2}
+                  value={queryText}
+                  onChange={e => setQueryText(e.target.value)}
+                  onFocus={() => setSuggestOpen(true)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask your pipeline anything… e.g. Which SDRs had the most calls last week?"
+                  className="flex-1 w-full resize-none text-sm text-slate-700 placeholder-slate-400 outline-none bg-transparent leading-relaxed"
+                />
+              </PopoverPrimitive.Anchor>
+              <PopoverContent
+                align="start"
+                className="w-[var(--radix-popover-trigger-width)] p-0"
+                onOpenAutoFocus={e => e.preventDefault()}
+                onCloseAutoFocus={e => e.preventDefault()}
+                // The textarea is an Anchor, not a Trigger (opening happens
+                // via onFocus, not a Radix-managed click) — it already holds
+                // focus when Content mounts and isn't exempted from Radix's
+                // dismissal checks the way a real Trigger would be. Without
+                // this, DismissableLayer treats the textarea's own focus as
+                // "focus outside" and closes the popover immediately on
+                // mount, and clicking back into it mid-typing (to reposition
+                // the caret) closes it as an "outside" pointerdown.
+                onFocusOutside={exemptQueryInput}
+                onPointerDownOutside={exemptQueryInput}
+              >
+                <QueryTypeahead
+                  query={queryText}
+                  savedReports={savedReports}
+                  onSelectSaved={handleRunSaved}
+                  onSelectSuggestion={handleSelectSuggestion}
+                />
+              </PopoverContent>
+            </Popover>
+            <Button
               id="ai-run-btn"
-              onClick={() => runQuery()}
+              onClick={() => { setSuggestOpen(false); runQuery(); }}
               disabled={isRunning || !queryText?.trim()}
-              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              size="sm"
+              className="shrink-0"
             >
               {isRunning
                 ? <Loader2 size={13} className="animate-spin" />
                 : <Send size={13} />}
               {isRunning ? 'Running…' : 'Run Query'}
-            </button>
+            </Button>
           </div>
-        </div>
-
-        {/* Suggestion chips — only when no result and not running */}
-        {!result && !isRunning && !error && (
-          <div className="space-y-2">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Try asking…</p>
-            <div className="flex flex-wrap gap-2">
-              {SUGGESTIONS.map(s => (
-                <button key={s}
-                  onClick={() => { setQueryText(s); runQuery(s); }}
-                  className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-full hover:bg-indigo-100 transition-colors">
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+          </CardContent>
+        </Card>
 
         {/* Error */}
         {error && (
@@ -473,12 +570,10 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
 
         {/* Loading skeleton */}
         {isRunning && (
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-3 animate-pulse">
-            <div className="h-3 bg-slate-100 rounded w-1/4" />
-            <div className="h-4 bg-slate-100 rounded w-3/4" />
-            <div className="h-4 bg-slate-100 rounded w-1/2" />
-            <div className="h-32 bg-slate-100 rounded mt-4" />
-          </div>
+          <SkeletonCard>
+            <SkeletonText lines={2} />
+            <Skeleton className="h-32 w-full mt-4" />
+          </SkeletonCard>
         )}
 
         {/* Clarify response */}
@@ -493,23 +588,25 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
 
         {/* Result card */}
         {result?.type === 'result' && !isRunning && (
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            {/* Result header */}
-            <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-3 border-b border-slate-100">
-              <div>
-                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                  <CheckCircle2 size={11} />
-                  Results for
-                </p>
-                <p className="text-sm font-semibold text-slate-800 italic">"{result.query}"</p>
-              </div>
-              <button onClick={() => { setResult(null); setError(''); }}
-                className="text-slate-300 hover:text-slate-500 transition-colors mt-0.5">
-                <X size={16} />
-              </button>
-            </div>
+          <Card>
+            <CardHeader
+              title={
+                <>
+                  <span className="flex items-center gap-1.5 text-indigo-500 font-bold uppercase tracking-wider text-[10px] mb-1">
+                    <CheckCircle2 size={11} /> Results for
+                  </span>
+                  <span className="italic">"{result.query}"</span>
+                </>
+              }
+              actions={
+                <button onClick={() => { setResult(null); setError(''); }}
+                  className="text-slate-300 hover:text-slate-500 transition-colors">
+                  <X size={16} />
+                </button>
+              }
+            />
 
-            <div className="px-6 py-4 space-y-4">
+            <CardContent className="space-y-4">
               {/* Backend message banner (e.g. batch_not_found) */}
               {result._raw?.message && (
                 <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
@@ -539,26 +636,24 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
                       ) : (
                         <>
                           {sec.chartData && <AiResultChart data={sec.chartData} />}
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="bg-slate-50 border-b border-slate-100">
+                          <Table className="rounded-none border-0">
+                            <TableHead>
+                              <tr>
                                 {Object.keys(sec.rows[0]).map(col => (
-                                  <th key={col} className="py-2 px-4 text-left font-bold text-slate-500 uppercase tracking-wider text-[10px]">
-                                    {col.replace(/_/g, ' ')}
-                                  </th>
+                                  <TableHeader key={col} className="text-[10px]">{col.replace(/_/g, ' ')}</TableHeader>
                                 ))}
                               </tr>
-                            </thead>
-                            <tbody>
+                            </TableHead>
+                            <TableBody>
                               {sec.rows.map((row, ri) => (
-                                <tr key={ri} className="border-b border-slate-50 hover:bg-slate-50">
+                                <TableRow key={ri}>
                                   {Object.values(row).map((val, vi) => (
-                                    <td key={vi} className="py-2 px-4 text-slate-700">{String(val ?? '—')}</td>
+                                    <TableCell key={vi} className="whitespace-normal">{String(val ?? '—')}</TableCell>
                                   ))}
-                                </tr>
+                                </TableRow>
                               ))}
-                            </tbody>
-                          </table>
+                            </TableBody>
+                          </Table>
                         </>
                       )}
                     </div>
@@ -573,28 +668,24 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
 
               {/* Standard data table (non-multi modes) */}
               {!result.multi_sections && result.table?.length > 0 && (
-                <div className="overflow-x-auto rounded-xl border border-slate-100">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-100">
-                        {Object.keys(result.table[0]).map(col => (
-                          <th key={col} className="py-2.5 px-4 text-left font-bold text-slate-500 uppercase tracking-wider text-[10px] whitespace-nowrap">
-                            {col.replace(/_/g, ' ')}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.table.map((row, i) => (
-                        <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                          {Object.values(row).map((val, j) => (
-                            <td key={j} className="py-2.5 px-4 text-slate-700">{String(val ?? '—')}</td>
-                          ))}
-                        </tr>
+                <Table>
+                  <TableHead>
+                    <tr>
+                      {Object.keys(result.table[0]).map(col => (
+                        <TableHeader key={col} className="text-[10px]">{col.replace(/_/g, ' ')}</TableHeader>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                    </tr>
+                  </TableHead>
+                  <TableBody>
+                    {result.table.map((row, i) => (
+                      <TableRow key={i}>
+                        {Object.values(row).map((val, j) => (
+                          <TableCell key={j} className="whitespace-normal">{String(val ?? '—')}</TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
 
               {/* No-data fallback — only when truly nothing to show */}
@@ -603,40 +694,35 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
                 && !result.chart_data
                 && (!result.table || result.table.length === 0)
                 && !result._raw?.message && (
-                <div className="text-center py-8 text-slate-400">
-                  <BarChart2 size={32} className="mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No data found for this query.</p>
-                  <p className="text-xs mt-1">Try a different date range or check the filter scope above.</p>
-                </div>
+                <EmptyState
+                  icon={BarChart2}
+                  title="No data found for this query."
+                  message="Try a different date range or check the filter scope above."
+                />
               )}
 
               {/* Actions row — consistent button styling */}
               <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
                 {/* Save Report — outlined secondary */}
-                <button
-                  onClick={() => setShowSaveForm(v => !v)}
-                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:border-indigo-400 hover:text-indigo-600 bg-white transition-all"
-                >
+                <Button variant="outline" size="sm" onClick={() => setShowSaveForm(v => !v)}>
                   <Save size={13} />
                   Save Report
-                </button>
+                </Button>
 
                 {/* Pin to Dashboard — filled primary */}
-                <button
+                <Button
+                  variant={isPinned ? 'secondary' : 'primary'}
+                  size="sm"
                   onClick={handlePinReport}
                   disabled={isPinned || isPinning}
-                  className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ml-auto ${
-                    isPinned
-                      ? 'bg-indigo-50 text-indigo-400 border border-indigo-200 cursor-default'
-                      : 'bg-indigo-600 text-white border border-indigo-600 hover:bg-indigo-700 shadow-sm'
-                  }`}
+                  className="ml-auto"
                   title={isPinned ? 'Already pinned to Dashboard' : 'Pin this result to your Dashboard'}
                 >
                   {isPinning
-                    ? <Loader2 size={13} className="spin" />
+                    ? <Loader2 size={13} className="animate-spin" />
                     : <Pin size={13} />}
-                  {isPinned ? 'Pinned ✓' : 'Pin to Dashboard'}
-                </button>
+                  {isPinned ? 'Pinned' : 'Pin to Dashboard'}
+                </Button>
               </div>
 
               {/* Pin toast notification */}
@@ -656,22 +742,23 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
               {/* Save name form */}
               {showSaveForm && (
                 <div className="flex items-center gap-2 mt-1">
-                  <input
+                  <Input
                     type="text"
                     value={saveNameInput}
                     onChange={e => setSaveNameInput(e.target.value)}
                     placeholder="Report name…"
-                    className="flex-1 text-xs border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20"
+                    containerClassName="flex-1 mb-0"
+                    className="text-xs py-1.5"
                     onKeyDown={e => e.key === 'Enter' && handleSaveReport()}
                     autoFocus
                   />
-                  <button
+                  <Button
                     onClick={handleSaveReport}
                     disabled={isSaving || !saveNameInput.trim()}
-                    className="px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white rounded-lg disabled:opacity-50"
+                    size="sm"
                   >
                     {isSaving ? '…' : 'Save'}
-                  </button>
+                  </Button>
                   <button
                     onClick={() => { setShowSaveForm(false); setSaveNameInput(''); }}
                     className="p-1.5 text-slate-400 hover:text-slate-600"
@@ -680,24 +767,26 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
                   </button>
                 </div>
               )}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         )}
       </div>
 
       {/* ── Saved Reports Panel ─────────────────────── */}
       <div className="w-56 shrink-0">
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 sticky top-4">
-          <div className="flex items-center gap-2 mb-3">
-            <BookOpen size={14} className="text-slate-400" />
-            <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Saved Reports</p>
-          </div>
+        <Card className="sticky top-4">
+          <CardHeader title={
+            <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
+              <Bookmark size={14} className="text-slate-400" /> Saved Reports
+            </span>
+          } />
+          <CardContent>
           {savedReports.length === 0 ? (
             <p className="text-[11px] text-slate-400 italic text-center py-6">
               No saved reports yet.<br />Run a query and save it.
             </p>
           ) : (
-            <div>
+            <div className="space-y-0.5">
               {savedReports.map(r => (
                 <SavedReportItem
                   key={r.id}
@@ -708,7 +797,8 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess }) => {
               ))}
             </div>
           )}
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

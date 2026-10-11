@@ -3,10 +3,41 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from conftest import (
-    create_test_user, create_test_lead, create_test_pod,
-    create_sync_settings, SUPER_ADMIN,
+    create_test_user, create_test_lead, create_test_pod, create_pod_admin,
+    create_sync_settings, create_test_call, SUPER_ADMIN,
 )
 import models
+
+
+# ── Access Requests ──────────────────────────────────────────────────────────
+# A Google sign-in from an email not yet in allowed_users — see
+# models.AccessRequest and auth_routes._record_access_request.
+
+class TestListAccessRequests:
+
+    def test_super_admin_sees_pending_requests_newest_first(self, client, db):
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        # Explicit, clearly-separated timestamps — two inserts in the same
+        # test can otherwise land in the same second on SQLite's CURRENT_TIMESTAMP
+        # (server_default=func.now()), making ordering non-deterministic.
+        db.add(models.AccessRequest(email="older@test.com", name="Older", requested_at=now - timedelta(minutes=5)))
+        db.add(models.AccessRequest(email="newer@test.com", name="Newer", requested_at=now))
+        db.commit()
+
+        resp = client.get("/api/admin/access-requests")
+        assert resp.status_code == 200, resp.text
+        emails = [r["email"] for r in resp.json()]
+        assert emails == ["newer@test.com", "older@test.com"]
+
+    def test_non_super_admin_rejected(self, client_as_sdr, db):
+        resp = client_as_sdr.get("/api/admin/access-requests")
+        assert resp.status_code == 403, resp.text
+
+    def test_empty_when_none_pending(self, client, db):
+        resp = client.get("/api/admin/access-requests")
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == []
 
 
 # ── User Management ─────────────────────────────────────────────────────────
@@ -102,6 +133,13 @@ class TestToggleAccess:
         resp = client.patch(f"/api/admin/users/{user.id}/access", json={"action": "dance"})
         assert resp.status_code == 400
 
+    def test_cannot_revoke_own_access(self, client, db):
+        # RCA 2026-09-04: no self-guard existed here (unlike delete/View As),
+        # so an admin could revoke their own login access with one misclick.
+        self_user = create_test_user(db, email="admin@test.com", id="test-user-id")
+        resp = client.patch(f"/api/admin/users/{self_user.id}/access", json={"action": "revoke"})
+        assert resp.status_code == 400
+
 
 class TestDeleteUser:
 
@@ -131,16 +169,105 @@ class TestDeleteUser:
         assert resp.status_code == 200
         mock_invalidate.assert_any_call("users")
 
+    def test_delete_pod_admin_user_succeeds(self, client, db):
+        # RCA 2026-08-24: deleting a Pod Admin used to 500 — User.pod_admin_entries
+        # has no ORM cascade, so SQLAlchemy tried to null pod_admins.user_id
+        # (NOT NULL) before the delete. Confirms the explicit pre-delete fixes it.
+        pod = create_test_pod(db, name="Delete-Me Pod")
+        user = create_test_user(db, email="podadmindel@t.com", role="Pod Admin")
+        create_pod_admin(db, pod.id, user.id)
+        resp = client.delete(f"/api/admin/users/{user.id}")
+        assert resp.status_code == 200
+        assert db.query(models.PodAdmin).filter(models.PodAdmin.user_id == user.id).count() == 0
+
+    def test_get_pod_admin_of(self, client, db):
+        pod = create_test_pod(db, name="Warn Pod")
+        user = create_test_user(db, email="podadmininfo@t.com", role="Pod Admin")
+        create_pod_admin(db, pod.id, user.id)
+        resp = client.get(f"/api/admin/users/{user.id}/pod-admin-of")
+        assert resp.status_code == 200
+        assert resp.json() == [{"id": pod.id, "name": "Warn Pod"}]
+
+    def test_delete_user_with_dialer_queue_status_succeeds(self, db, client):
+        # RCA 2026-08-24: same bug class  Pod Admin case above —
+        # DialerQueueStatus.user_id is NOT NULL; without passive_deletes,
+        # SQLAlchemy tried SET user_id=NULL before the delete and 500'd for
+        # any user who'd ever touched the Power Dialer queue. Only asserting
+        # no-500 here (not that the row is gone) — this test DB has no
+        # PRAGMA foreign_keys=ON, so the real ON DELETE CASCADE that actually
+        # removes the row in prod Postgres never fires here either; see
+        # create_test_journey_enrollment's note in conftest.py on this same
+        # SQLite limitation.
+        user = create_test_user(db, email="dialerqueuedel@t.com", role="SDR")
+        lead = create_test_lead(db, email="dialerqueuelead@t.com")
+        db.add(models.DialerQueueStatus(lead_id=lead.id, user_id=user.id, status="called"))
+        db.commit()
+        resp = client.delete(f"/api/admin/users/{user.id}")
+        assert resp.status_code == 200
+
 
 # ── Lead Assignment ──────────────────────────────────────────────────────────
 
 class TestUnassignedLeads:
 
+    # RCA 2026-09-03: this endpoint used to return every unassigned lead
+    # (LIMIT 5000, no pagination) on every Control Center Lead Assignments
+    # mount — flagged by audit as the likely cause of "every tab feels slow".
+    # Now paginated the same way GET /leads is: {data, total, page, per_page, pages}.
     def test_get_unassigned_leads(self, client, db):
         lead = create_test_lead(db, email="unassigned@t.com")
         resp = client.get("/api/admin/leads/unassigned")
         assert resp.status_code == 200
-        assert any(l["email"] == "unassigned@t.com" for l in resp.json())
+        body = resp.json()
+        assert any(l["email"] == "unassigned@t.com" for l in body["data"])
+        assert body["total"] >= 1
+        assert body["page"] == 1
+
+    def test_unassigned_leads_second_page_is_disjoint(self, client, db):
+        for i in range(3):
+            create_test_lead(db, email=f"unassigned-page-{i}@t.com")
+        page1 = client.get("/api/admin/leads/unassigned", params={"page": 1, "per_page": 2}).json()
+        page2 = client.get("/api/admin/leads/unassigned", params={"page": 2, "per_page": 2}).json()
+        assert len(page1["data"]) == 2
+        ids_page1 = {l["id"] for l in page1["data"]}
+        ids_page2 = {l["id"] for l in page2["data"]}
+        assert not (ids_page1 & ids_page2)
+
+
+class TestAssignedLeads:
+
+    def test_get_assigned_leads_paginated(self, client, db):
+        user = create_test_user(db, email="assignee-list@t.com")
+        lead = create_test_lead(db, email="assigned-list@t.com")
+        user.assigned_leads.append(lead)
+        db.commit()
+        resp = client.get("/api/admin/leads/assigned")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert any(l["email"] == "assigned-list@t.com" for l in body["data"])
+        assert body["total"] >= 1
+
+    def test_assigned_to_filter_shows_all_coassignees(self, client, db):
+        """Filtering to one SDR's leads must still show every co-assignee on
+        a shared lead — the filter narrows WHICH leads qualify, not which
+        assignees are reported for them (regression guard for the query
+        shape that replaced the plain LIMIT 5000 dump)."""
+        sdr_a = create_test_user(db, email="sdr-a@t.com")
+        sdr_b = create_test_user(db, email="sdr-b@t.com")
+        shared_lead = create_test_lead(db, email="shared-lead@t.com")
+        solo_lead = create_test_lead(db, email="solo-lead@t.com")
+        sdr_a.assigned_leads.append(shared_lead)
+        sdr_b.assigned_leads.append(shared_lead)
+        sdr_b.assigned_leads.append(solo_lead)
+        db.commit()
+
+        resp = client.get("/api/admin/leads/assigned", params={"assigned_to": sdr_a.id})
+        body = resp.json()
+        emails = {l["email"] for l in body["data"]}
+        assert emails == {"shared-lead@t.com"}  # sdr_b's solo lead excluded
+        shared = next(l for l in body["data"] if l["email"] == "shared-lead@t.com")
+        assigned_ids = {a["id"] for a in shared["assigned_to"]}
+        assert {sdr_a.id, sdr_b.id} == assigned_ids  # both co-assignees still shown
 
 
 class TestBulkAssign:
@@ -154,19 +281,203 @@ class TestBulkAssign:
         assert resp.status_code == 200
         assert len(resp.json()["assigned"]) == 1
 
-    def test_bulk_assign_respects_lead_cap(self, client, db):
-        user = create_test_user(db, email="capuser@t.com")
-        leads = []
-        for i in range(7):
-            l = create_test_lead(db, email=f"cap{i}@t.com", phone=f"+123456789{i}")
-            leads.append(l)
+    def test_reassigning_to_a_new_sdr_replaces_the_old_one(self, client, db):
+        """RCA 2026-09-29: models.assign_lead only appended, so a bulk
+        reassignment left the previous SDR on the lead as well (78 prod leads
+        had 2+ SDRs). A lead now keeps at most one assignee per role."""
+        old_sdr = create_test_user(db, email="old-sdr@t.com", role="SDR")
+        new_sdr = create_test_user(db, email="new-sdr@t.com", role="SDR")
+        ae = create_test_user(db, email="ae@t.com", role="AE")
+        assign = lambda u, l: client.post("/api/admin/assignments/bulk-assign", json={"user_id": u.id, "lead_ids": [l.id]})
+
+        # Before a meeting: whoever is assigned last is the only owner, any role.
+        lead = create_test_lead(db, email="reassign@t.com", phone="+1234567890", status="Calling")
+        assign(old_sdr, lead); assign(ae, lead)
+        assert assign(new_sdr, lead).status_code == 200
+        db.refresh(lead)
+        assert {u.id for u in lead.assigned_users} == {new_sdr.id}
+
+        # After a meeting: same-role replace only — the AE keeps the booking SDR.
+        booked = create_test_lead(db, email="booked@t.com", phone="+1234567891", status="Meeting Scheduled")
+        assign(old_sdr, booked); assign(ae, booked); assign(new_sdr, booked)
+        db.refresh(booked)
+        assert {u.id for u in booked.assigned_users} == {new_sdr.id, ae.id}
+
+    def test_bulk_assign_ignores_pod_level_cap_override(self, db):
+        # RCA 2026-08-25: a pod's own active_lead_cap value was never exposed
+        # by any API or UI, so it could only diverge from the global default
+        # via a direct DB write — invisible, unexplainable enforcement.
+        # _get_active_lead_cap() no longer reads it; only the global setting
+        # (sync_settings.active_lead_cap) governs, everywhere.
+        from routes._admin_helpers import _get_active_lead_cap
+
+        pod = create_test_pod(db, name="Low-Cap Pod")
+        pod.active_lead_cap = 1  # would have won under the old pod-first logic
+        db.commit()
+        user = create_test_user(db, email="podcapuser@t.com", pod_id=pod.id)
+        create_sync_settings(db)  # global active_lead_cap defaults to 5
+
+        assert _get_active_lead_cap(db, user) == 5
+
+    def test_bulk_assign_super_admin_bypasses_pod_lock(self, client, db):
+        # RCA 2026-08-24: the pod-lock check used to run for every caller,
+        # blocking Super Admin/Admin from reassigning a lead away from a
+        # departed SDR whenever that SDR's stale pod_id differed from the
+        # target's pod. It's now Pod-Admin-only; Super Admin/Admin (the
+        # `client` fixture) must bypass it entirely.
+        pod_x = create_test_pod(db, name="Pod X")
+        pod_y = create_test_pod(db, name="Pod Y")
+        departed = create_test_user(db, email="departed@t.com", pod_id=pod_x.id)
+        target = create_test_user(db, email="target@t.com", pod_id=pod_y.id)
+        lead = create_test_lead(db, email="reassign@t.com", phone="+19998887777")
+        models.assign_lead(departed, lead)
+        db.commit()
+
         resp = client.post("/api/admin/assignments/bulk-assign", json={
-            "user_id": user.id, "lead_ids": [l.id for l in leads]
+            "user_id": target.id, "lead_ids": [lead.id]
         })
         assert resp.status_code == 200
-        # MAX_ACTIVE_LEADS = 5, so only 5 should be assigned
-        assert len(resp.json()["assigned"]) == 5
-        assert len(resp.json()["cap_reached"]) == 2
+        assert resp.json()["assigned"] == [lead.id]
+        assert resp.json()["pod_locked"] == []
+
+    def test_bulk_assign_pod_admin_still_pod_locked(self, client_as_pod_admin, db):
+        # Pod Admin keeps the original protection — no regression.
+        pod_a = create_test_pod(db, name="Pod A")
+        pod_b = create_test_pod(db, name="Pod B")
+        existing_assignee = create_test_user(db, email="existing@t.com", pod_id=pod_a.id)
+        target = create_test_user(db, email="target2@t.com", pod_id="test-pod-id")   # the Pod Admin's own pod
+        lead = create_test_lead(db, email="podlocked@t.com", phone="+19998887778")
+        models.assign_lead(existing_assignee, lead)
+        db.commit()
+
+        resp = client_as_pod_admin.post("/api/admin/assignments/bulk-assign", json={
+            "user_id": target.id, "lead_ids": [lead.id]
+        })
+        assert resp.status_code == 200
+        assert resp.json()["assigned"] == []
+        assert resp.json()["pod_locked"] == [lead.id]
+
+    def test_bulk_assign_invalidates_leads_cache(self, client, db):
+        # RCA 2026-08-25: this route never busted the my_leads/leads_count/
+        # leads_page caches — a reassigned SDR's "My Leads" view (and the
+        # admin "All Leads" view) could keep showing the pre-assignment
+        # snapshot until the cache's TTL passed on its own.
+        from unittest.mock import patch
+        user = create_test_user(db, email="cacheassignee@t.com")
+        lead = create_test_lead(db, email="cacheassign@t.com", phone="+12223334444")
+        with patch("cache.invalidate") as mock_invalidate:
+            resp = client.post("/api/admin/assignments/bulk-assign", json={
+                "user_id": user.id, "lead_ids": [lead.id]
+            })
+        assert resp.status_code == 200
+        invalidated = {call.args[0] for call in mock_invalidate.call_args_list}
+        assert {"my_leads", "leads_count", "leads_page"}.issubset(invalidated)
+
+    def test_bulk_assign_skips_cache_invalidation_when_nothing_assigned(self, client, db):
+        from unittest.mock import patch
+        user = create_test_user(db, email="cachenoop@t.com")
+        with patch("cache.invalidate") as mock_invalidate:
+            resp = client.post("/api/admin/assignments/bulk-assign", json={
+                "user_id": user.id, "lead_ids": ["nonexistent-lead-id"]
+            })
+        assert resp.status_code == 200
+        mock_invalidate.assert_not_called()
+
+
+class TestBulkDeleteLeads:
+    """RCA 2026-08-17: this used to hard-delete the row (cascading manual
+    cleanup of LeadEmailActivity/EmailThread/DialerCall). Per explicit
+    product decision, lead deletion is always soft — see
+    models.exclude_deleted_leads() and lead_helpers._build_lead_query()."""
+
+    def test_bulk_delete_soft_deletes_not_hard_deletes(self, client, db):
+        lead = create_test_lead(db, email="softdel@t.com")
+        lead_id = lead.id
+        resp = client.post("/api/admin/leads/bulk-delete", json={"lead_ids": [lead_id]})
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 1
+
+        # Row still exists — just tagged deleted_at, never removed.
+        still_there = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
+        assert still_there is not None
+        assert still_there.deleted_at is not None
+
+    def test_bulk_delete_keeps_related_call_and_email_data(self, client, db):
+        lead = create_test_lead(db, email="softdel-related@t.com")
+        user = create_test_user(db, email="caller@t.com")
+        create_test_call(db, lead.id, user.id, "No Answer")
+        from conftest import create_test_dialer_call
+        create_test_dialer_call(db, lead.id, user.id)
+
+        resp = client.post("/api/admin/leads/bulk-delete", json={"lead_ids": [lead.id]})
+        assert resp.status_code == 200
+
+        assert db.query(models.CallLog).filter(models.CallLog.lead_id == lead.id).count() == 1
+        assert db.query(models.DialerCall).filter(models.DialerCall.lead_id == lead.id).count() == 1
+
+    def test_deleted_lead_excluded_from_leads_list(self, client, db):
+        lead = create_test_lead(db, email="softdel-list@t.com")
+        client.post("/api/admin/leads/bulk-delete", json={"lead_ids": [lead.id]})
+
+        resp = client.get("/api/leads")
+        ids = [l["id"] for l in resp.json()["data"]]
+        assert lead.id not in ids
+
+    def test_bulk_delete_requires_lead_ids(self, client, db):
+        resp = client.post("/api/admin/leads/bulk-delete", json={"lead_ids": []})
+        assert resp.status_code == 400
+
+    def test_pod_admin_can_soft_delete(self, client_as_pod_admin, db):
+        """RCA 2026-08-17: lead_detail.js already shows the Delete Lead button
+        to Pod Admins, but the backend used to 403 them — role gate widened
+        from Super Admin/Admin only to require_pod_admin_or_above."""
+        lead = create_test_lead(db, email="poddel@t.com")
+        resp = client_as_pod_admin.post("/api/admin/leads/bulk-delete", json={"lead_ids": [lead.id]})
+        assert resp.status_code == 200
+
+    def test_pod_admin_cannot_delete_lead_outside_their_pod(self, client_as_pod_admin, db):
+        """RCA 2026-08-26: this endpoint had NO pod-scoping at all — only a
+        role check (require_pod_admin_or_above) — so a Pod Admin could soft-
+        delete any lead_id in the system, not just their own pod's. Mirrors
+        bulk_unassign's exact "skip unauthorized IDs" scoping just above."""
+        create_test_user(db, id="pod-admin-id", email="thepodadmin@t.com", role="Pod Admin", pod_id="test-pod-id")
+        other_pod = create_test_pod(db, name="Other Pod")
+        other_pod_sdr = create_test_user(db, email="othersdr@t.com", role="SDR", pod_id=other_pod.id)
+        lead = create_test_lead(db, email="outsidepod@t.com")
+        models.assign_lead(other_pod_sdr, lead)
+        db.commit()
+
+        resp = client_as_pod_admin.post("/api/admin/leads/bulk-delete", json={"lead_ids": [lead.id]})
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 0
+
+        still_there = db.query(models.Lead).filter(models.Lead.id == lead.id).first()
+        assert still_there.deleted_at is None
+
+    def test_pod_admin_can_delete_lead_assigned_within_their_own_pod(self, client_as_pod_admin, db):
+        create_test_user(db, id="pod-admin-id", email="thepodadmin2@t.com", role="Pod Admin", pod_id="test-pod-id")
+        own_pod_sdr = create_test_user(db, email="ownsdr@t.com", role="SDR", pod_id="test-pod-id")
+        lead = create_test_lead(db, email="withinpod@t.com")
+        models.assign_lead(own_pod_sdr, lead)
+        db.commit()
+
+        resp = client_as_pod_admin.post("/api/admin/leads/bulk-delete", json={"lead_ids": [lead.id]})
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 1
+
+    def test_sdr_cannot_soft_delete(self, client_as_sdr, db):
+        lead = create_test_lead(db, email="sdrdel@t.com")
+        resp = client_as_sdr.post("/api/admin/leads/bulk-delete", json={"lead_ids": [lead.id]})
+        assert resp.status_code == 403
+
+    def test_bulk_delete_invalidates_leads_cache(self, client, db):
+        from unittest.mock import patch
+        lead = create_test_lead(db, email="cachedelete@t.com")
+        with patch("cache.invalidate") as mock_invalidate:
+            resp = client.post("/api/admin/leads/bulk-delete", json={"lead_ids": [lead.id]})
+        assert resp.status_code == 200
+        invalidated = {call.args[0] for call in mock_invalidate.call_args_list}
+        assert {"my_leads", "leads_count", "leads_page"}.issubset(invalidated)
 
 
 class TestAutoAssignAll:
@@ -180,6 +491,16 @@ class TestAutoAssignAll:
         assert resp.status_code == 200
         assert resp.json()["assigned_count"] == 4
 
+    def test_auto_assign_invalidates_leads_cache(self, client, db):
+        from unittest.mock import patch
+        create_test_user(db, email="sdr-auto-cache@t.com", role="SDR")
+        create_test_lead(db, email="autocache@t.com", phone="+19998887771")
+        with patch("cache.invalidate") as mock_invalidate:
+            resp = client.post("/api/admin/assignments/auto-assign-all")
+        assert resp.status_code == 200
+        invalidated = {call.args[0] for call in mock_invalidate.call_args_list}
+        assert {"my_leads", "leads_count", "leads_page"}.issubset(invalidated)
+
 
 class TestUnassignLead:
 
@@ -190,6 +511,42 @@ class TestUnassignLead:
         db.commit()
         resp = client.delete(f"/api/admin/assignments/{user.id}/{lead.id}")
         assert resp.status_code == 200
+
+    def test_unassign_lead_invalidates_leads_cache(self, client, db):
+        from unittest.mock import patch
+        user = create_test_user(db, email="unassignee-cache@t.com")
+        lead = create_test_lead(db, email="tounassign-cache@t.com")
+        user.assigned_leads.append(lead)
+        db.commit()
+        with patch("cache.invalidate") as mock_invalidate:
+            resp = client.delete(f"/api/admin/assignments/{user.id}/{lead.id}")
+        assert resp.status_code == 200
+        invalidated = {call.args[0] for call in mock_invalidate.call_args_list}
+        assert {"my_leads", "leads_count", "leads_page"}.issubset(invalidated)
+
+
+class TestBulkUnassign:
+
+    def test_bulk_unassign_removes_all_assignees(self, client, db):
+        user = create_test_user(db, email="bulkunassignee@t.com")
+        lead = create_test_lead(db, email="tobulkunassign@t.com")
+        user.assigned_leads.append(lead)
+        db.commit()
+        resp = client.post("/api/admin/assignments/bulk-unassign", json={"lead_ids": [lead.id]})
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 1
+
+    def test_bulk_unassign_invalidates_leads_cache(self, client, db):
+        from unittest.mock import patch
+        user = create_test_user(db, email="bulkunassign-cache@t.com")
+        lead = create_test_lead(db, email="bulkunassigncache@t.com")
+        user.assigned_leads.append(lead)
+        db.commit()
+        with patch("cache.invalidate") as mock_invalidate:
+            resp = client.post("/api/admin/assignments/bulk-unassign", json={"lead_ids": [lead.id]})
+        assert resp.status_code == 200
+        invalidated = {call.args[0] for call in mock_invalidate.call_args_list}
+        assert {"my_leads", "leads_count", "leads_page"}.issubset(invalidated)
 
 
 # ── Sync Settings ────────────────────────────────────────────────────────────
@@ -236,9 +593,9 @@ class TestSyncSettings:
         assert resp.json()["conversation_min_seconds"] == 60
         assert client.get("/api/admin/sync-settings").json()["conversation_min_seconds"] == 60
 
-    def test_conversation_min_seconds_defaults_to_30(self, client, db):
+    def test_conversation_min_seconds_defaults_to_120(self, client, db):
         create_sync_settings(db)
-        assert client.get("/api/admin/sync-settings").json()["conversation_min_seconds"] == 30
+        assert client.get("/api/admin/sync-settings").json()["conversation_min_seconds"] == 120
 
     def test_conversation_min_seconds_rejects_non_positive(self, client, db):
         create_sync_settings(db)
@@ -619,6 +976,42 @@ class TestGoogleSheetsImport:
 
 # ── Per-SDR Settings (Dialer + Email Sync Toggles) ──────────────────────────
 
+class TestGetUserToken:
+    """Tests for GET /api/admin/users/{user_id}/token — backs Control Center's
+    "View As". RCA 2026-09-04: this absorbed the self-view guard + audit log
+    that used to live on the separate, never-called POST /admin/impersonate/{id}
+    (deleted as dead code — this endpoint was the one View As actually called)."""
+
+    def test_returns_token_for_another_user(self, client, db):
+        import models
+        user = create_test_user(db, email="viewas_target@t.com", role="SDR")
+        resp = client.get(f"/api/admin/users/{user.id}/token")
+        assert resp.status_code == 200
+        assert resp.json()["token"]
+
+        # RCA 2026-09-04: "IMPERSONATE" was missing from activity_logger's
+        # ACTION_TYPES, so this call silently no-op'd — caught only by hitting
+        # the real deployed endpoint on staging, not by the unit tests (which
+        # never asserted a row actually landed). Pin it down here too.
+        row = db.query(models.UserActivityLog).filter(
+            models.UserActivityLog.action_type == "IMPERSONATE"
+        ).first()
+        assert row is not None, "View As must write an IMPERSONATE audit log row"
+        assert row.object_id is None  # metadata carries target_user_id, not object_id
+        import json
+        meta = json.loads(row.metadata_json)
+        assert meta["target_user_id"] == user.id
+        assert meta["target_email"] == user.email
+
+    def test_cannot_view_as_self(self, client):
+        resp = client.get(f"/api/admin/users/{SUPER_ADMIN['sub']}/token")
+        assert resp.status_code == 400
+
+    def test_404_for_missing_user(self, client):
+        resp = client.get("/api/admin/users/does-not-exist/token")
+        assert resp.status_code == 404
+
+
 class TestUserSettings:
     """Tests for PATCH /api/admin/users/{user_id}/settings — per-SDR feature toggles."""
 
@@ -697,6 +1090,36 @@ class TestUserSettings:
         assert user.dialer_enabled is False
         assert user.email_sync_enabled is False
 
+    def test_can_assign_a_per_sdr_whatsapp_sender(self, client, db):
+        # RCA 2026-08-25: WhatsApp used one org-wide sender for every SDR —
+        # this mirrors the existing per-SDR messenger_from_number pattern.
+        user = create_test_user(db, email="sdr_wa@t.com", role="SDR")
+        resp = client.patch(f"/api/admin/users/{user.id}/settings", json={
+            "messenger_whatsapp_sender_id": "+919240915643"
+        })
+        assert resp.status_code == 200
+        assert resp.json()["messenger_whatsapp_sender_id"] == "+919240915643"
+        db.refresh(user)
+        assert user.messenger_whatsapp_sender_id == "+919240915643"
+
+    def test_invalid_whatsapp_sender_format_rejected(self, client, db):
+        user = create_test_user(db, email="sdr_wa_bad@t.com", role="SDR")
+        resp = client.patch(f"/api/admin/users/{user.id}/settings", json={
+            "messenger_whatsapp_sender_id": "not-a-number"
+        })
+        assert resp.status_code == 422
+
+    def test_whatsapp_sender_can_be_cleared(self, client, db):
+        user = create_test_user(db, email="sdr_wa_clear@t.com", role="SDR")
+        user.messenger_whatsapp_sender_id = "+919240915643"
+        db.commit()
+        resp = client.patch(f"/api/admin/users/{user.id}/settings", json={
+            "messenger_whatsapp_sender_id": None
+        })
+        assert resp.status_code == 200
+        db.refresh(user)
+        assert user.messenger_whatsapp_sender_id is None
+
 
 class TestListUsersWithFlags:
     """Verify list_users returns the new dialer/email flags."""
@@ -722,13 +1145,13 @@ class TestListUsersWithFlags:
 
     def test_list_users_includes_dialer_provider_override(self, client, db):
         user = create_test_user(db, email="overrideuser@t.com", role="SDR")
-        user.dialer_provider_override = "rcm"
+        user.dialer_provider_override = "messenger"
         db.commit()
         resp = client.get("/api/admin/users")
         assert resp.status_code == 200
         target = next((u for u in resp.json() if u["email"] == "overrideuser@t.com"), None)
         assert target is not None
-        assert target["dialer_provider_override"] == "rcm"
+        assert target["dialer_provider_override"] == "messenger"
 
     def test_list_users_default_override_is_null(self, client, db):
         create_test_user(db, email="nooverride@t.com", role="SDR")
@@ -741,15 +1164,15 @@ class TestListUsersWithFlags:
 class TestDialerProviderOverride:
     """Tests for dialer_provider_override via PATCH /api/admin/users/{id}/settings."""
 
-    def test_set_override_to_rcm(self, client, db):
+    def test_set_override_to_messenger(self, client, db):
         user = create_test_user(db, email="sdr_conv@t.com", role="SDR")
         resp = client.patch(f"/api/admin/users/{user.id}/settings", json={
-            "dialer_provider_override": "rcm"
+            "dialer_provider_override": "messenger"
         })
         assert resp.status_code == 200
-        assert resp.json()["dialer_provider_override"] == "rcm"
+        assert resp.json()["dialer_provider_override"] == "messenger"
         db.refresh(user)
-        assert user.dialer_provider_override == "rcm"
+        assert user.dialer_provider_override == "messenger"
 
     def test_set_override_to_aircall(self, client, db):
         user = create_test_user(db, email="sdr_air@t.com", role="SDR")
@@ -761,7 +1184,7 @@ class TestDialerProviderOverride:
 
     def test_clear_override_with_null(self, client, db):
         user = create_test_user(db, email="sdr_clear@t.com", role="SDR")
-        user.dialer_provider_override = "rcm"
+        user.dialer_provider_override = "messenger"
         db.commit()
         resp = client.patch(f"/api/admin/users/{user.id}/settings", json={
             "dialer_provider_override": None
@@ -798,13 +1221,13 @@ class TestDialerProviderOverride:
         user.email_sync_enabled = True
         db.commit()
         resp = client.patch(f"/api/admin/users/{user.id}/settings", json={
-            "dialer_provider_override": "rcm"
+            "dialer_provider_override": "messenger"
         })
         assert resp.status_code == 200
         db.refresh(user)
         assert user.dialer_enabled is True
         assert user.email_sync_enabled is True
-        assert user.dialer_provider_override == "rcm"
+        assert user.dialer_provider_override == "messenger"
 
 
 # ── Phase 2: Outcome Config via PATCH /sync-settings ─────────────────────────
@@ -954,3 +1377,96 @@ class TestOutcomeConfigAdmin:
         assert resp.status_code == 200
 
 
+
+
+# ── Pod Admin scoping on user management (v12.2 audit) ──────────────────────
+# require_admin admits Pod Admin, and these four routes took a user_id
+# straight off the URL with no check on *whose* account it was. Found while
+# auditing v12.2's Control Center admission, which put the buttons on screen.
+class TestPodAdminUserManagementScoping:
+
+    def _pod_admin_with_pod(self, db):
+        """The guard reads the caller's pod from their DB row (matching what
+        list_users scopes on), so the fixture's JWT pod_id isn't enough.
+        Returns the pod id the caller actually belongs to."""
+        pod = create_test_pod(db, name="Test Pod")
+        create_test_user(db, email="podadmin@test.com", name="Pod Admin",
+                         role="Pod Admin", id="pod-admin-id", pod_id=pod.id)
+        return pod.id
+
+    def test_pod_admin_cannot_create_a_super_admin(self, client_as_pod_admin, db):
+        """The headline hole: POST /users accepted any role, so a Pod Admin
+        could mint a Super Admin account. PATCH /users/{id}/role was already
+        require_super_admin — the role assigned at creation was never checked."""
+        self._pod_admin_with_pod(db)
+        resp = client_as_pod_admin.post("/api/admin/users", json={
+            "email": "escalated@test.com", "name": "Escalated", "role": "Super Admin",
+        })
+        assert resp.status_code == 403
+        assert db.query(models.User).filter(
+            models.User.email == "escalated@test.com").first() is None
+
+    def test_pod_admin_cannot_create_another_pod_admin(self, client_as_pod_admin, db):
+        self._pod_admin_with_pod(db)
+        resp = client_as_pod_admin.post("/api/admin/users", json={
+            "email": "peer@test.com", "name": "Peer", "role": "Pod Admin",
+        })
+        assert resp.status_code == 403
+
+    def test_pod_admin_cannot_delete_a_super_admin(self, client_as_pod_admin, db):
+        self._pod_admin_with_pod(db)
+        victim = create_test_user(db, email="boss@test.com", name="Boss", role="Super Admin")
+        resp = client_as_pod_admin.delete(f"/api/admin/users/{victim.id}")
+        assert resp.status_code == 403
+        assert db.query(models.User).filter(models.User.id == victim.id).first() is not None
+
+    def test_pod_admin_cannot_revoke_a_super_admins_login(self, client_as_pod_admin, db):
+        self._pod_admin_with_pod(db)
+        victim = create_test_user(db, email="boss2@test.com", name="Boss", role="Super Admin")
+        resp = client_as_pod_admin.patch(f"/api/admin/users/{victim.id}/access",
+                                          json={"action": "revoke"})
+        assert resp.status_code == 403
+
+    def test_pod_admin_cannot_delete_an_sdr_from_another_pod(self, client_as_pod_admin, db):
+        self._pod_admin_with_pod(db)
+        other_pod = create_test_pod(db, name="Other Pod")
+        outsider = create_test_user(db, email="outsider@test.com", name="Outsider",
+                                     role="SDR", pod_id=other_pod.id)
+        resp = client_as_pod_admin.delete(f"/api/admin/users/{outsider.id}")
+        assert resp.status_code == 403
+        assert "POD" in resp.json()["detail"]
+
+    def test_pod_admin_can_still_manage_an_sdr_in_their_own_pod(self, client_as_pod_admin, db):
+        """The rule has to stay permissive for the case legacy admin.js
+        actually allowed, or this is a regression rather than a fix."""
+        pod_id = self._pod_admin_with_pod(db)
+        member = create_test_user(db, email="member@test.com", name="Member",
+                                   role="SDR", pod_id=pod_id)
+        assert client_as_pod_admin.patch(
+            f"/api/admin/users/{member.id}/access", json={"action": "revoke"}
+        ).status_code == 200
+        assert client_as_pod_admin.delete(f"/api/admin/users/{member.id}").status_code == 200
+
+    def test_pod_admin_can_create_an_sdr_in_their_own_pod(self, client_as_pod_admin, db):
+        pod_id = self._pod_admin_with_pod(db)
+        resp = client_as_pod_admin.post("/api/admin/users", json={
+            "email": "newsdr@test.com", "name": "New SDR",
+            "role": "SDR", "pod_id": pod_id,
+        })
+        assert resp.status_code == 200
+
+    def test_pod_admin_cannot_seed_a_user_into_another_pod(self, client_as_pod_admin, db):
+        self._pod_admin_with_pod(db)
+        other_pod = create_test_pod(db, name="Other Pod")
+        resp = client_as_pod_admin.post("/api/admin/users", json={
+            "email": "seeded@test.com", "name": "Seeded",
+            "role": "SDR", "pod_id": other_pod.id,
+        })
+        assert resp.status_code == 403
+
+    def test_super_admin_is_unaffected(self, client, db):
+        victim = create_test_user(db, email="anyone@test.com", name="Anyone", role="Pod Admin")
+        assert client.post("/api/admin/users", json={
+            "email": "sa@test.com", "name": "SA", "role": "Super Admin",
+        }).status_code == 200
+        assert client.delete(f"/api/admin/users/{victim.id}").status_code == 200

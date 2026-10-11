@@ -1,6 +1,9 @@
 import React from 'react';
 
-export const Input = ({
+// forwardRef so a caller that needs the real <input> node can reach it — e.g.
+// MergeFieldComposer, which reads/sets selectionStart to insert a {{token}} at
+// the caret. Purely additive: every existing call site is unaffected.
+export const Input = React.forwardRef(({
   label,
   id,
   error,
@@ -8,7 +11,7 @@ export const Input = ({
   className = '',
   containerClassName = '',
   ...props
-}) => {
+}, ref) => {
   const inputId = id || label?.toLowerCase().replace(/\s+/g, '-');
   return (
     <div className={`mb-4 ${containerClassName}`}>
@@ -21,6 +24,7 @@ export const Input = ({
         </label>
       )}
       <input
+        ref={ref}
         id={inputId}
         className={`
           w-full px-3 py-2 rounded-lg text-sm border transition-all duration-150 outline-none
@@ -36,4 +40,6 @@ export const Input = ({
       {hint && !error && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
     </div>
   );
-};
+});
+
+Input.displayName = 'Input';

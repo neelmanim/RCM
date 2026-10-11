@@ -1,10 +1,10 @@
-// ── views/lead_messaging_tab.js — RCM conversation component ───────────
+// ── views/lead_messaging_tab.js — Alternate Messenger conversation component ───────────
 import { fetchMessagingConfig } from '../api.js';
 
 /**
  * Load the Conversations tab content for a lead.
  * Flow: Get config (backend does server-side auth) → Load iframe with embedded tokens.
- * Note: The refresh_token has a 2000+ year lifespan — RCM's iframe JS
+ * Note: The refresh_token has a 2000+ year lifespan — Alternate Messenger's iframe JS
  * handles token renewal internally, so no client-side refresh timer is needed.
  */
 export async function loadMessagingTab(leadId) {
@@ -26,7 +26,7 @@ export async function loadMessagingTab(leadId) {
                 <div style="padding:40px 0;text-align:center;">
                     <div style="font-size:2.5rem;margin-bottom:12px;">💬</div>
                     <h3 style="font-size:1rem;font-weight:600;color:var(--text-main);margin-bottom:6px;">Conversations Not Configured</h3>
-                    <p style="font-size:0.82rem;color:var(--text-muted);max-width:400px;margin:0 auto;">${config.reason || 'Please configure RCM in Settings → Conversations.'}</p>
+                    <p style="font-size:0.82rem;color:var(--text-muted);max-width:400px;margin:0 auto;">${config.reason || 'Please configure Alternate Messenger in Settings → Conversations.'}</p>
                 </div>`;
             return;
         }
@@ -83,7 +83,7 @@ export async function loadMessagingTab(leadId) {
                     </div>
                 </div>
                 <iframe
-                    id="rcm-iframe"
+                    id="messenger-iframe"
                     src="${config.iframe_url}"
                     style="width:100%;height:500px;border:none;display:block;"
                     allow="geolocation; microphone; camera; midi; encrypted-media; clipboard-write"
@@ -103,14 +103,14 @@ export async function loadMessagingTab(leadId) {
         });
 
         // Listen for iframe load errors
-        const iframe = document.getElementById('rcm-iframe');
+        const iframe = document.getElementById('messenger-iframe');
         if (iframe) {
             iframe.addEventListener('error', () => {
                 console.error('[Conversation] iframe failed to load');
                 _showIframeError(container, leadId);
             });
 
-            // Fallback: if iframe loads but RCM returns an error page,
+            // Fallback: if iframe loads but Alternate Messenger returns an error page,
             // we can't detect cross-origin content, but we can catch network-level failures
             iframe.addEventListener('load', () => {
                 console.log('[Conversation] iframe loaded successfully');
@@ -134,7 +134,7 @@ export async function loadMessagingTab(leadId) {
  * Show an error state inside the iframe container when the iframe fails to load.
  */
 function _showIframeError(container, leadId) {
-    const iframe = container.querySelector('#rcm-iframe');
+    const iframe = container.querySelector('#messenger-iframe');
     if (iframe) {
         iframe.style.display = 'none';
         const errDiv = document.createElement('div');
@@ -142,7 +142,7 @@ function _showIframeError(container, leadId) {
         errDiv.innerHTML = `
             <div style="font-size:2rem;margin-bottom:12px;">⚠️</div>
             <h3 style="font-size:0.92rem;font-weight:600;color:#ef4444;margin-bottom:6px;">Conversations Failed to Load</h3>
-            <p style="font-size:0.78rem;color:var(--text-muted);max-width:360px;margin:0 auto 12px;">The RCM service could not be reached. This may be a temporary network issue.</p>
+            <p style="font-size:0.78rem;color:var(--text-muted);max-width:360px;margin:0 auto 12px;">The Alternate Messenger service could not be reached. This may be a temporary network issue.</p>
             <button id="conv-iframe-retry-btn" style="padding:8px 20px;border-radius:8px;border:none;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font-size:0.82rem;font-weight:600;cursor:pointer;">🔄 Try Again</button>`;
         iframe.parentElement.appendChild(errDiv);
         document.getElementById('conv-iframe-retry-btn')?.addEventListener('click', () => loadMessagingTab(leadId));

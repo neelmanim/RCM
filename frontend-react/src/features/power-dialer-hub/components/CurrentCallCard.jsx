@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Phone, SkipForward, ChevronDown, ExternalLink, NotebookPen } from 'lucide-react';
+import { Phone, SkipForward, ChevronDown, ExternalLink, NotebookPen, MessageSquareText } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
+import { Select } from '../../../components/ui/Select';
+import { Avatar } from '../../../components/ui/Avatar';
 import { DialerService, LeadsService } from '../../../services/api';
 import { resolveLeadPhone } from '../../leads-hub/columns';
 import { displayName } from '../../leads-hub/components/LeadRow';
@@ -12,6 +14,7 @@ import { LocalTimeBadge } from './LocalTimeBadge';
 // never gain friction, see usePowerDialerQueue's skip() docblock). This is
 // an adjacent, purely additive way to annotate why, for reps who bother.
 const SKIP_REASONS = ['Wrong number', 'Bad timing', 'Call back later', 'Not interested', 'Other'];
+const SKIP_REASON_OPTIONS = SKIP_REASONS.map(r => ({ value: r, label: r }));
 
 // Mirrors app.js's own isDialerActive check (handleCallAction) — if that's
 // false, clicking Call skips straight to the outcome modal with no dial
@@ -21,12 +24,8 @@ const SKIP_REASONS = ['Wrong number', 'Bad timing', 'Call back later', 'Not inte
 function callButtonLabel(dialerStatus) {
   if (!dialerStatus?.active || dialerStatus.provider === 'none') return 'Call — log manually';
   if (dialerStatus.provider === 'aircall') return 'Call via Aircall';
-  if (dialerStatus.provider === 'rcm') return 'Call via RCM';
+  if (dialerStatus.provider === 'messenger') return 'Call via Alternate Messenger';
   return 'Call';
-}
-
-function initials(name) {
-  return name.split(' ').filter(Boolean).slice(0, 2).map(s => s[0]?.toUpperCase()).join('') || '?';
 }
 
 // city/state/country are three independently-nullable columns — show
@@ -62,7 +61,7 @@ function formatSource(source) {
  * always available, independent of call state — the escape hatch for a
  * call that never connected.
  *
- * No call-duration timer here — RCM's floating widget and Aircall's
+ * No call-duration timer here — Alternate Messenger's floating widget and Aircall's
  * own UI already show one; a second, client-side one here (removed
  * 2026-08-10) just drifted out of sync with the real call.
  */
@@ -72,10 +71,20 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
   const dockRef = useRef(null);
   const noteInputRef = useRef(null);
   const [dialerStatus, setDialerStatus] = useState(null);
+  // ponytail: note and script are two of these 4-state blocks side by side,
+  // but their semantics genuinely diverge (note: always blank, blocks an
+  // empty save, opened by a toggle; script: prefilled from the cadence
+  // default, an empty save is how you clear an override, opened only to
+  // edit) — a shared composer hook would trade ~8 lines for several config
+  // params, not a net simplification. Left separate on purpose.
   const [showNote, setShowNote] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [noteError, setNoteError] = useState(null);
+  const [showScript, setShowScript] = useState(false);
+  const [scriptText, setScriptText] = useState('');
+  const [savingScript, setSavingScript] = useState(false);
+  const [scriptError, setScriptError] = useState(null);
 
   // Same source app.js reads at call time (/api/dialer/status) — fetched
   // once here purely to label the button; the actual routing decision at
@@ -90,6 +99,8 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
     setShowNote(false);
     setNoteText('');
     setNoteError(null);
+    setShowScript(false);
+    setScriptError(null);
   }, [lead?.id]);
 
   useEffect(() => {
@@ -113,6 +124,33 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
       setNoteError('Failed to save note — try again.');
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  // Per-lead override (models.Lead.talking_points) — distinct from the note
+  // composer above: a note is a record of what happened, this is what to say
+  // before the call happens. Saving empty clears the override, reverting the
+  // card back to the cadence's default script (lead.active_call_script) if
+  // one exists.
+  const openScriptEditor = () => {
+    setScriptText(lead.talking_points || lead.active_call_script?.script || '');
+    setScriptError(null);
+    setShowScript(true);
+  };
+
+  const handleSaveScript = async () => {
+    setSavingScript(true);
+    setScriptError(null);
+    try {
+      await LeadsService.updateLead(lead.id, { talking_points: scriptText.trim() || null });
+      // Same limitation as handleSaveNote above: `lead` is parent-owned queue
+      // state, so the saved value shows here again on the next queue fetch,
+      // not immediately — not worth a mutation of a prop to avoid.
+      setShowScript(false);
+    } catch {
+      setScriptError('Failed to save — try again.');
+    } finally {
+      setSavingScript(false);
     }
   };
 
@@ -141,13 +179,18 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
   // C = Call / Call Next, S = Skip, N = add a note, O = open in CRM — the
   // actions a rep repeats hundreds of times a day; every dedicated power
   // dialer keeps these off the mouse. Ignored while typing into a field
-  // (the skip-reason select and the note textarea are both real form
-  // elements, so this guard already covers them).
+  // (the note textarea) or while the skip-reason dropdown is open — three
+  // of its reasons start with a shortcut letter (Call back later/C, Not
+  // interested/N, Other/O), and since components/ui/Select's Radix menu is
+  // portalled to document.body (outside this component's own DOM subtree)
+  // rather than being a real <select>, `e.target.tagName === 'SELECT'`
+  // no longer catches it — check for the menu/listbox role instead.
   useEffect(() => {
     if (!lead) return;
     function handleKey(e) {
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.target.closest('[role="menu"], [role="menuitem"], [role="listbox"], [role="option"]')) return;
       if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
         callNextEnabled ? onCallNext() : handleCall();
@@ -176,9 +219,7 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
   return (
     <Card className="p-6 flex flex-col gap-5" data-tour="current-call">
       <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-lg font-bold flex-shrink-0">
-          {initials(name)}
-        </div>
+        <Avatar name={name} size={56} />
         <div className="flex-1 min-w-0">
           <div className="text-lg font-bold text-slate-800 truncate">{name}</div>
           <div className="text-xs text-slate-500 truncate" title={[lead.title, lead.company].filter(Boolean).join(' at ') || undefined}>
@@ -195,6 +236,9 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
             <Button variant="outline" size="sm" onClick={() => setShowNote(v => !v)} data-tour="add-note">
               <NotebookPen size={14} /> Add Note
             </Button>
+            <Button variant="outline" size="sm" onClick={openScriptEditor} data-tour="call-script">
+              <MessageSquareText size={14} /> {lead.talking_points || lead.active_call_script ? 'Script' : 'Add Script'}
+            </Button>
           </div>
           <Badge variant={lead.status ? undefined : 'default'}>{lead.status}</Badge>
         </div>
@@ -203,7 +247,7 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
       <div className="flex items-center gap-2 text-sm text-slate-600">
         <Phone size={15} className="text-slate-400" />
         {phone || <span className="text-slate-400 italic">No phone number on file</span>}
-        {phone && <LocalTimeBadge phone={phone} />}
+        {phone && <LocalTimeBadge phone={phone} country={lead.country || lead.company_country} />}
       </div>
 
       {contextItems.length > 0 && (
@@ -217,9 +261,62 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
         </div>
       )}
 
-      <div className="flex items-center gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-        <span>Last contact: {lead.last_call_at ? new Date(lead.last_call_at).toLocaleDateString() : '—'}</span>
-        <span>Last outcome: {lead.last_call_outcome || '—'}</span>
+      {/* What to say, not what happened last time (that's the strip below).
+          Per-lead override (talking_points) always wins over the cadence's
+          default (active_call_script, set on the journey's "call" node) —
+          an SDR who wrote their own script for this lead should see theirs. */}
+      {!showScript && (lead.talking_points || lead.active_call_script) && (
+        <div className="text-xs text-amber-900 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-medium text-amber-700">
+              {lead.talking_points ? 'Your script' : `Cadence script${lead.active_call_script?.title ? ` — ${lead.active_call_script.title}` : ''}`}
+            </span>
+            <Button variant="ghost" size="sm" onClick={openScriptEditor} className="!py-0.5 !px-2 h-auto text-amber-700 hover:bg-amber-100">Edit</Button>
+          </div>
+          <div className="mt-1 whitespace-pre-wrap">{lead.talking_points || lead.active_call_script.script}</div>
+        </div>
+      )}
+
+      {showScript && (
+        <div className="flex flex-col gap-2" data-tour="script-composer">
+          <textarea
+            value={scriptText}
+            onChange={(e) => setScriptText(e.target.value)}
+            placeholder="Key talking points, objection handling, what to lead with…"
+            rows={3}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-200"
+          />
+          {scriptError && <div className="text-xs text-red-600">{scriptError}</div>}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-400">Leave blank to remove your override and fall back to the cadence script, if any.</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Button variant="ghost" size="sm" onClick={() => setShowScript(false)}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={handleSaveScript} disabled={savingScript}>
+                {savingScript ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1.5 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-4">
+          <span>Last contact: {lead.last_call_at ? new Date(lead.last_call_at).toLocaleDateString() : '—'}</span>
+          <span>Last outcome: {lead.last_call_outcome || '—'}</span>
+        </div>
+        {/* What the previous caller actually wrote, not just the outcome
+            enum — so this caller doesn't have to open the lead in the CRM
+            just to learn what happened last time. GET /leads already
+            returns latest_note (content/author/created_at); this was the
+            only place in the app that had the data and didn't show it. */}
+        {lead.latest_note?.content && (
+          <div className="text-slate-600 border-t border-slate-200 pt-1.5">
+            <span className="font-medium text-slate-500">Last note</span>
+            {lead.latest_note.author && <span className="text-slate-400"> · {lead.latest_note.author}</span>}
+            <span className="text-slate-400">{lead.latest_note.created_at ? ` · ${new Date(lead.latest_note.created_at).toLocaleDateString()}` : ''}</span>
+            <div>&ldquo;{lead.latest_note.content}&rdquo;</div>
+          </div>
+        )}
       </div>
 
       {showNote && (
@@ -258,18 +355,20 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
           <Button variant="outline" size="lg" onClick={() => onSkip()} className="flex-1">
             <SkipForward size={17} /> Skip
           </Button>
-          <label className="relative flex items-center justify-center w-9 h-full rounded-xl border border-slate-200 text-slate-400 hover:bg-slate-50 cursor-pointer" title="Skip with a reason" data-tour="skip-reason">
-            <ChevronDown size={14} />
-            <select
-              aria-label="Skip with a reason"
-              className="absolute inset-0 opacity-0 cursor-pointer"
-              value=""
-              onChange={(e) => { if (e.target.value) onSkip(e.target.value); e.target.value = ''; }}
+          <Select
+            ariaLabel="Skip with a reason"
+            value=""
+            onChange={onSkip}
+            options={SKIP_REASON_OPTIONS}
+          >
+            <div
+              title="Skip with a reason"
+              data-tour="skip-reason"
+              className="flex items-center justify-center w-9 h-full rounded-xl border border-slate-200 text-slate-400 hover:bg-slate-50 cursor-pointer"
             >
-              <option value="" disabled>Skip with reason…</option>
-              {SKIP_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </label>
+              <ChevronDown size={14} />
+            </div>
+          </Select>
         </div>
       </div>
       <div className="text-xs text-slate-400 -mt-2">

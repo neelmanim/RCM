@@ -9,6 +9,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useAttachments } from './hooks/useAttachments';
 import { RichTextToolbar } from './richTextToolbar';
+import { Button } from '../../components/ui/Button';
 
 export function ComposeDrawer({ lead, token, apiBase, onSent, onClose }) {
   const [subject, setSubject] = useState('');
@@ -124,12 +125,13 @@ export function ComposeDrawer({ lead, token, apiBase, onSent, onClose }) {
       {error && <div className="eh-reply-error">⚠ {error}</div>}
 
       <div className="eh-compose-actions">
-        <button
-          className="eh-btn-ghost"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => fileInputRef.current?.click()}
         >
           📎 Attach
-        </button>
+        </Button>
         <input
           ref={fileInputRef}
           type="file"
@@ -141,16 +143,16 @@ export function ComposeDrawer({ lead, token, apiBase, onSent, onClose }) {
           }}
         />
         <div className="eh-compose-actions-right">
-          <button className="eh-btn-ghost" onClick={onClose} disabled={sending}>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={sending}>
             Cancel
-          </button>
-          <button
-            className="eh-btn-primary"
+          </Button>
+          <Button
+            size="sm"
             onClick={handleSend}
             disabled={sending || !subject.trim() || !body.trim()}
           >
             {sending ? 'Sending…' : '✉ Send Email'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

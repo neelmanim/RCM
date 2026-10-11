@@ -1,8 +1,8 @@
 import logging
 import uuid
-from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, Table, Text, Boolean, Integer, BigInteger, or_, and_, Index, UniqueConstraint, JSON, text, exists
+from sqlalchemy import Column, String, DateTime, ForeignKey, Enum, Table, Text, Boolean, Integer, BigInteger, Float, or_, and_, Index, UniqueConstraint, JSON, text, exists, event
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship, backref, aliased
+from sqlalchemy.orm import relationship, backref, aliased, Session, attributes
 from sqlalchemy.sql import func
 import enum
 from database import Base
@@ -32,6 +32,14 @@ lead_tags = Table(
     Column('tag_id', String, ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True, index=True),
 )
 
+# Lead <-> CallList mapping table (a lead can be in several call lists; a
+# call list can span leads from any pod/batch — org-wide, user-curated).
+call_list_leads = Table(
+    'call_list_leads', Base.metadata,
+    Column('call_list_id', String, ForeignKey('call_lists.id', ondelete='CASCADE'), primary_key=True, index=True),
+    Column('lead_id', String, ForeignKey('leads.id', ondelete='CASCADE'), primary_key=True, index=True),
+)
+
 class AllowedUser(Base):
     """Access control table — source of truth for who can log into the CRM."""
     __tablename__ = "allowed_users"
@@ -41,6 +49,22 @@ class AllowedUser(Base):
     role     = Column(String, default="SDR")   # "SDR", "Pod Admin", or "Super Admin"
     added_at = Column(DateTime(timezone=True), server_default=func.now())
     added_by = Column(String, default="system")
+
+
+class AccessRequest(Base):
+    """A Google sign-in attempt from an email not yet in allowed_users — the
+    login page's "request access" mechanism. Google already verifies the
+    person's identity, so there's no separate request form: trying to sign
+    in IS the request (see auth_routes.py's callback). One row per email,
+    upserted so repeated attempts just bump requested_at instead of piling
+    up duplicates. Deleted automatically the moment a Super Admin adds that
+    email via access_db.add_allowed_user (single/CSV add both call it) —
+    granting access resolves the request, no separate "dismiss" action."""
+    __tablename__ = "access_requests"
+
+    email        = Column(String, primary_key=True, index=True)
+    name         = Column(String, nullable=True)
+    requested_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Role(str, enum.Enum):
     Super_Admin = "Super Admin"
@@ -61,7 +85,27 @@ class Status(str, enum.Enum):
     Disqualified        = "Disqualified"
 
 TERMINAL_STATUSES = {"Demo Done", "Completed", "Disqualified"}
+
+# Pipeline stage of each status: 0 = pre-meeting (Lead Assigned/Research/
+# Calling), 1+ = a meeting has been booked. Statuses outside the pipeline
+# (Disqualified, Pending Review, Nurture…) are deliberately absent. Used by
+# the stage-skip guard, one-owner-before-a-meeting (assign_lead), the
+# Aircall "Meeting Set" tag and cadence stop_on_meeting.
+STAGE_GROUP = {
+    "Lead Assigned": 0, "Research": 0, "Calling": 0,
+    "Meeting Scheduled": 1,
+    "1st Discovery Meeting": 2, "Discovery Complete": 2,
+    "Demo Scheduled": 3, "Demo Done": 3,
+    "Completed": 4,
+}
 ACTIVE_STATUSES   = {"Lead Assigned", "Research", "Calling", "Meeting Scheduled", "1st Discovery Meeting", "Discovery Complete", "Demo Scheduled"}
+
+# RCA 2026-08-17 (stakeholder report: "wrong-number disqualify not working"):
+# lead_detail.js's _activeStatuses shows the "Disqualify Lead" button (Wrong
+# Number, Not Interested, etc.) across these 5 statuses, but close_lead()
+# hard-required status=="Calling" — a 422 for any lead already past Calling.
+# This is the same set the frontend already offers the button on, no wider.
+DISQUALIFIABLE_STATUSES = {"Calling", "Meeting Scheduled", "1st Discovery Meeting", "Discovery Complete", "Demo Scheduled"}
 
 # Legacy statuses kept for backwards compat with existing data
 LEGACY_STATUSES = {"Customer Declined", "Unreachable"}
@@ -70,6 +114,10 @@ LEGACY_STATUSES = {"Customer Declined", "Unreachable"}
 # active lead cap calculations, and analytics dashboards.
 # "Pending Review" is also parked — it is a Pod Admin holding state for failed demos.
 PARKED_STATUSES = {"No Phone - Parked", "Pending Review"}
+
+# Every status value the app itself understands. The status-update paths reject anything else (v13.10.0) — prod
+# ended up with `Meeting Booked` ×10 and `Assigned` ×1 because nothing validated the value.
+KNOWN_STATUSES = {st.value for st in Status} | PARKED_STATUSES | LEGACY_STATUSES
 
 class CallOutcome(str, enum.Enum):
     """Call outcome enum — kept for backward compatibility.
@@ -95,10 +143,18 @@ class CallOutcome(str, enum.Enum):
     Left_the_Company      = "Left the Company"
 
 # Grouped outcome sets (used by frontend + validation)
-ANSWERED_OUTCOMES     = {"Call Back Later", "Meeting Scheduled", "Meeting Confirmed",
-                         "Text Me", "Not the Right Person", "Referred Someone Else"}
-NOT_ANSWERED_OUTCOMES = {"No Answer", "Left Voicemail", "Wrong Number"}
+# RCA 2026-08-25: was missing "Unreachable" — a call where the SDR never got
+# through is not a live connect, same as No Answer/Voicemail/Wrong Number.
+# "Left the Company" stays out on purpose: someone did pick up the phone.
+NOT_ANSWERED_OUTCOMES = {"No Answer", "Left Voicemail", "Wrong Number", "Unreachable"}
 TERMINAL_OUTCOMES     = {"Not Interested", "Unreachable", "Left the Company"}
+
+# Lowercase mirror for case-insensitive comparisons, plus known malformed
+# variants seen in production data — "no_answer" (underscore) isn't just a
+# casing difference from "No Answer", it's a distinct literal string a plain
+# lower() never folds into the other, so it's listed explicitly. Compare
+# func.lower(outcome) against this, not the set above.
+NOT_ANSWERED_OUTCOMES_LOWER = {o.lower() for o in NOT_ANSWERED_OUTCOMES} | {"no_answer"}
 
 # Outcomes that increment call_attempt_count (unsuccessful contact attempts)
 ATTEMPT_OUTCOMES = {"No Answer", "Left Voicemail", "Wrong Number", "Unreachable", "Left the Company"}
@@ -124,7 +180,12 @@ NOTES_REQUIRED_OUTCOMES = {"Meeting Confirmed", "Not Interested"}
 # Phase 2 will store this in SyncSettings.outcome_config JSON column.
 DEFAULT_OUTCOME_CONFIG = [
     {"value": "Call Back Later",       "group": "answered",     "action": "none",              "notes_required": False, "builtin": True, "enabled": True},
-    {"value": "Meeting Scheduled",     "group": "answered",     "action": "none",              "notes_required": False, "builtin": True, "enabled": True},
+    # RCA 2026-09-29: disabled — sat next to the featured "Meeting Booked"
+    # (Meeting Confirmed) card as a lookalike 📆 chip with action "none", so
+    # SDRs who picked it logged a meeting that never moved the lead to
+    # Meeting Scheduled or counted anywhere (12 prod leads). Kept (disabled)
+    # so historical rows and the legacy "Call Completed" mapping stay valid.
+    {"value": "Meeting Scheduled",     "group": "answered",     "action": "none",              "notes_required": False, "builtin": True, "enabled": False},
     {"value": "Meeting Confirmed",     "group": "answered",     "action": "meeting_scheduled", "notes_required": True,  "builtin": True, "enabled": True},
     # v5.5: SDR taps "Mark Meeting Complete" CTA — not in normal call picker (enabled=False)
     {"value": "Meeting Complete",      "group": "answered",     "action": "meeting_complete",  "notes_required": False, "builtin": True, "enabled": False},
@@ -165,6 +226,12 @@ def get_outcome_config(db=None):
                         # Audit: warn for non-enum custom outcomes
                         enum_values = {e.value for e in CallOutcome}
                         for o in db_config:
+                            # RCA 2026-09-29 (staging, Playwright): a saved config is
+                            # a copy of the old defaults, so it kept the lookalike
+                            # "Meeting Scheduled" (action none) enabled — the trap
+                            # disabling it in DEFAULT_OUTCOME_CONFIG was meant to close.
+                            if o["value"] == "Meeting Scheduled":
+                                o["enabled"] = False
                             if o["value"] not in enum_values and not o.get("builtin", True):
                                 logger.info(
                                     "Custom outcome '%s' has no CallOutcome enum entry",
@@ -209,7 +276,14 @@ class Pod(Base):
     id              = Column(String, primary_key=True, default=generate_uuid)
     name            = Column(String, nullable=False)
     # admin_id removed — use pod_admins table for multi-admin support
-    active_lead_cap = Column(Integer, default=500, nullable=False)   # per-POD SDR lead cap (matches global default)
+    # RCA 2026-08-25: unused as of this release — _get_active_lead_cap() no
+    # longer reads a per-pod override (see its docstring: this was never
+    # exposed by any API/UI, so a pod's value could only diverge from the
+    # global default via a direct DB write, making the actually-enforced cap
+    # invisible). Column kept for now, dropped in a follow-up migration once
+    # this is verified live, per this file's own convention for column
+    # removal (see the pods.admin_id DROP COLUMN note above).
+    active_lead_cap = Column(Integer, default=500, nullable=False)
     timezone        = Column(String, nullable=True)   # IANA name (e.g. "America/New_York"); unset = UTC.
                                                         # Lets Analytics bucket "a day" by this team's own
                                                         # working hours instead of a UTC-anchored day boundary.
@@ -253,16 +327,39 @@ class User(Base):
     pod_id       = Column(String, ForeignKey("pods.id", ondelete="SET NULL"), nullable=True)
     created_at   = Column(DateTime(timezone=True), server_default=func.now())
     last_login_at = Column(DateTime(timezone=True), nullable=True)
+    left_at       = Column(DateTime(timezone=True), nullable=True)   # v13.11.0: set by services/offboarding.py; see left_ids()
     dialer_user_id      = Column(String, nullable=True)                          # Optional manual Aircall/dialer user ID override
-    rcm_user_id  = Column(String, nullable=True)                          # Per-SDR RCM Built-in Messaging user ID for conversation tagging
+    messenger_user_id  = Column(String, nullable=True)                          # Per-SDR Alternate Messenger/Messaging Provider user ID for conversation tagging
     dialer_enabled     = Column(Boolean, default=False, nullable=False, server_default="false")  # v4: per-SDR dialer access toggle
-    dialer_provider_override = Column(String, nullable=True)                     # v5.4: per-SDR dialer provider — "aircall" | "rcm" | null (use global)
-    rcm_from_number   = Column(String, nullable=True)                     # v5.6: per-SDR RCM caller ID (senderId)
-    rcm_email         = Column(String, nullable=True)                     # v5.16: per-SDR RCM login email (display/audit only)
+    dialer_provider_override = Column(String, nullable=True)                     # v5.4: per-SDR dialer provider — "aircall" | "messenger" | null (use global)
+    messenger_from_number   = Column(String, nullable=True)                     # v5.6: per-SDR Alternate Messenger caller ID (senderId)
+    messenger_email         = Column(String, nullable=True)                     # v5.16: per-SDR Alternate Messenger login email (display/audit only)
+    # v11.5.22: per-SDR WhatsApp sender number — until now every SDR shared one
+    # org-wide sender_id (SyncSettings.messenger_sender_id), unlike calling
+    # which already assigns each SDR their own number above. Falls back to the
+    # org-wide sender when unset (see journey_engine/channels/whatsapp_channel.py
+    # and routes/conversations_routes.py).
+    messenger_whatsapp_sender_id = Column(String, nullable=True)
+    # v11.10.0: per-SDR messaging access. Until now messaging had no toggle of
+    # its own — the Message tab piggybacked on dialer_enabled + a Alternate Messenger
+    # dialer provider (see frontend/js/app.js's widget-init gate), so an SDR on
+    # Aircall for calling could never message at all and an SDR granted the
+    # dialer silently got WhatsApp too. These are the real gates; calling keeps
+    # using dialer_enabled above.
+    sms_enabled      = Column(Boolean, default=False, nullable=False, server_default="false")
+    whatsapp_enabled = Column(Boolean, default=False, nullable=False, server_default="false")
+    # Per-SDR messaging vendor — "messenger" | "aircall" | null (use the org
+    # default in SyncSettings.messaging_provider). Deliberately separate from
+    # dialer_provider_override: an SDR may call on one vendor and message on
+    # the other, which is a real supported config.
+    messaging_provider_override = Column(String, nullable=True)
     email_sync_enabled = Column(Boolean, default=False, nullable=False, server_default="false")  # v4: per-SDR email sync toggle
+    export_blocked     = Column(Boolean, default=False, nullable=False, server_default="false")  # v14.1.0: a Super Admin can switch a Super Admin's (or anyone's) exports OFF; beats every role default
+    export_enabled     = Column(Boolean, default=False, nullable=False, server_default="false")  # v14.1.0: may download CSV/Excel exports (Super Admin always may); set by a Super Admin only
     klenty_username    = Column(String, nullable=True)                           # V43: per-SDR Klenty login username; falls back to email at call-site if null
-    hide_branding_in_email = Column(Boolean, default=False, nullable=False, server_default="false")  # per-user: suppress the "RCM · Powered by RCM" footer on sent mail
+    hide_branding_in_email = Column(Boolean, default=False, nullable=False, server_default="false")  # per-user: suppress the "Alternate CRM · Powered by Alternate Messenger" footer on sent mail
     email_signature_html   = Column(Text, nullable=True)                        # per-user rich-text email signature (sanitized HTML — links/images allowed)
+    aircall_everywhere_last_login_at = Column(DateTime(timezone=True), nullable=True)  # v11.4.1: stamped by the embed's onLogin — the only server-side signal of per-SDR Everywhere adoption; the org-wide flag says nothing about who's actually using it
 
     # Relationships
     pod               = relationship("Pod", back_populates="members", foreign_keys=[pod_id])
@@ -289,6 +386,7 @@ class Lead(Base):
     pod_id          = Column(String, ForeignKey("pods.id", ondelete="SET NULL"), nullable=True, index=True)
     upload_log_id   = Column(String, ForeignKey("lead_upload_logs.id", ondelete="SET NULL"), nullable=True, index=True)
     is_test         = Column(Boolean, default=False, nullable=False, server_default="false")  # Cadence/Messaging Sandbox test lead — excluded from all analytics/reporting
+    vertical        = Column(String, nullable=True)  # free-text, owner-set (e.g. "Sales/BD", "Patient Ops") — soft guardrail against enrolling into the wrong cadence, see journey_routes.py's enroll()
 
     # Enrichment fields (from uploaded enriched sheets)
     linkedin_url         = Column(String, nullable=True)
@@ -333,7 +431,7 @@ class Lead(Base):
     discovery_meeting_count    = Column(Integer, default=0, nullable=False, server_default="0")  # v5: discovery call tracking
     last_call_timestamp = Column(DateTime(timezone=True), nullable=True)
 
-    # V24: Total outbound dial attempts (any source — RCM or Aircall direct)
+    # V24: Total outbound dial attempts (any source — Alternate CRM or Aircall direct)
     times_called        = Column(Integer, default=0, nullable=False, server_default="0")
     lead_started_at     = Column(DateTime(timezone=True), nullable=True)   # set on first assignment
 
@@ -341,6 +439,7 @@ class Lead(Base):
     priority_score      = Column(Integer, default=100, nullable=False, server_default="100")
     lead_closed_at      = Column(DateTime(timezone=True), nullable=True)   # set when entering terminal status
     closed_reason       = Column(String, nullable=True)                    # "Not Interested" | "Unreachable" | "Meeting Scheduled"
+    deleted_at          = Column(DateTime(timezone=True), nullable=True)   # soft-delete only — see bulk_delete_leads(); row and related data are never hard-deleted
 
     # Unified calendar: actual scheduled meeting date/time (distinct from
     # status_changed_at, which is when the status transition happened).
@@ -356,24 +455,51 @@ class Lead(Base):
     calendar_event_title  = Column(String, nullable=True)  # resolved (custom-or-default) event title, for Calendar Hub
     calendar_event_agenda = Column(Text, nullable=True)    # SDR-written/AI-drafted agenda, if one was set
 
-    # V18: Audience Manager (RCM messaging) contact reference
+    # V18: Audience Manager (Alternate Messenger messaging) contact reference
     am_record_id        = Column(String, nullable=True)                    # Audience Manager contact record ID
 
     # V8: Opportunity outcome tracking (set by Pod Admin / Super Admin)
     opportunity_status     = Column(String, nullable=True)     # "Won" | "Lost" | null
     opportunity_notes      = Column(Text, nullable=True)       # Context from admin
     opportunity_updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Power Dialer call script — per-lead override. Distinct from `Note`
+    # (below) and CallLog.notes, which are a history of what was said, not a
+    # thing to prep from before the call. When set, this beats the
+    # cadence-level default script surfaced via the lead's open Task (see
+    # Task.description) — an SDR who tailored a script for this specific
+    # lead should see theirs, not the generic one. See CurrentCallCard.jsx.
+    talking_points = Column(Text, nullable=True)
     opportunity_updated_by = Column(String, nullable=True)      # Name of who set it
+
+    # v11.4.2: real Salesforce Opportunity Id (006...) this lead is linked to —
+    # set when a direct-dial webhook matches an inbound call to an existing SF
+    # Opportunity/Contact rather than creating a placeholder lead (see
+    # salesforce.find_lead_or_opportunity_by_phone). Distinct from sf_lead_id
+    # (the 00Q... Lead record) since a phone can match either object.
+    sf_opportunity_id = Column(String, nullable=True)
 
     status_changed_at = Column(DateTime(timezone=True), server_default=func.now())
     last_synced_at  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_at      = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     # Sales Journey (docs/SALES_JOURNEY_ARCHITECTURE.md, Gap 1): no part of
-    # RCM enforced contact suppression before this — checked fresh on
+    # Alternate CRM enforced contact suppression before this — checked fresh on
     # every automated send, not just at enrollment time.
     do_not_contact   = Column(Boolean, nullable=False, default=False)
     unsubscribed_at  = Column(DateTime(timezone=True), nullable=True)
+    # A rep (or an Aircall "wrong number" tag) found the phone doesn't reach this
+    # person. Call/text cadence steps skip while set; email is untouched. Cleared
+    # when the phone is edited to a different number (lead_service).
+    phone_invalid_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Instantly.ai pull-sync (informational only — never written to by
+    # anything except _instantly_sync_job, never read by eligibility/journey/
+    # kanban-move validation; the SDR still makes every Lead.status change
+    # themselves via PATCH /leads/kanban/move).
+    instantly_interest_status = Column(Integer, nullable=True)   # raw lt_interest_status
+    instantly_interest_label  = Column(String, nullable=True)    # resolved via known enum or lead-labels cache
+    instantly_last_synced_at  = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     assigned_users = relationship("User", secondary=lead_assignments, back_populates="assigned_leads")
@@ -383,6 +509,7 @@ class Lead(Base):
     status_logs    = relationship("LeadStatusLog", back_populates="lead", cascade="all, delete-orphan", order_by="LeadStatusLog.changed_at.desc()")
     attachments    = relationship("LeadAttachment", back_populates="lead", cascade="all, delete-orphan", order_by="LeadAttachment.created_at.desc()")
     tags           = relationship("Tag", secondary=lead_tags, backref="leads")
+    call_lists     = relationship("CallList", secondary=call_list_leads, backref="leads")
     upload_log     = relationship("LeadUploadLog", foreign_keys=[upload_log_id])
 
 class Note(Base):
@@ -403,11 +530,35 @@ class Task(Base):
     lead_id       = Column(String, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False)
     user_id       = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     title         = Column(String, nullable=False)
+    # Populated only when journey_engine creates this Task from a "call"-type
+    # cadence node with a script filled in (see NodeConfigPanel.jsx's
+    # CallFields) — the cadence-level default script for the Power Dialer
+    # card, one level below Lead.talking_points' per-lead override. Blank
+    # for every other task (manually-created ones, or a call node with no
+    # script set) — not a general-purpose task description field.
+    description   = Column(Text, nullable=True)
     done          = Column(String, default="false")   # "true" / "false" — simple for SQLite compat
     due_date      = Column(String)
     due_time      = Column(DateTime(timezone=True), nullable=True)   # precise reminder time
     snoozed_until = Column(DateTime(timezone=True), nullable=True)   # snooze expiry
     dismissed     = Column(String, default="false")                  # notification dismissed
+    # A manual cadence step ("task" node) owns this task: completing it is
+    # what advances that enrollment (journey_engine.engine.complete_manual_step).
+    journey_enrollment_id = Column(String, ForeignKey("journey_enrollments.id", ondelete="SET NULL"), nullable=True, index=True)
+    journey_node_id       = Column(String, nullable=True)
+    outcome_options       = Column(Text, nullable=True)   # JSON list of {"key","label"} the rep picks from, e.g. Accepted / Not accepted
+    outcome               = Column(String, nullable=True) # the picked key
+    # v13.1.0 manual-email cadence step (Viren's request): kind="email_approval"
+    # marks this Task as a drafted cadence email awaiting the rep's review and
+    # send, distinct from a generic manual step (kind=None). draft_subject/
+    # draft_body/draft_body_format are the merge-resolved content at the
+    # moment the step parked — the rep can edit before sending (the edit
+    # flows through journey_engine.engine.complete_manual_email_step, not a
+    # rewrite of this row).
+    kind              = Column(String, nullable=True)
+    draft_subject     = Column(Text, nullable=True)
+    draft_body        = Column(Text, nullable=True)
+    draft_body_format = Column(String, nullable=True)  # "html" | "text"
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
 
     lead = relationship("Lead", back_populates="tasks")
@@ -423,6 +574,12 @@ class CallLog(Base):
     outcome    = Column(String, nullable=False)
     notes      = Column(Text)
     called_at  = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    # RCA 2026-08-19: the paired CallLog auto-created alongside an Aircall-tag
+    # AutoLog'd DialerCall (dialer_service._auto_log_outcome) had no link back
+    # to it — an SDR correcting the outcome via log_call() could update the
+    # DialerCall (what analytics reads) with no way to find and update this
+    # row too, leaving a stale duplicate showing the old wrong outcome.
+    dialer_call_id = Column(String, ForeignKey("dialer_calls.id", ondelete="SET NULL"), nullable=True, index=True)
 
     lead = relationship("Lead", back_populates="call_logs")
     user = relationship("User", back_populates="call_logs")
@@ -437,20 +594,175 @@ class LeadStatusLog(Base):
     from_status = Column(String, nullable=True)    # null = initial creation
     to_status   = Column(String, nullable=False)
     changed_by  = Column(String, nullable=True)    # user name/email or "system"
+    # v13.11.0: the person's id, so reports stop matching on names. NULL on rows older than this release and on system
+    # moves (Salesforce sync, cadences). No FK: it is history.
+    changed_by_user_id = Column(String, nullable=True)
     changed_at  = Column(DateTime(timezone=True), server_default=func.now())
 
     lead = relationship("Lead", back_populates="status_logs")
 
 
-def log_status_change(db, lead_id, from_status, to_status, changed_by="system"):
-    """Reusable helper — call from any route to record a status transition."""
+class LeadOwnershipPeriod(Base):
+    """One stretch of a user owning a lead (valid_to NULL = current owner).
+
+    Written by a Postgres trigger on lead_assignments (see ownership_history.py) so no code path or manual SQL can
+    skip it; `reason`/`assigned_by` come from per-transaction context and read 'script/unknown' when none was set.
+    Intentionally NO foreign keys: it is history and must survive a hard-deleted lead or user."""
+    __tablename__ = "lead_ownership_periods"
+
+    id           = Column(String, primary_key=True, default=generate_uuid)
+    lead_id      = Column(String, nullable=False)
+    user_id      = Column(String, nullable=False)
+    valid_from   = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    valid_to     = Column(DateTime(timezone=True), nullable=True)
+    reason       = Column(String, nullable=True)       # why it started (bulk-assign, upload, script/unknown, …)
+    assigned_by  = Column(String, nullable=True)       # user id of whoever did it, when the app knew
+    ended_reason = Column(String, nullable=True)
+    ended_by     = Column(String, nullable=True)
+
+    __table_args__ = (
+        Index("ix_lop_lead_from", "lead_id", "valid_from"),
+        Index("ix_lop_user_from", "user_id", "valid_from"),
+        Index("ix_lop_open", "lead_id", postgresql_where=text("valid_to IS NULL")),
+    )
+
+
+class LeadMeeting(Base):
+    """One row per meeting booking (v13.11.0). The lead row keeps only the latest meeting date, so it can't say who
+    booked, whether it was held, or that a lead booked, missed and rebooked. Written from models.log_status_change (the
+    one place every booking path passes through) by meeting_log.py. No FKs on user ids: it is history."""
+    __tablename__ = "lead_meetings"
+
+    id                 = Column(String, primary_key=True, default=generate_uuid)
+    lead_id            = Column(String, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False)
+    booked_at          = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    booked_by_user_id  = Column(String, nullable=True)     # NULL = not a person (Salesforce sync) or unknown (backfill)
+    meeting_at         = Column(DateTime(timezone=True), nullable=True)   # when the meeting is/was due
+    status             = Column(String, nullable=False, default="booked")  # booked | held | no_show | cancelled
+    held_at            = Column(DateTime(timezone=True), nullable=True)
+    no_show_at         = Column(DateTime(timezone=True), nullable=True)
+    source             = Column(String, nullable=True)     # app | aircall-tag | salesforce-sync | backfill
+
+    __table_args__ = (
+        Index("ix_lead_meetings_lead", "lead_id", "booked_at"),
+        Index("ix_lead_meetings_booked_at", "booked_at"),
+        Index("ix_lead_meetings_booker", "booked_by_user_id", "booked_at"),
+    )
+
+
+class LeadFieldHistory(Base):
+    """Field-level audit trail for a Lead's identity/contact fields.
+
+    RCA 2026-08-17 (LIVE): resolving a "lead lost its name" report required
+    raw DB forensics (activity logs, dialer_calls, cross-referencing
+    timestamps) because nothing tracked what changed on a Lead, only status
+    transitions (LeadStatusLog above) and coarse view/create events
+    (user_activity_logs). This closes that gap.
+
+    Rows are written automatically by the `before_flush` listener below —
+    never construct this directly from a route.
+    """
+    __tablename__ = "lead_field_history"
+
+    id         = Column(String, primary_key=True, default=generate_uuid)
+    lead_id    = Column(String, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    field_name = Column(String, nullable=False)
+    old_value  = Column(Text, nullable=True)   # None = field was previously unset (incl. initial creation)
+    new_value  = Column(Text, nullable=True)
+    changed_by = Column(String, nullable=True)  # name/email, or "system:<job>" — same convention as LeadStatusLog.changed_by
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    lead = relationship("Lead")
+
+
+# Tracked fields: identity/contact fields worth an audit trail. Deliberately
+# excludes research_*/company_* enrichment (churns constantly, already
+# low-value to diff), call counters, and status (already in LeadStatusLog).
+_LEAD_HISTORY_FIELDS = (
+    "first_name", "last_name", "email", "phone", "phone_secondary",
+    "company", "title", "linkedin_url", "person_linkedin", "pod_id",
+)
+
+
+@event.listens_for(Session, "before_flush")
+def _record_lead_field_history(session, flush_context, instances):
+    """Automatically diffs tracked Lead fields on every insert/update in this
+    session and writes a LeadFieldHistory row per changed field.
+
+    This is SQLAlchemy's own documented pattern for an audit-history event
+    listener (using before_flush to add related rows for pending changes) —
+    not a bespoke mechanism. It fires for every write path (routes,
+    scheduled_jobs.py syncs, salesforce.py, admin scripts) without needing to
+    touch each one, which is the point: a future write site nobody
+    remembers to instrument still gets captured.
+
+    Actor attribution: session.info.get("change_actor", "system") — the
+    Session.info dict is built into every SQLAlchemy session already; no new
+    plumbing needed. Set it before commit at the write sites that matter
+    (see routes/lead_helpers.py::_can_modify_lead, scheduled_jobs.py's sync
+    jobs); anywhere it's unset, the diff is still captured, just attributed
+    to plain "system".
+    """
+    changed_by = session.info.get("change_actor", "system")
+
+    for lead in session.new.union(session.dirty):
+        if not isinstance(lead, Lead):
+            continue
+        # New leads don't get their Column(default=generate_uuid) id applied
+        # until the INSERT is compiled — after before_flush runs. Assign it
+        # now so LeadFieldHistory rows reference the same id the Lead gets.
+        if lead.id is None:
+            lead.id = generate_uuid()
+        for field in _LEAD_HISTORY_FIELDS:
+            hist = attributes.get_history(lead, field)
+            if not (hist.added or hist.deleted):
+                continue
+            old_value = hist.deleted[0] if hist.deleted else None
+            new_value = hist.added[0] if hist.added else getattr(lead, field)
+            if old_value == new_value:
+                continue
+            session.add(LeadFieldHistory(
+                lead_id=lead.id,
+                field_name=field,
+                old_value=str(old_value) if old_value is not None else None,
+                new_value=str(new_value) if new_value is not None else None,
+                changed_by=changed_by,
+            ))
+
+
+def log_status_change(db, lead_id, from_status, to_status, changed_by="system", changed_by_user_id=None):
+    """Reusable helper — call from any route to record a status transition.
+    Pass changed_by_user_id whenever a person made the move (user["sub"]); leave it off for system moves."""
     entry = LeadStatusLog(
         lead_id=lead_id,
         from_status=from_status,
         to_status=to_status,
         changed_by=changed_by,
+        changed_by_user_id=changed_by_user_id,
     )
     db.add(entry)
+    # RCA 2026-09-07: this session runs with autoflush=False, so `entry` (and
+    # anything the caller already changed earlier in the same request, e.g.
+    # the lead's status-transition itself) would otherwise still be sitting
+    # unflushed in-memory when the SAVEPOINT below opens — a live test proved
+    # a nested-transaction rollback undoes EVERY statement issued since the
+    # savepoint began, including any of this pending work that the SAVEPOINT's
+    # own first flush happens to carry along with it. Flushing here, before
+    # the SAVEPOINT exists, makes this work part of the outer transaction —
+    # immune to a later rollback scoped to the SAVEPOINT alone.
+    db.flush()
+
+    # v13.11.0: meeting record + lead_closed_at stamp. Every booking path (call outcome, status update, Aircall tag,
+    # Salesforce pull) funnels through here, so one hook covers all four. Own SAVEPOINT: never breaks the status move.
+    if to_status and from_status != to_status:
+        try:
+            _lead = db.query(Lead).filter(Lead.id == lead_id).first()
+            if _lead:
+                with db.begin_nested():
+                    import meeting_log
+                    meeting_log.on_status_change(db, _lead, from_status, to_status, changed_by, changed_by_user_id)
+        except Exception as e:
+            logger.error(f"[meeting_log] could not record the meeting for lead {lead_id}: {e}")
 
     # Sales Journey (docs/SALES_JOURNEY_ARCHITECTURE.md, Gap 4): every status
     # change funnels through here, so this is the one place to check for a
@@ -464,27 +776,85 @@ def log_status_change(db, lead_id, from_status, to_status, changed_by="system"):
             from journey_engine.engine import check_entry_triggers, check_exit_triggers
             lead = db.query(Lead).filter(Lead.id == lead_id).first()
             if lead:
-                check_entry_triggers(db, "status_changed", lead, commit=False, to_status=to_status)
-                # Phase 1 (Gap: conditional branching) — a lead currently parked on
-                # a condition node waiting for this status change gets its early-exit
-                # signal here too. commit=False for the same reason as above; the
-                # 30s poller tick is the guaranteed backstop for the actual branch.
-                check_exit_triggers(db, "status_changed", lead, commit=False, to_status=to_status)
+                # RCA 2026-09-07 (live, PendingRollbackError on /api/calls/start):
+                # two concurrent status changes for the same lead can both pass
+                # enroll_lead's check-then-insert against the partial unique index
+                # and race on the INSERT — one hits IntegrityError. A plain
+                # `except: pass` left that swallowed error poisoning the whole
+                # session, so the caller's own later db.commit() raised
+                # PendingRollbackError instead, surfacing as an opaque 500 with
+                # no trace back to here. A bare db.rollback() would fix that but
+                # also discard this function's own `db.add(entry)` above and
+                # anything the caller already changed earlier in the same
+                # request (e.g. the lead's status-transition itself) — a
+                # SAVEPOINT lets only the trigger-check's own failed work roll
+                # back, leaving the rest of the session intact for the caller's
+                # eventual commit (guaranteed by the flush above). This is the
+                # one shared choke point every caller of log_status_change
+                # routes through, so fixing it here covers all of them.
+                with db.begin_nested():
+                    # Entry only on a real change — a re-save of the status the lead is
+                    # already in must not enroll (creation, from None, still counts).
+                    # check_entry_triggers also guards this for any other caller.
+                    if from_status != to_status:
+                        check_entry_triggers(db, "status_changed", lead, commit=False,
+                                             to_status=to_status, from_status=from_status)
+                    # Phase 1 (Gap: conditional branching) — a lead currently parked on
+                    # a condition node waiting for this status change gets its early-exit
+                    # signal here too. commit=False for the same reason as above; the
+                    # 30s poller tick is the guaranteed backstop for the actual branch.
+                    check_exit_triggers(db, "status_changed", lead, commit=False, to_status=to_status)
         except Exception as e:
+            # Note: no db.rollback() here — the SAVEPOINT's own context
+            # manager (above) already rolled back exactly the trigger-check's
+            # failed work when the exception propagated out of the `with`
+            # block. A bare db.rollback() here would roll back the ENTIRE
+            # outer transaction instead, discarding `entry` and anything else
+            # already flushed earlier in this request — the opposite of what
+            # this fix is for.
             logger.error(f"[JourneyEngine] trigger check failed for lead {lead_id}: {e}")
 
     return entry
 
 
-def assign_lead(user, lead) -> bool:
+def record_lead_history(db, lead_id, field_name, old_value, new_value, changed_by="system"):
+    """Explicit LeadFieldHistory row for changes the before_flush listener cannot
+    see (tags and assignees live in association tables, not Lead columns)."""
+    db.add(LeadFieldHistory(lead_id=lead_id, field_name=field_name,
+                            old_value=old_value, new_value=new_value, changed_by=changed_by))
+
+
+def assign_lead(user, lead, reason=None, actor_id=None) -> bool:
     """Assign `lead` to `user` if not already assigned, syncing lead.pod_id to
     the assignee's pod. Every direct-assignment call site should route through
     this — a lead assigned outside a pod-based round-robin (which sets pod_id
     itself) previously left pod_id untouched, so it silently fell out of every
     pod-scoped query (analytics, pod dashboards) despite having an active SDR.
-    Returns True if the assignment happened."""
+    Returns True if the assignment happened.
+
+    RCA 2026-09-29: this used to only append, so every "reassign" (bulk
+    assign, Leads Hub row/bulk bar, POD assign, upload re-import) left the
+    previous SDR on the lead too — 78 prod leads had 2+ SDRs, 49 of them from
+    one 2026-09-23 bulk reassignment. It now replaces any existing assignee
+    with the SAME role, so a lead has at most one SDR (and one AE).
+
+    Before a meeting is booked a lead has ONE owner — whoever was assigned
+    last, any role (user's rule, 2026-09-29: 141 prod leads kept their AE after
+    a 31 Aug reassignment to an SDR). Once a meeting exists, an AE taking over
+    keeps the SDR who booked it (same-role replace only)."""
     if lead in user.assigned_leads:
         return False
+    # Ownership history (ownership_history.py): tell the lead_assignments trigger WHY/BY WHOM. Metadata only.
+    if reason:
+        _sess = attributes.instance_state(lead).session
+        if _sess is not None:
+            from ownership_history import set_assignment_context
+            set_assignment_context(_sess, reason, actor_id)
+    # ponytail: statuses outside the pipeline (Disqualified, Pending Review…)
+    # fall back to "has a meeting ever been booked".
+    pre_meeting = STAGE_GROUP.get(lead.status, 0) == 0 and lead.meeting_scheduled_at is None
+    for other in [u for u in lead.assigned_users if pre_meeting or u.role == user.role]:
+        lead.assigned_users.remove(other)
     user.assigned_leads.append(lead)
     lead.pod_id = user.pod_id
     return True
@@ -523,19 +893,53 @@ class DisqualifyRequest(Base):
     rejection_reason  = Column(String, nullable=True)
 
 
+class ReassignRequest(Base):
+    """Maker-checker approval for moving an already-owned lead to the requester.
+    Created from the duplicate-lead 409 (an SDR tried to add a contact another rep
+    already owns); Pod Admin (or above) approves/rejects — see
+    routes/reassign_routes.py. Mirrors DisqualifyRequest."""
+    __tablename__ = "reassign_requests"
+
+    id                   = Column(String, primary_key=True, default=generate_uuid)
+    lead_id              = Column(String, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    requested_by         = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    requested_at         = Column(DateTime(timezone=True), server_default=func.now())
+    note                 = Column(String, nullable=True)
+    status               = Column(String, nullable=False, default="pending")  # pending|approved|rejected
+    reviewed_by          = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at          = Column(DateTime(timezone=True), nullable=True)
+    rejection_reason     = Column(String, nullable=True)
+
+
+class SavedView(Base):
+    """A person's saved Leads filter set ("view"). Per user and server-side so it follows them to any browser or
+    device — it used to live in that one browser's localStorage and silently vanished elsewhere."""
+    __tablename__ = "saved_views"
+
+    id         = Column(String, primary_key=True, default=generate_uuid)
+    user_id    = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name       = Column(String, nullable=False)
+    filters    = Column(_JSONVariant, nullable=True)
+    keys       = Column(_JSONVariant, nullable=True)
+    search     = Column(String, nullable=True)
+    scope      = Column(String, nullable=False, default="leads", server_default="leads")   # "leads" (Leads page) | "digest" (Team Digest: keys = the KPI tiles, in order)
+    shared     = Column(Boolean, nullable=False, default=False, server_default="false")   # a Team Digest view an admin shared with everyone (read-only for them)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class SmsLog(Base):
     """Records every outbound / inbound SMS or WhatsApp message — both the
-    Cadence engine's automated sends and the RCM Widget's manual sends
+    Cadence engine's automated sends and the Alternate Messenger Widget's manual sends
     write here, so one table backs the Activity feed regardless of which
     triggered it or which provider carried it."""
     __tablename__ = "sms_logs"
 
     id           = Column(String, primary_key=True, default=generate_uuid)
-    message_id   = Column(String, nullable=True, index=True)  # RCM messageId (rcm-xxx) or temp_unique_id (Widget)
+    message_id   = Column(String, nullable=True, index=True)  # Alternate Messenger messageId (alternatecrm-xxx) or temp_unique_id (Widget)
     lead_id      = Column(String, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id      = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     direction    = Column(String, nullable=False)              # "outbound" | "inbound"
-    status       = Column(String, default="sent", nullable=False)  # "sent" | "delivered" | "failed"
+    status       = Column(String, default="sent", nullable=False)  # outbound: "sent" | "delivered" | "failed"; inbound: "received"
     phone_number = Column(String, nullable=True)               # recipient (outbound) or sender (inbound)
     message_text = Column(Text, nullable=True)
     sent_at      = Column(DateTime(timezone=True), server_default=func.now(), index=True)
@@ -545,9 +949,14 @@ class SmsLog(Base):
     journey_node_id = Column(String, nullable=True)
     # v10.9.13: Widget persistence + provider-agnostic groundwork.
     channel         = Column(String, default="sms", nullable=False)       # "sms" | "whatsapp"
-    provider        = Column(String, default="rcm", nullable=False)  # "rcm" | "aircall" (future)
-    conversation_id = Column(String, nullable=True)  # RCM Converse Desk thread id (Widget sends only)
+    provider        = Column(String, default="messenger", nullable=False)  # "messenger" | "aircall" (future)
+    conversation_id = Column(String, nullable=True)  # Alternate Messenger Converse Desk thread id (Widget sends only)
     template_name   = Column(String, nullable=True)  # WhatsApp MTM template used, if any
+    # RCA 2026-08-25: status="failed" alone gives no way to tell a session-
+    # expired rejection from a bad template or an invalid number apart — every
+    # failure looked identical in the UI. Populated from the provider's own
+    # error string wherever one is available.
+    failure_reason  = Column(Text, nullable=True)
 
     lead = relationship("Lead", foreign_keys=[lead_id], backref="sms_logs")
 
@@ -568,16 +977,33 @@ class SyncSettings(Base):
     record_type_ids  = Column(Text, nullable=True)
     sf_push_stage    = Column(String, default="Meeting Scheduled")   # Stage at which leads are pushed to SF
     sync_direction   = Column(String, default="push_only")  # "push_only" (CRM→SF) or "both" (2-way)
+    # CSM Portal foundation: Opportunity/Account sync, separate from Lead's
+    # sync_direction above — scoped narrowly to stage + close_date, not the
+    # whole Opportunity object. Same "push_only"/"both" semantics.
+    opportunity_sync_direction = Column(String, default="push_only")
+    # Master off switch for the AE/CSM action-triggered pushes (close/update/
+    # renewal-create) — deliberately separate from opportunity_sync_direction
+    # above, which only ever gated the scheduled bulk pull, never these
+    # per-action pushes. Defaults OFF: a fresh org gets zero Salesforce
+    # write-back until an admin has verified the field mapping (see
+    # ae_pipeline_routes.py's stage-options endpoint) and turns it on.
+    opportunity_writeback_enabled = Column(Boolean, default=False, nullable=False, server_default="false")
     allow_multi_pod_sdr = Column(Boolean, default=False, nullable=False, server_default="false")  # Allow SDR in multiple pods
 
     # Phase 3: Configurable caps & attempt limits
-    active_lead_cap                  = Column(Integer, default=5, nullable=False)     # global default SDR lead cap
+    # RCA 2026-09-22: no longer enforced (deprecated org-wide) — kept only as
+    # the source for admin_user_routes.py's informational per-user
+    # `max_active` display, which BulkActionBar.jsx uses to softly label/rank
+    # SDRs in the manual assign picker. Never blocks an assignment anymore.
+    active_lead_cap                  = Column(Integer, default=5, nullable=False)
     max_call_attempts                = Column(Integer, default=5, nullable=False)     # warn after this many No Answer/Voicemail
     min_call_attempts_for_unreachable = Column(Integer, default=3, nullable=False)    # min before allowing Unreachable
     sync_declined_to_salesforce      = Column(Boolean, default=False, nullable=False) # push Customer Declined to SF
     sync_unreachable_to_salesforce   = Column(Boolean, default=False, nullable=False) # push Unreachable to SF
     terminal_lead_cooldown_days      = Column(Integer, default=30, nullable=False)    # days before terminal leads recycle
-    conversation_min_seconds         = Column(Integer, default=30, nullable=False, server_default="30")  # Analytics "Conversations" column threshold
+    conversation_min_seconds         = Column(Integer, default=120, nullable=False, server_default="120")  # shared Connect Rate / Conversations disposition-unknown fallback threshold (raised from 30 on 2026-08-31)
+    # Team Digest "ICP fit": JSON list of words; a lead whose industry contains one of them is in the ideal customer profile. NULL = the default ("health").
+    icp_keywords = Column(Text, nullable=True)
 
     # AI / LLM settings (Super Admin configurable)
     llm_provider    = Column(String, default="groq", nullable=False)       # "groq" | "gemini" | "openai"
@@ -588,30 +1014,36 @@ class SyncSettings(Base):
     require_research_before_calling = Column(Boolean, default=False, nullable=False, server_default="false")  # False = gate off (default); True = 4 fields required
 
     # Dialer / Calling provider settings (Super Admin configurable)
-    dialer_provider      = Column(String, default="none", nullable=False)    # "none" | "aircall" | "rcm"
+    dialer_provider      = Column(String, default="none", nullable=False)    # "none" | "aircall" | "messenger"
     dialer_api_id        = Column(String, nullable=True)                     # Provider API ID (e.g. Aircall API ID)
     dialer_api_token     = Column(Text, nullable=True)                       # Encrypted provider API token
     dialer_webhook_token = Column(String, nullable=True)                     # Webhook verification token
+    dialer_webhook_url_override = Column(String, nullable=True)              # Admin override for the displayed Webhook URL; NULL = auto-derived from this deploy's own base URL
 
     # V45: Aircall Everywhere (embedded browser softphone) — org-wide kill switch.
     # Default False until piloted; SDR-level adoption is client-side (localStorage),
     # not a DB column — see docs plan for the reasoning.
     aircall_everywhere_enabled = Column(Boolean, default=False, nullable=False, server_default="false")
 
-    # RCM / RCM Messaging messaging component settings (Super Admin configurable)
-    rcm_enabled     = Column(Boolean, default=False, nullable=False, server_default="false")
-    rcm_base_url    = Column(String, default="https://app.rcm-messaging.com", nullable=True)
-    rcm_api_key     = Column(String, nullable=True)                   # RCM Messaging API key
-    rcm_user_id     = Column(String, nullable=True)                   # RCM Messaging user ID
-    rcm_account_id  = Column(String, nullable=True)                   # RCM account ID (for Converse Desk API)
-    rcm_sender_id   = Column(String, nullable=True)                   # WhatsApp/SMS sender number e.g. "918956778474"
-    rcm_access_token = Column(Text, nullable=True)                    # JWT access token (encrypted)
+    # Alternate Messenger / Messaging Provider messaging component settings (Super Admin configurable)
+    messenger_enabled     = Column(Boolean, default=False, nullable=False, server_default="false")
+    messenger_base_url    = Column(String, default="https://app.messaging_provider.com", nullable=True)
+    # AES-256-GCM encrypted (crypto.py), like dialer_api_token / llm_api_key
+    # / messenger_access_token / public_api_key. Column name is unchanged, so
+    # the plaintext `messenger_api_key` property below keeps all ~15 existing
+    # readers working — read through that, never this. Safe as a Python-level
+    # property because nothing filters on this column in SQL (checked).
+    messenger_api_key_encrypted = Column("messenger_api_key", String, nullable=True)
+    messenger_user_id     = Column(String, nullable=True)                   # Messaging Provider user ID
+    messenger_account_id  = Column(String, nullable=True)                   # Alternate Messenger account ID (for Converse Desk API)
+    messenger_sender_id   = Column(String, nullable=True)                   # WhatsApp/SMS sender number e.g. "918956778474"
+    messenger_access_token = Column(Text, nullable=True)                    # JWT access token (encrypted)
 
     # Messaging provider selection (Widget manual sends + Cadence WhatsApp/SMS
-    # channel both resolve through this) — "rcm" or "aircall". Aircall
+    # channel both resolve through this) — "messenger" or "aircall". Aircall
     # messaging reuses the same dialer_api_id/dialer_api_token credentials
     # already stored above for calling; only the send-from number differs.
-    messaging_provider          = Column(String, default="rcm", nullable=False, server_default="rcm")
+    messaging_provider          = Column(String, default="messenger", nullable=False, server_default="messenger")
     aircall_messaging_number_id = Column(String, nullable=True)              # Aircall number_id messages send from
 
     # Cadence/Messaging Sandbox — every send to an is_test Lead is redirected
@@ -621,15 +1053,25 @@ class SyncSettings(Base):
 
     # Public API (CMT ↔ SF bridge) — V23
     public_api_key   = Column(Text, nullable=True)                           # AES-256-GCM encrypted key for external tool access
+    # Usage tracking for the Public API / MCP bridge — incremented on every
+    # successful X-API-Key auth (backend/auth.py::require_api_key), surfaced
+    # in the Control Center card so admins can see if it's actually in use.
+    public_api_call_count   = Column(Integer, default=0, nullable=False, server_default="0")
+    public_api_last_used_at = Column(DateTime(timezone=True), nullable=True)
 
     # V24: Aircall headless sync — tracks last successful nightly catch-up
     aircall_last_sync_at = Column(DateTime(timezone=True), nullable=True)   # UTC timestamp of last successful Aircall pull
+    # v11.5.3: the nightly catch-up + startup catch-up together were pulling
+    # every org's full Aircall call history on every restart, adding load the
+    # team needs to pause without ripping the job out. Defaults True (today's
+    # behavior unchanged) — mirrors klenty_enabled's on/off switch below.
+    aircall_sync_enabled = Column(Boolean, default=True, nullable=False, server_default="true")
 
-    # V25: RCM Contact Center
-    rcm_from_number = Column(String, nullable=True)                       # E.164 business caller ID for RCM calls
-    rcm_last_sync_at = Column(DateTime(timezone=True), nullable=True)     # UTC timestamp of last successful RCM pull
+    # V25: Alternate Messenger Contact Center
+    messenger_from_number = Column(String, nullable=True)                       # E.164 business caller ID for Alternate Messenger calls
+    messenger_last_sync_at = Column(DateTime(timezone=True), nullable=True)     # UTC timestamp of last successful Alternate Messenger pull
 
-    # V28: Separate dialer credentials (Contact Center may use a different RCM account)
+    # V28: Separate dialer credentials (Contact Center may use a different Alternate Messenger account)
     dialer_use_shared_creds = Column(Boolean, default=True, nullable=False, server_default="true")  # True = reuse messaging creds
     dialer_base_url         = Column(String, nullable=True)                        # Contact Center base URL (when separate env)
     dialer_api_key          = Column(Text, nullable=True)                        # Encrypted Contact Center API key (when separate)
@@ -649,8 +1091,13 @@ class SyncSettings(Base):
     # V39: Aircall tag → outcome mapping (JSON object, admin-configurable)
     aircall_tag_mapping = Column(Text, nullable=True)                           # JSON: {"No Answer":"No Answer","Meeting Booked":"Meeting Confirmed",...}
 
-    # V33: RCM Floating Widget settings
-    widget_enabled          = Column(Boolean, default=False, nullable=False, server_default="false")
+    # V33: Alternate Messenger Floating Widget settings
+    # v11.10.0: widget_enabled removed — it was stored, PATCH-able and rendered
+    # as an "Enable Conversations Tab" toggle, but nothing in the mount path
+    # ever read it, so flipping it did nothing. Org-level messaging on/off is
+    # messenger_enabled; per-SDR access is users.sms_enabled/whatsapp_enabled.
+    # The DB column is left in place (dropping columns is not worth the risk);
+    # it is simply no longer mapped or exposed.
     widget_position         = Column(String, default="bottom-right", nullable=False)  # "bottom-right" | "bottom-left"
     widget_theme            = Column(String, default="dark", nullable=False)           # "dark" | "light"
     widget_allowed_domains  = Column(Text, nullable=True)                             # JSON array of whitelisted domains (Phase 2)
@@ -661,6 +1108,29 @@ class SyncSettings(Base):
     klenty_enabled       = Column(Boolean, default=False, nullable=False, server_default="false")
     klenty_api_key       = Column(Text, nullable=True)                                # Encrypted Klenty API key (x-API-key header)
     klenty_last_sync_at  = Column(DateTime(timezone=True), nullable=True)             # UTC timestamp of last successful Klenty pull
+
+    # Instantly.ai campaign/lead-engagement pull sync (polling-only v1 — see
+    # docs/RELEASES.md). Unlike Klenty's scattered encrypt/decrypt-at-call-site
+    # pattern, the key uses the same transparent property pair as
+    # messenger_api_key below — every caller just reads/writes plaintext.
+    instantly_enabled           = Column(Boolean, default=False, nullable=False, server_default="false")
+    instantly_api_key_encrypted = Column("instantly_api_key", Text, nullable=True)
+    instantly_last_sync_at      = Column(DateTime(timezone=True), nullable=True)      # UTC timestamp of last clean full sync
+
+    # Send-side (v13.3.0): a journey's Instantly-sequence node hands sending off
+    # to Instantly's own campaign engine — see JourneyInstantlyCampaign/
+    # JourneyInstantlyEnrollment above. Webhook secret uses the same transparent
+    # property pair as instantly_api_key; never user-supplied (generated
+    # server-side on first registration), never returned after that.
+    instantly_webhook_secret_encrypted = Column("instantly_webhook_secret", Text, nullable=True)
+    instantly_webhook_id               = Column(String, nullable=True)  # Instantly's own webhook object id, for idempotent re-register/delete
+    instantly_mail_cursor              = Column(Text, nullable=True)    # JSON {"received": iso, "sent": iso} — v13.8.0 mail-sync watermark per direction
+    instantly_sending_accounts         = Column(Text, nullable=True)    # JSON list of mailbox emails to restrict campaigns to; NULL = all active accounts
+    # v13.4.0 Claude connector (routes/mcp_routes.py): off = read-only tools
+    # only. A Super Admin switches it on in Settings — no rebuild needed.
+    mcp_write_enabled                  = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Who may connect Claude: False = Super Admins only (default while it's new), True = every user.
+    mcp_everyone_enabled               = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     # v10.9.5: email sync health — previously only ran as a side-effect of a
     # user opening a lead's Email tab (no scheduler, no webhook), so a reply
@@ -677,6 +1147,151 @@ class SyncSettings(Base):
 
     updated_at       = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    @property
+    def messenger_api_key(self):
+        """Plaintext key, decrypted on read. A pre-encryption row fails to
+        decrypt and *is* the key, so return it rather than disabling every
+        SMS/WhatsApp send until the backfill migration catches up.
+        """
+        raw = self.messenger_api_key_encrypted
+        if not raw:
+            return raw
+        from crypto import decrypt_token
+        try:
+            return decrypt_token(raw)
+        except Exception:
+            return raw
+
+    @messenger_api_key.setter
+    def messenger_api_key(self, value):
+        if not value:
+            self.messenger_api_key_encrypted = value
+            return
+        from crypto import encrypt_token
+        self.messenger_api_key_encrypted = encrypt_token(value)
+
+    @property
+    def instantly_api_key(self):
+        """Plaintext key, decrypted on read — same shape as messenger_api_key above."""
+        raw = self.instantly_api_key_encrypted
+        if not raw:
+            return raw
+        from crypto import decrypt_token
+        try:
+            return decrypt_token(raw)
+        except Exception:
+            return raw
+
+    @instantly_api_key.setter
+    def instantly_api_key(self, value):
+        if not value:
+            self.instantly_api_key_encrypted = value
+            return
+        from crypto import encrypt_token
+        self.instantly_api_key_encrypted = encrypt_token(value)
+
+    @property
+    def instantly_webhook_secret(self):
+        """Plaintext secret, decrypted on read — same shape as instantly_api_key above."""
+        raw = self.instantly_webhook_secret_encrypted
+        if not raw:
+            return raw
+        from crypto import decrypt_token
+        try:
+            return decrypt_token(raw)
+        except Exception:
+            return raw
+
+    @instantly_webhook_secret.setter
+    def instantly_webhook_secret(self, value):
+        if not value:
+            self.instantly_webhook_secret_encrypted = value
+            return
+        from crypto import encrypt_token
+        self.instantly_webhook_secret_encrypted = encrypt_token(value)
+
+
+class ReportConfig(Base):
+    """v11.4.0: a named, saved Automated Report — supersedes the single
+    org-wide report_schedule_* columns SyncSettings briefly carried (removed
+    same day). Multiple reports can coexist, each with its own filters,
+    schedule, timezone, and recipients.
+
+    date_range_rule is a RULE ("previous_7_days"), not a stored date pair —
+    resolved into an actual (start, end) at send time by
+    report_service.resolve_date_range(), and that resolved period is what
+    gets written to the ReportExecution row, so historical sends stay
+    auditable even as "previous 7 days" keeps meaning something different
+    every week."""
+    __tablename__ = "report_configs"
+
+    id            = Column(String, primary_key=True, default=generate_uuid)
+    name          = Column(String, nullable=False)
+    owner_id      = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    enabled       = Column(Boolean, default=True, nullable=False, server_default="true")
+
+    # Components — JSON array of component_id strings, in display/send order.
+    # See report_service.COMPONENTS for the registry these ids resolve against.
+    components    = Column(Text, nullable=False, default="[]")
+
+    # Filters — NULL means "All" for each axis, matching the Analytics Hub's own convention.
+    pod_id        = Column(String, ForeignKey("pods.id", ondelete="SET NULL"), nullable=True)
+    upload_log_id = Column(String, nullable=True)
+    sdr_id        = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Date range rule
+    date_range_rule = Column(String, default="previous_7_days", nullable=False)  # previous_1_day | previous_7_days | previous_calendar_month | custom
+    custom_start    = Column(DateTime(timezone=True), nullable=True)             # only used when date_range_rule == "custom"
+    custom_end      = Column(DateTime(timezone=True), nullable=True)
+
+    # Schedule — send_hour/send_minute are LOCAL time in `timezone`, not UTC.
+    frequency     = Column(String, default="weekly", nullable=False)   # daily | weekly | monthly
+    weekday       = Column(Integer, default=0, nullable=False)         # 0=Monday..6=Sunday, used when frequency="weekly"
+    day_of_month  = Column(Integer, default=1, nullable=False)         # 1-31, used when frequency="monthly"; clamped to the last real day of a shorter month
+    timezone      = Column(String, default="UTC", nullable=False)      # IANA zone name, e.g. "Asia/Kolkata"
+    send_hour     = Column(Integer, default=9, nullable=False)         # 0-23, local to `timezone`
+    send_minute   = Column(Integer, default=0, nullable=False)         # 0-59
+
+    # Recipients — JSON arrays of email addresses. Ignored when
+    # send_to_all_users is set — that report resolves its recipient list
+    # dynamically at send time (report_service.execute_report) to every
+    # current CRM user, so it never goes stale as people join/leave.
+    to_recipients  = Column(Text, nullable=True)
+    cc_recipients  = Column(Text, nullable=True)
+    bcc_recipients = Column(Text, nullable=True)
+    sender_user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # whose connected mailbox sends it
+
+    # v11.5.9: the one singleton "Weekly Changelog Digest" report — an admin
+    # toggle (off by default), not a normal user-configured report. See
+    # routes/report_routes.py's /reports/changelog-digest endpoints.
+    send_to_all_users = Column(Boolean, default=False, nullable=False, server_default="false")
+
+    include_csv    = Column(Boolean, default=True, nullable=False, server_default="true")
+
+    last_run_at    = Column(DateTime(timezone=True), nullable=True)
+    created_at     = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ReportExecution(Base):
+    """One row per send attempt (scheduled or Run Now) of a ReportConfig —
+    the audit trail: what period it covered, what happened, why it failed."""
+    __tablename__ = "report_executions"
+
+    id            = Column(String, primary_key=True, default=generate_uuid)
+    report_id     = Column(String, ForeignKey("report_configs.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    status        = Column(String, nullable=False, default="processing")  # processing | sent | failed | skipped
+    triggered_by  = Column(String, nullable=False, default="scheduler")    # scheduler | manual (Run Now)
+
+    started_at              = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at            = Column(DateTime(timezone=True), nullable=True)
+    reporting_period_start  = Column(DateTime(timezone=True), nullable=True)
+    reporting_period_end    = Column(DateTime(timezone=True), nullable=True)
+
+    recipients_snapshot = Column(Text, nullable=True)   # JSON — recipients AT SEND TIME, survives later edits to the report
+    failure_reason      = Column(Text, nullable=True)
+
 
 class Tag(Base):
     """A label applied to leads at upload time — independent of any single
@@ -686,6 +1301,55 @@ class Tag(Base):
     id         = Column(String, primary_key=True, default=generate_uuid)
     name       = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CallList(Base):
+    """A user-curated, org-wide-visible dial list (Power Dialer source) —
+    any SDR/AE/Admin can create one and add leads to it. Unlike Tag (admin
+    curated, applied at upload time), this is created ad hoc by whoever
+    wants to group leads for calling — hence created_by, absent on Tag."""
+    __tablename__ = "call_lists"
+
+    id         = Column(String, primary_key=True, default=generate_uuid)
+    name       = Column(String, nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class SfFieldMapping(Base):
+    """An EXTRA Alternate CRM -> Salesforce Lead field mapping added by a Super Admin (the built-in ones live in salesforce.py).
+    See services/sf_field_mapping.py."""
+    __tablename__ = "sf_field_mappings"
+
+    id         = Column(String, primary_key=True, default=generate_uuid)
+    lead_field = Column(String, nullable=False, unique=True)     # a key of sf_field_mapping.LEAD_FIELDS
+    sf_field   = Column(String, nullable=False, unique=True)     # Salesforce API name, e.g. Budget__c
+    sf_type    = Column(String, nullable=True)                   # Salesforce field type when it was checked (double, boolean, string ...)
+    verified   = Column(Boolean, nullable=False, default=False)  # True = checked against Salesforce's own field list
+    enabled    = Column(Boolean, nullable=False, default=True)
+    created_by = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    builtin    = Column(Boolean, nullable=False, default=False, server_default="false")   # True = an override of a built-in mapping (lead_field is a key of salesforce.LEAD_FIELD_MAP)
+
+
+class AuditEvent(Base):
+    """A permanent who-did-what-when record for sensitive actions: data exports, changes to who may export, and Salesforce
+    field-mapping edits. Unlike user_activity_logs it is never pruned, and the actor's name/email are copied in so the trail
+    survives a user being removed. See services/audit.py."""
+    __tablename__ = "audit_events"
+
+    id          = Column(String, primary_key=True, default=generate_uuid)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    actor_id    = Column(String, nullable=True, index=True)       # not a foreign key on purpose: the row outlives the user
+    actor_email = Column(String, nullable=True)
+    actor_name  = Column(String, nullable=True)
+    actor_role  = Column(String, nullable=True)
+    category    = Column(String, nullable=False, index=True)      # export | export_access | sf_mapping
+    action      = Column(String, nullable=False)
+    summary     = Column(String, nullable=False)                  # one plain sentence shown in the list
+    detail_json = Column(Text, nullable=True)
 
 
 class LeadUploadLog(Base):
@@ -726,6 +1390,7 @@ class SalesforceIntegrationLog(Base):
     request_payload   = Column(Text, nullable=True)             # JSON
     response_payload  = Column(Text, nullable=True)             # JSON
     source_system     = Column(String, default="api")           # sync_button, background_push, call_completed, manual_create
+    direction         = Column(String, default="outbound")      # outbound (push to SF) / inbound (pull from SF)
 
 
 class LoginLog(Base):
@@ -797,6 +1462,225 @@ class SalesforceConnection(Base):
     is_active             = Column(Boolean, default=True, nullable=False)
 
     connected_by = relationship("User", foreign_keys=[connected_by_user_id])
+
+
+class Account(Base):
+    """Salesforce Account — CSM Portal foundation. Kept thin: only the
+    fields Portfolio/Account-360/health-score actually consume, not a full
+    mirror of SF's Account schema. Pulled read-only (see
+    salesforce.sync_accounts_from_salesforce); assigned_csm_id is set
+    locally (AE handover or Super Admin assignment), never synced from SF.
+    """
+    __tablename__ = "accounts"
+
+    id               = Column(String, primary_key=True, default=generate_uuid)
+    sf_account_id    = Column(String, unique=True, index=True, nullable=True)
+    name             = Column(String, nullable=False)
+    industry         = Column(String, nullable=True)
+    owner_user_id    = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Raw SF Owner identity, stored regardless of whether owner_user_id could
+    # be resolved — SF's Account Owner is often someone with no Alternate CRM
+    # login at all, so the UI needs something to show even with no match.
+    # Backfilled onto owner_user_id automatically once a matching user
+    # registers — see salesforce.backfill_sf_identity_links.
+    sf_owner_email   = Column(String, nullable=True)
+    sf_owner_name    = Column(String, nullable=True)
+    customer_since   = Column(DateTime(timezone=True), nullable=True)
+    # CSM Portal: independent of Pods — a CSM's account portfolio is a direct
+    # assignment, not pod membership (see actor.py's is_csm doc comment).
+    assigned_csm_id  = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Same raw-identity pattern as sf_owner_* above, for Account_Manager_Lookup__c.
+    sf_csm_email     = Column(String, nullable=True)
+    sf_csm_name      = Column(String, nullable=True)
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    last_synced_at   = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Launch-readiness gap #5: manual escape hatch for the 2-factor health
+    # score — computed score stays visible, this overrides the displayed
+    # tier without hiding the underlying signal (see csm_portal_routes.py).
+    manual_health_tier    = Column(String, nullable=True)  # "Critical" | "At Risk" | "Healthy"
+    health_override_by    = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    health_override_at    = Column(DateTime(timezone=True), nullable=True)
+    health_override_reason = Column(Text, nullable=True)
+
+    owner       = relationship("User", foreign_keys=[owner_user_id])
+    assigned_csm = relationship("User", foreign_keys=[assigned_csm_id])
+
+
+class AccountStakeholder(Base):
+    """Salesforce Contact synced onto an Account — CSM Portal stakeholder
+    mapping (CSM feedback 2026-09-17, item #7: POC/Billing/Champion mapping
+    + "new contact" alerts). SF's Contact object has no field distinguishing
+    POC/Billing/Champion (checked via Contact.describe()'s field list on
+    2026-09-17 — closest candidates were free-text Title and a generic
+    Primary__c checkbox, neither reliable enough to auto-map), so `role` is
+    never written by the sync — it's a Alternate CRM-only manual tag the CSM
+    applies, same escape-hatch pattern as Account.manual_health_tier.
+    sf_created_at is SF's own Contact.CreatedDate, used to flag a "recently
+    added" stakeholder without needing our own first-seen bookkeeping.
+    """
+    __tablename__ = "account_stakeholders"
+
+    id             = Column(String, primary_key=True, default=generate_uuid)
+    account_id     = Column(String, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    sf_contact_id  = Column(String, unique=True, index=True, nullable=True)
+    name           = Column(String, nullable=False)
+    email          = Column(String, nullable=True)
+    phone          = Column(String, nullable=True)
+    title          = Column(String, nullable=True)
+    role           = Column(String, nullable=True)  # "POC" | "Billing" | "Champion" | "Decision Maker" — CSM-set only
+    sf_created_at  = Column(DateTime(timezone=True), nullable=True)
+    last_synced_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    account = relationship("Account")
+
+
+class AccountMilestone(Base):
+    """Engagement cadence timeline (CSM feedback 2026-09-17, item #8): OB,
+    Go-Live, QBRs, Renewal — logged manually by the CSM, same "Portal is the
+    source of truth for anything SF doesn't structure" reasoning as
+    manual_health_tier and the renewal-stage kanban. No SF object backs this
+    (checked the Contact field dump on 2026-09-17 while scoping item #7 —
+    nothing QBR-shaped exists there either), so this is portal-native.
+
+    One flat table for both milestone flavors the CSM described rather than
+    a type per flavor: `ae_name`/`use_cases` are OB-flavored fields,
+    `cs_name`/`summary`/`action_items` are QBR-flavored — both just sit
+    nullable depending on `milestone_type`. poc_stakeholder_ids is a
+    comma-joined list of AccountStakeholder.id (same semicolon/comma-joined-
+    text pattern as Opportunity.standard_product_names) rather than a join
+    table, since it's a small manually-picked set, not a queried relationship.
+    """
+    __tablename__ = "account_milestones"
+
+    id                  = Column(String, primary_key=True, default=generate_uuid)
+    account_id          = Column(String, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    milestone_type      = Column(String, nullable=False)  # "Onboarding" | "Go-Live" | "QBR" | "Renewal" | "Custom"
+    label               = Column(String, nullable=False)  # e.g. "QBR 1", "Go-Live" — the timeline's display name
+    milestone_date      = Column(DateTime(timezone=True), nullable=False)
+    ae_name             = Column(String, nullable=True)
+    use_cases           = Column(Text, nullable=True)
+    cs_name             = Column(String, nullable=True)
+    summary             = Column(Text, nullable=True)
+    action_items        = Column(Text, nullable=True)
+    poc_stakeholder_ids = Column(Text, nullable=True)  # comma-joined AccountStakeholder.id
+    created_by          = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at          = Column(DateTime(timezone=True), server_default=func.now())
+
+    account = relationship("Account")
+
+
+class Opportunity(Base):
+    """Salesforce Opportunity — CSM Portal foundation, and the AE
+    close-deal action's SF counterpart. Bidirectional for stage + close_date
+    only (SyncSettings.opportunity_sync_direction), never the whole object —
+    see salesforce.sync_opportunities_from_salesforce.
+    """
+    __tablename__ = "opportunities"
+
+    id               = Column(String, primary_key=True, default=generate_uuid)
+    sf_opportunity_id = Column(String, unique=True, index=True, nullable=True)
+    account_id       = Column(String, ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    name             = Column(String, nullable=True)
+    amount           = Column(Float, nullable=True)
+    close_date       = Column(DateTime(timezone=True), nullable=True)
+    stage_name       = Column(String, nullable=True)   # SF's raw StageName label, display only
+    # Precedence signals for the "never regress" pull/push conflict rule —
+    # these are standard SF Opportunity fields regardless of the org's
+    # custom StageName picklist, so used instead of guessing a stage order.
+    is_closed        = Column(Boolean, default=False, nullable=False, server_default="false")
+    is_won           = Column(Boolean, default=False, nullable=False, server_default="false")
+    owner_user_id    = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    last_synced_at   = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    # Write-back visibility: the AE/CSM who edited this deal has no other way
+    # to learn a push to Salesforce failed (e.g. an invalid StageName) short
+    # of an admin checking the SF sync log — surface it directly on the row.
+    sf_push_status   = Column(String, nullable=True)   # "success" | "failed" | None (never attempted)
+    sf_push_error    = Column(Text, nullable=True)
+    sf_push_at       = Column(DateTime(timezone=True), nullable=True)
+    # Live finding, 2026-09-15: this org's Opportunity has a validation rule
+    # rejecting any move to a Closed stage unless both are filled in — a real
+    # Closed Won push was failing on FIELD_CUSTOM_VALIDATION_EXCEPTION until
+    # the AE close-deal form started collecting these. standard_product_names
+    # is semicolon-joined (Standard_Product_Name__c is a multipicklist on the
+    # SF side, and that's its wire format) rather than a separate join table —
+    # this is close-time metadata for one push, not a queryable relationship.
+    standard_product_names = Column(Text, nullable=True)
+    invoice_number   = Column(String, nullable=True)
+    lost_reason      = Column(String, nullable=True)  # this org's Opportunity_Lost_Reason__c, required only on a Lost close
+
+    account = relationship("Account", foreign_keys=[account_id])
+    owner   = relationship("User", foreign_keys=[owner_user_id])
+
+
+class ClosingBrief(Base):
+    """AE-captured deal context at Closed-Won — the source of the CSM
+    Portal's "auto-carried from AE, no form to fill" handover card.
+    One row per Opportunity. Editable by the AE until a CSM's first logged
+    touch on the account (locked=True from then on, see Phase 2's CSM
+    touch-logging), so the brief a CSM acts on doesn't shift underneath them.
+    """
+    __tablename__ = "closing_briefs"
+
+    id               = Column(String, primary_key=True, default=generate_uuid)
+    opportunity_id   = Column(String, ForeignKey("opportunities.id", ondelete="CASCADE"), unique=True, nullable=False)
+    champion_name    = Column(String, nullable=True)
+    champion_role    = Column(String, nullable=True)
+    champion_contact = Column(String, nullable=True)   # email or phone
+    promises_made    = Column(Text, nullable=True)
+    handover_notes   = Column(Text, nullable=True)
+    created_by       = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    locked           = Column(Boolean, default=False, nullable=False, server_default="false")
+    # Playbook: Champion departure — manual-trigger only, no auto-detection
+    # signal exists (no email/calendar integration). CSM flips this off.
+    champion_active  = Column(Boolean, default=True, nullable=False, server_default="true")
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at       = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    opportunity = relationship("Opportunity")
+    author      = relationship("User", foreign_keys=[created_by])
+
+
+class AccountActivity(Base):
+    """Single append-only feed for the CSM Portal: touch-logging (drives the
+    Silent-account playbook + Relationship health factor), playbook
+    executions (drives the Inbox 'time saved' estimate + weekly Digest), and
+    the Account 360 activity timeline — one table instead of three, since all
+    three are just "something happened on this account, by whom, when."
+    `kind` is a free-form tag: "csm_touch", "playbook_<key>", "health_override".
+    """
+    __tablename__ = "account_activities"
+
+    id         = Column(String, primary_key=True, default=generate_uuid)
+    account_id = Column(String, ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False)
+    kind       = Column(String, nullable=False)
+    note       = Column(Text, nullable=True)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    account = relationship("Account")
+    author  = relationship("User", foreign_keys=[created_by])
+
+
+class OpportunityCall(Base):
+    """AE call logging tagged against an Opportunity (Phase 1 — AE Pipeline).
+
+    Deliberately its own table rather than reusing CallLog: CallLog.lead_id
+    is NOT NULL, but a synced-from-SF Opportunity (especially a backfilled
+    historical one) very often has no originating Lead in Alternate CRM at all —
+    forcing a lead_id would make most Opportunity call logging impossible.
+    Feeds the CSM handover brief's call-history context (Phase 2)."""
+    __tablename__ = "opportunity_calls"
+
+    id             = Column(String, primary_key=True, default=generate_uuid)
+    opportunity_id = Column(String, ForeignKey("opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id        = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    outcome        = Column(String, nullable=False)
+    notes          = Column(Text, nullable=True)
+    called_at      = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    opportunity = relationship("Opportunity")
+    user        = relationship("User")
 
 
 class UserActivityLog(Base):
@@ -922,12 +1806,40 @@ class LeadEmailActivity(Base):
     clicked_at       = Column(DateTime(timezone=True), nullable=True)   # First link-click timestamp
     click_count      = Column(Integer, nullable=True, default=0)        # Total click count
     is_auto_reply    = Column(Boolean, nullable=True, default=False)    # inbound only — OOO/auto-responder, not a real reply
+    read_at          = Column(DateTime(timezone=True), nullable=True)   # inbound only — cleared the reply-notification bell
     attachments_json = Column(Text, nullable=True)                      # JSON: [{"id":"...","filename":"...","content_type":"...","size":123}]
     # Sales Journey linkage — NULL for non-cadence email (regular compose/reply).
     journey_id       = Column(String, ForeignKey("journeys.id", ondelete="SET NULL"), nullable=True, index=True)
     enrollment_id    = Column(String, ForeignKey("journey_enrollments.id", ondelete="SET NULL"), nullable=True, index=True)
     journey_node_id  = Column(String, nullable=True)   # which node in the graph sent this (not a separate table — lives in JSONB graph_definition)
     variant_key      = Column(String, nullable=True)    # which A/B variant this send used, if the node has variants
+    # Email Campaigns linkage — NULL for non-campaign email, mirrors journey_id.
+    campaign_id      = Column(String, ForeignKey("email_campaigns.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Instantly.ai pull sync: this table's existing columns (direction,
+    # subject, body_preview, from_email/to_email, opened_at/open_count,
+    # clicked_at/click_count, is_auto_reply, read_at) generalize cleanly to
+    # Instantly events, so no sibling table — just a discriminator plus
+    # Instantly's own identifiers. instantly_campaign_id is Instantly's
+    # REMOTE campaign id (plain string) — distinct from campaign_id above,
+    # which FKs our internal email_campaigns table.
+    source               = Column(String, nullable=False, default="nylas", server_default="nylas")
+    instantly_lead_id    = Column(String, nullable=True, index=True)
+    instantly_campaign_id = Column(String, nullable=True)
+    # v13.8.0 — one row per real Instantly email (GET /api/v2/emails), keyed by
+    # Instantly's own email id (partial unique index in migrations.py), so a
+    # replayed page or an overlapping sync window can never double-insert.
+    # Rows without it are engagement counters (opens/clicks) or pre-v13.8.0 rows.
+    instantly_email_id   = Column(String, nullable=True)
+    instantly_thread_id  = Column(String, nullable=True)
+    instantly_step       = Column(Integer, nullable=True)    # sequence step inside the Instantly campaign
+    instantly_eaccount   = Column(String, nullable=True)     # the Instantly sending mailbox
+
+    __table_args__ = (
+        Index("idx_lea_instantly_email_id", "instantly_email_id", unique=True,
+              postgresql_where=text("instantly_email_id IS NOT NULL"),
+              sqlite_where=text("instantly_email_id IS NOT NULL")),
+    )
 
     lead = relationship("Lead", backref="email_activities")
     user = relationship("User")
@@ -946,6 +1858,74 @@ class EmailThread(Base):
     created_at      = Column(DateTime(timezone=True), server_default=func.now())
 
     lead = relationship("Lead")
+
+
+class EmailTemplate(Base):
+    """A saved, reusable subject/body pair for Email Campaigns — merge-field
+    tokens ({{first_name}}, etc., see journey_engine/merge_fields.py) are
+    substituted at send time, not at save time."""
+    __tablename__ = "email_templates"
+
+    id         = Column(String, primary_key=True, default=generate_uuid)
+    name       = Column(String, nullable=False)
+    subject    = Column(String, nullable=False)
+    body       = Column(Text, nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class EmailCampaign(Base):
+    """One ad-hoc "send this email to this list of leads, right now" burst —
+    the bulk-send counterpart to Sales Journey's sequenced cadences. subject/
+    body are captured at send time (not a live template reference) so editing
+    or deleting a template later never changes what a past campaign says it
+    sent. Dispatch is a FastAPI BackgroundTask (routes/email_campaign_routes.py)
+    updating recipient rows as it goes — see EmailCampaignRecipient below."""
+    __tablename__ = "email_campaigns"
+
+    id               = Column(String, primary_key=True, default=generate_uuid)
+    name             = Column(String, nullable=False)
+    subject          = Column(String, nullable=False)
+    body             = Column(Text, nullable=False)
+    created_by       = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    status           = Column(String, nullable=False, default="running")  # running | completed | scheduled
+    total_recipients = Column(Integer, nullable=False, default=0)
+    sent_count       = Column(Integer, nullable=False, default=0)
+    failed_count     = Column(Integer, nullable=False, default=0)
+    skipped_count    = Column(Integer, nullable=False, default=0)
+    include_signature = Column(Boolean, default=True, nullable=False, server_default="true")  # v12.3: per-campaign opt-out of the sender's saved email signature (My Settings) — defaults on to match pre-existing manual-send behavior
+
+    # Scheduling — mirrors ReportConfig/report_service.is_due()'s exact field
+    # names (backend/models.py's ReportConfig, backend/report_service.py) so
+    # that function can be reused as-is for the "daily"/"weekly"/"monthly"
+    # cases below, rather than re-deriving the same recurrence math.
+    # frequency: "once" (default, immediate-send campaigns never touch these
+    # columns) | "scheduled_once" (a single future send) | "daily" | "weekly"
+    # | "monthly".
+    frequency        = Column(String, nullable=False, default="once")
+    scheduled_send_at = Column(DateTime(timezone=True), nullable=True)  # "scheduled_once" only — absolute UTC instant
+    weekday          = Column(Integer, nullable=True)      # 0=Mon..6=Sun — "weekly" only
+    day_of_month     = Column(Integer, nullable=True)       # 1-31, clamped for short months — "monthly" only
+    timezone         = Column(String, nullable=False, default="UTC")  # IANA name — "daily"/"weekly"/"monthly" send-time
+    send_hour        = Column(Integer, nullable=True)       # local hour — "daily"/"weekly"/"monthly"
+    send_minute      = Column(Integer, nullable=False, default=0)
+    last_run_at      = Column(DateTime(timezone=True), nullable=True)  # is_due()'s idempotency guard
+
+
+class EmailCampaignRecipient(Base):
+    """One lead's send status within one EmailCampaign. Pre-filtered
+    (skipped_dnc/skipped_no_email) rows are created up front, before dispatch
+    starts, so a campaign's total_recipients is accurate immediately —
+    dispatch only ever transitions a row from 'pending' to 'sent'/'failed'."""
+    __tablename__ = "email_campaign_recipients"
+
+    id          = Column(String, primary_key=True, default=generate_uuid)
+    campaign_id = Column(String, ForeignKey("email_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    lead_id     = Column(String, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    status      = Column(String, nullable=False, default="pending")  # pending|sent|failed|skipped_dnc|skipped_no_email
+    error       = Column(String, nullable=True)
+    sent_at     = Column(DateTime(timezone=True), nullable=True)
 
 
 class CompanyResearch(Base):
@@ -996,13 +1976,13 @@ class LeadAttachment(Base):
 
 
 class DialerCall(Base):
-    """Unified call record from any dialer provider (Aircall, RCM, etc.)."""
+    """Unified call record from any dialer provider (Aircall, Alternate Messenger, etc.)."""
     __tablename__ = "dialer_calls"
 
     id               = Column(String, primary_key=True, default=generate_uuid)
     lead_id          = Column(String, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id          = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    provider         = Column(String, nullable=False)           # "aircall" | "rcm" | "manual"
+    provider         = Column(String, nullable=False)           # "aircall" | "messenger" | "manual"
     provider_call_id = Column(String, nullable=True, index=True) # External call ID from provider
     phone_number     = Column(String, nullable=True)
     status           = Column(String, nullable=False)           # CALL_STARTED | CALL_ANSWERED | CALL_ENDED | FAILED
@@ -1020,8 +2000,8 @@ class DialerCall(Base):
     answered_at      = Column(DateTime(timezone=True), nullable=True)
     ended_at         = Column(DateTime(timezone=True), nullable=True)
     raw_payload      = Column(Text, nullable=True)              # JSON payload for debugging
-    source           = Column(String, default="rcm",      # V24: "rcm" | "aircall_direct"
-                             nullable=True, server_default="'rcm'")
+    source           = Column(String, default="alternatecrm",      # V24: "alternatecrm" | "aircall_direct"
+                             nullable=True, server_default="'alternatecrm'")
     created_at       = Column(DateTime(timezone=True), server_default=func.now())
 
     lead = relationship("Lead", backref="dialer_calls")
@@ -1042,43 +2022,83 @@ def dialer_call_event_time():
     return func.coalesce(DialerCall.started_at, DialerCall.created_at)
 
 
-def dialer_call_connected(outcome_values):
-    """True when a DialerCall counts as connected: a CRM-tagged outcome (set
-    by the SDR through RCM's own dialer) OR a raw provider disposition
-    of "ANSWERED" (each provider's own telephony signal — Klenty's synced
-    disposition field, Aircall/RCM's answered_at). Many provider-direct
-    calls never get an SDR-tagged outcome, so outcome alone reads near-0%
-    connect for them — provider_disposition is the only connect signal those
-    calls ever carry.
+# Raised 2026-08-31 from 30 to 120 — a disposition-unknown call must run
+# noticeably longer before its duration alone is trusted as evidence of a
+# real human pickup, not just a longer voicemail/hold. connected/conversation
+# stay a structural superset/subset pair only because they still share this
+# one value; do not give them independent thresholds without re-deriving
+# that guarantee (see dialer_call_connected()'s docstring, RCA 2026-08-18).
+CONVERSATION_MIN_SECONDS = 120
+
+
+def dialer_call_connected(min_seconds: int = CONVERSATION_MIN_SECONDS):
+    """True when a DialerCall represents a real, live connection.
+
+    RCA 2026-08-18: previously `outcome IN (positive-track list) OR
+    provider_disposition == "ANSWERED"` — an unconditional OR. On real
+    production data, 63% of calls the SDR explicitly logged as "No Answer"
+    (and 65% of "Wrong Number") still counted as connected purely because
+    provider_disposition said "ANSWERED" (the raw telephony signal, which
+    fires on any picked-up call leg, voicemail included). An explicit
+    SDR-logged outcome must win over that generic signal, not be
+    overridden by it.
+
+    RCA 2026-08-18 (part 2): the null-outcome fallback only trusted the
+    literal string provider_disposition == "ANSWERED", while
+    dialer_call_is_conversation()'s null-outcome branch trusts duration
+    alone — so a real 60s+ call with no SDR-tagged outcome and any other
+    (or missing) provider_disposition value counted as a conversation but
+    NOT as connected, e.g. Sumiti Dangi on 2026-08-17: 13 conversations,
+    11 connected calls, a logical impossibility a reader immediately
+    spots (production data, flagged by Viren). Duration over the same
+    threshold dialer_call_is_conversation() uses is now also sufficient
+    evidence — connected is a superset of conversation, never the
+    reverse.
+
+    2026-09-01: the provider_disposition == "ANSWERED" fallback (added by
+    the RCA above) is now removed per direct product-owner instruction —
+    Aircall's own disposition field was reported as unreliable in
+    production. Rule is now exactly dialer_call_is_conversation()'s rule:
+    an outcome outside the not-answered group means connected; with NO
+    outcome logged at all, only a real duration over min_seconds counts.
+    The two functions are now computationally identical — kept as two
+    named functions for readability/call-site clarity, not because the
+    logic differs.
     """
     return or_(
-        DialerCall.outcome.in_(outcome_values),
-        DialerCall.provider_disposition == "ANSWERED",
+        func.lower(DialerCall.outcome).notin_(NOT_ANSWERED_OUTCOMES_LOWER),
+        and_(
+            DialerCall.outcome.is_(None),
+            DialerCall.duration > min_seconds,
+        ),
     )
-
-
-CONVERSATION_MIN_SECONDS = 30
 
 
 def dialer_call_is_conversation(min_seconds: int = CONVERSATION_MIN_SECONDS):
     """True when a DialerCall counts as a real conversation (Analytics'
     "Conversations" column, added 2026-08-14).
 
-    Rule: outcome isn't a not-answered one (voicemail/no-answer/wrong number
-    — the only signal for "not a real conversation" this system has today),
-    AND duration is either unknown or over min_seconds (org-configurable via
-    SyncSettings.conversation_min_seconds; defaults to CONVERSATION_MIN_SECONDS
-    for callers — e.g. tests — that don't have a settings row to read).
+    Rule: an explicit, positive SDR outcome (anything outside the
+    not-answered group) always counts, missing duration and all — the
+    outcome itself is the evidence. With NO outcome logged at all (most
+    DialerCall rows: auto-synced, never SDR-reviewed), duration becomes
+    the *only* signal, so it must be an actual measured value over
+    min_seconds (org-configurable via SyncSettings.conversation_min_seconds;
+    defaults to CONVERSATION_MIN_SECONDS for callers — e.g. tests — that
+    don't have a settings row to read) — a real number, not a permissive
+    "duration unknown, assume yes".
 
-    Most DialerCall rows (auto-synced, no SDR-tagged outcome) fall through
-    the outcome check for free (NULL isn't "in" anything) and let duration
-    alone decide — accepted noise: a provider's voicemail pickup can itself
-    run 20-30s, and there's no reliable signal to tell that apart from a
-    short real answer without an SDR explicitly tagging "Left Voicemail".
+    RCA 2026-08-18 (part 3): previously treated NULL duration as passing
+    ("unknown or over min_seconds") even with no outcome — so a FAILED
+    call that never connected, with no outcome and no duration recorded,
+    counted as a "conversation" purely because both fields were empty.
+    Requiring a real duration when there's no outcome closes that gap and
+    keeps this a true subset of dialer_call_connected() (a call with
+    literally zero evidence — no outcome, no duration — is neither).
     """
-    return and_(
-        or_(DialerCall.outcome.is_(None), DialerCall.outcome.notin_(list(NOT_ANSWERED_OUTCOMES))),
-        or_(DialerCall.duration.is_(None), DialerCall.duration > min_seconds),
+    return or_(
+        and_(DialerCall.outcome.isnot(None), func.lower(DialerCall.outcome).notin_(NOT_ANSWERED_OUTCOMES_LOWER)),
+        and_(DialerCall.outcome.is_(None), DialerCall.duration.isnot(None), DialerCall.duration > min_seconds),
     )
 
 
@@ -1106,6 +2126,26 @@ def exclude_test_leads(query, model=None):
     ))
 
 
+def exclude_deleted_leads(query, model=None):
+    """Soft-deleted leads (Lead.deleted_at set, see bulk_delete_leads()) must
+    never appear in listings, kanban, dashboards, or analytics/reporting —
+    mirrors exclude_test_leads()'s exact dual-mode shape (see that
+    docstring for why the EXISTS form needs an aliased Lead)."""
+    if model is None or model is Lead:
+        return query.filter(Lead.deleted_at.is_(None))
+    deleted_lead = aliased(Lead)
+    return query.filter(~exists().where(
+        (deleted_lead.id == model.lead_id) & (deleted_lead.deleted_at.isnot(None))
+    ))
+
+
+def exclude_test_and_deleted_leads(query, model=None):
+    """analytics_routes.py's ~26 reporting queries all exclude both sandbox
+    test leads and soft-deleted leads together — one call instead of the
+    same two-call pair repeated at every site."""
+    return exclude_deleted_leads(exclude_test_leads(query, model), model)
+
+
 def call_log_is_conversation():
     """True when a manually-logged CallLog counts as a real conversation.
 
@@ -1114,7 +2154,7 @@ def call_log_is_conversation():
     unlike dialer_call_is_conversation() where duration is the primary
     signal and outcome is just an override.
     """
-    return CallLog.outcome.notin_(list(NOT_ANSWERED_OUTCOMES))
+    return func.lower(CallLog.outcome).notin_(NOT_ANSWERED_OUTCOMES_LOWER)
 
 
 class DialerQueueStatus(Base):
@@ -1137,7 +2177,12 @@ class DialerQueueStatus(Base):
     updated_at  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     lead = relationship("Lead", backref="dialer_queue_statuses")
-    user = relationship("User", backref="dialer_queue_statuses")
+    # passive_deletes=True: trust the DB's ON DELETE CASCADE — do NOT nullify
+    # user_id before deleting. RCA 2026-08-24: same bug class /
+    # LoginLog/UserMailbox — without this, deleting ANY user who has ever
+    # touched the Power Dialer queue 500s (SQLAlchemy tries SET user_id=NULL,
+    # which violates this column's NOT NULL constraint).
+    user = relationship("User", backref=backref("dialer_queue_statuses", passive_deletes=True))
 
     __table_args__ = (
         UniqueConstraint("lead_id", "user_id", name="uq_dialer_queue_status_lead_user"),
@@ -1271,6 +2316,18 @@ class Journey(Base):
     send_window_start_hour = Column(Integer, nullable=True)
     send_window_end_hour   = Column(Integer, nullable=True)
     send_days              = Column(String, nullable=True)
+    # v13.0.0 playbook support — all off by default (existing cadences unchanged).
+    stop_on_reply       = Column(Boolean, nullable=False, default=False, server_default="false")  # any email/SMS/WhatsApp reply ends the enrollment
+    stop_on_meeting     = Column(Boolean, nullable=False, default=False, server_default="false")  # a meeting booked (Meeting Scheduled or later) ends it
+    max_duration_days   = Column(Integer, nullable=True)   # hard stop N days after enrollment (playbook: 15)
+    reengage_after_days = Column(Integer, nullable=True)   # on finish, if engaged: a "Re-engage" task this many days out (playbook: 60)
+    reengage_min_opens  = Column(Integer, nullable=True)   # "engaged" = this many opened emails, or any reply (playbook: 2)
+    send_as             = Column(String, nullable=True)    # "assigned_rep" = the lead's rep sends (owner as fallback); NULL = the owner (pre-v13 behaviour)
+    # v13.9.0: may a lead go through this cadence again after finishing/exiting? NULL = a cadence from
+    # before v13.9.0 = allowed (behaviour unchanged); new cadences are created with False.
+    allow_reenroll        = Column(Boolean, nullable=True)
+    reenroll_cooloff_days = Column(Integer, nullable=True)   # with allow_reenroll: wait this many days after the last run
+    vertical            = Column(String, nullable=True)    # free-text, owner-set — matched against Lead.vertical as a soft enroll-time warning, see journey_routes.py's enroll()
     # use_alter: journeys <-> journey_versions is a circular FK (a journey points
     # at its live version; a version points back at its journey) — use_alter lets
     # create_all() create both tables first, then ALTER TABLE to add this FK.
@@ -1304,6 +2361,32 @@ class JourneyVersion(Base):
     updated_at       = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     journey = relationship("Journey", foreign_keys=[journey_id], back_populates="versions")
+
+
+class MetricVersion(Base):
+    """Phase 3 metric governance: a draft/published/superseded definition for
+    one registry metric_id. No FK to a metrics table — the static
+    analytics/registry.py dict is the id namespace, matching Phase 1's
+    "static registry, not a DB table" scoping; this table only exists for
+    metrics someone has actually forked a new version of. "Current published"
+    is just status == 'published', no live_version_id back-pointer needed —
+    unlike Journey, nothing else references a metric by version id."""
+    __tablename__ = "metric_versions"
+    __table_args__ = (
+        UniqueConstraint("metric_id", "version_number", name="uq_metric_version_number"),
+    )
+
+    id               = Column(String, primary_key=True, default=generate_uuid)
+    metric_id        = Column(String, nullable=False, index=True)
+    version_number   = Column(Integer, nullable=False)
+    # {description, formula_description, numerator_description,
+    #  denominator_description, date_basis, known_caveats}
+    definition_json  = Column(_JSONVariant, nullable=False)
+    status           = Column(String, nullable=False, default="draft")   # draft | published | superseded
+    published_at     = Column(DateTime(timezone=True), nullable=True)
+    created_by       = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at       = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at       = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class JourneyEnrollment(Base):
@@ -1390,3 +2473,93 @@ class ExecutionLog(Base):
     idempotency_key = Column(String, nullable=True)      # carried through for the duplicate-send check
     detail          = Column(_JSONVariant, nullable=True)   # provider response / error message / condition-eval result
 
+
+# ── Instantly.ai send-side (campaign-per-node handoff) ─────────────────────────
+
+class JourneyInstantlyCampaign(Base):
+    """Maps a journey's Instantly-sequence node to a live Instantly campaign,
+    versioned by content_hash — NOT by journey_version_id. A republish that
+    doesn't touch this node's content must reuse the same campaign (leads
+    already enrolled are mid-sequence in Instantly, which addresses steps by
+    position — overwriting them in place would desync those leads). A content
+    change creates a NEW row (new instantly_campaign_id) instead of mutating
+    this one in place; lookup is "most recent row for (journey_id, node_id)",
+    so the index is a lookup aid, not a uniqueness constraint."""
+    __tablename__ = "journey_instantly_campaigns"
+    __table_args__ = (
+        Index("ix_jic_lookup", "journey_id", "node_id", "created_at"),
+    )
+
+    id                     = Column(String, primary_key=True, default=generate_uuid)
+    journey_id             = Column(String, ForeignKey("journeys.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_id                = Column(String, nullable=False)
+    instantly_campaign_id  = Column(String, nullable=False)
+    content_hash           = Column(String, nullable=False)  # sha256 of the node's steps; new hash -> new row, not an update
+    created_at             = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class JourneyInstantlyEnrollment(Base):
+    """One row per lead's handoff to Instantly for one journey enrollment —
+    lets the webhook handler (and the 15-min poll's reconciliation fallback)
+    resume/exit the correct parked JourneyExecutionQueue row. A lead can have
+    more than one of these over time (re-enrolled, or enrolled in a different
+    journey), so lookups filter by status="active", not just campaign_id."""
+    __tablename__ = "journey_instantly_enrollments"
+    __table_args__ = (
+        Index("ix_jie_campaign_lookup", "instantly_campaign_id", "status"),
+    )
+
+    id                    = Column(String, primary_key=True, default=generate_uuid)
+    journey_enrollment_id = Column(String, ForeignKey("journey_enrollments.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_id               = Column(String, nullable=False)
+    instantly_campaign_id = Column(String, nullable=False, index=True)
+    instantly_lead_id     = Column(String, nullable=True)
+    status                = Column(String, nullable=False, default="active")  # active | completed | exited
+    enrolled_at           = Column(DateTime(timezone=True), server_default=func.now())
+    ended_at              = Column(DateTime(timezone=True), nullable=True)
+    end_reason            = Column(String, nullable=True)
+
+
+# ── Background Job State ──────────────────────────────────────────────────────
+class BackgroundJobState(Base):
+    """Progress for a long-running background job, persisted instead of held
+    in a module-level dict.
+
+    Why this exists: the Audience Manager bulk-backfill tracked its progress
+    in `admin_sync_routes._am_sync_status`, a plain in-process dict. A deploy
+    mid-run (which already happened once) takes the worker thread AND the
+    dict with it, so the admin polling /sync-am-status saw a zeroed idle
+    state with no signal the run had been killed partway. One row per job
+    name, overwritten in place; `heartbeat_at` is what lets a reader tell
+    "still working" from "the process that owned this is gone" — a row
+    claiming running=True whose heartbeat has gone cold is reported as
+    interrupted rather than in-progress.
+
+    Deliberately generic in shape (a JSON blob) but NOT a generic job
+    framework: one writer, one reader, no queue, no retries. If a second job
+    ever needs this, it's another row, not new machinery.
+    """
+    __tablename__ = "background_job_state"
+
+    job_name     = Column(String, primary_key=True)
+    running      = Column(Boolean, nullable=False, default=False)
+    state        = Column(_JSONVariant, nullable=True)   # the job's own progress counters/errors
+    started_at   = Column(DateTime(timezone=True), nullable=True)
+    finished_at  = Column(DateTime(timezone=True), nullable=True)
+    heartbeat_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PersonalApiKey(Base):
+    """v13.4.0 — a user's own key for the Claude connector (routes/mcp_routes.py).
+    Only the SHA-256 of the key is stored; the key itself is shown once, at
+    creation. Acts as exactly that user (same role scoping as the app) until
+    revoked — revoking also kills every Claude session minted from it."""
+    __tablename__ = "personal_api_keys"
+    id           = Column(String, primary_key=True, default=generate_uuid)
+    user_id      = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name         = Column(String, nullable=False)
+    key_prefix   = Column(String, nullable=False)          # first chars, so a user can tell keys apart
+    key_hash     = Column(String, nullable=False, unique=True)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now())
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at   = Column(DateTime(timezone=True), nullable=True)

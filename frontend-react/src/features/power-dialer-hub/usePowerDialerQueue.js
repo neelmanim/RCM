@@ -1,6 +1,52 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { LeadsService, DialerService } from '../../services/api';
 import { CALLABLE_STATUSES } from '../leads-hub/components/PhoneCell';
+
+// RCA 2026-08-31: app.js unmounts Power Dialer on ANY navigation away (e.g.
+// "View in CRM" on the current call), so returning to the dialer always
+// re-ran fetchQueue() from scratch. A fresh server-side re-sort between
+// those two fetches (someone's priority_score/account grouping shifted,
+// even for leads this rep never touched) can put a different lead "next"
+// than the one on screen a moment ago — reported as leads "getting
+// shuffled while dialing". sessionStorage — not a bare module variable —
+// survives that same-tab remount and clears on tab close with no need for
+// an invented TTL, the identical need leads-hub's useLeadsList.js already
+// solves this way (see its VIEW_STATE_KEY).
+const QUEUE_STATE_KEY = 'powerDialer.queueState';
+
+function loadQueueState() {
+  try {
+    const raw = window.sessionStorage.getItem(QUEUE_STATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return {
+      queue: parsed.queue,
+      currentIndex: parsed.currentIndex,
+      sessionStatus: new Map(parsed.sessionStatus),
+      skipReasons: new Map(parsed.skipReasons),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistQueueState(state) {
+  try {
+    window.sessionStorage.setItem(QUEUE_STATE_KEY, JSON.stringify({
+      queue: state.queue,
+      currentIndex: state.currentIndex,
+      sessionStatus: Array.from(state.sessionStatus.entries()),
+      skipReasons: Array.from(state.skipReasons.entries()),
+    }));
+  } catch { /* storage unavailable — just won't restore across a remount */ }
+}
+
+// Test-only: this sessionStorage entry otherwise leaks between unrelated
+// test cases in the same file (each renderHook() looks like a same-session
+// remount to it). Not used by app code.
+export function _resetQueueCacheForTests() {
+  try { window.sessionStorage.removeItem(QUEUE_STATE_KEY); } catch { /* noop */ }
+}
 
 // Server status values (models.DialerQueueStatus) <-> the frontend's own
 // vocabulary (QueueList's STATUS_BADGE) — kept distinct on both ends so a
@@ -19,16 +65,34 @@ const TO_SERVER = { called: 'called', 'skipped-manual': 'skipped', 'skipped-dnc'
  * sessionStatus values: 'called' | 'skipped-manual' | 'skipped-dnc'.
  */
 export function usePowerDialerQueue() {
-  const [queue, setQueue] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [sessionStatus, setSessionStatus] = useState(() => new Map());
-  const [skipReasons, setSkipReasons] = useState(() => new Map()); // leadId -> rep's own reason, manual skips only
+  const restoredState = loadQueueState();
+  const didInit = useRef(false);
+
+  const [queue, setQueue] = useState(restoredState ? restoredState.queue : []);
+  const [currentIndex, setCurrentIndex] = useState(restoredState ? restoredState.currentIndex : 0);
+  const [sessionStatus, setSessionStatus] = useState(() => restoredState ? restoredState.sessionStatus : new Map());
+  const [skipReasons, setSkipReasons] = useState(() => restoredState ? restoredState.skipReasons : new Map()); // leadId -> rep's own reason, manual skips only
   const [callNextEnabled, setCallNextEnabled] = useState(false);
   const [totalAvailable, setTotalAvailable] = useState(0); // callable leads matching the filter, server-side — may exceed queue.length (per_page=50)
   const [hideCalled, setHideCalled] = useState(false); // client-side filter: drop leads someone has already logged a call against
   const [statusFilter, setStatusFilter] = useState(CALLABLE_STATUSES); // which callable stages to include — server-side
   const [search, setSearch] = useState(''); // name/company/email/phone — server-side (GET /leads' own `search` param)
-  const [loading, setLoading] = useState(true);
+  // RCA 2026-08-17: Himanshu asked whether the dialer sequence is
+  // contact-wise or account-wise — it was neither, pure priority_score with
+  // no company tiebreak. 'account' groups all contacts at the same company
+  // consecutively (see lead_routes.py's sort_by=account); 'priority' is the
+  // unchanged default.
+  const [sequenceMode, setSequenceMode] = useState('priority'); // 'priority' | 'account'
+  // "Load from Cadence" queue source (stakeholder ask: pull a cadence's
+  // actively-enrolled leads into the dialer for a manual call step) — when
+  // set, ANDs with the normal callable-status filter rather than replacing
+  // it, so the queue is still "enrolled in this journey AND callable now".
+  const [journeyId, setJourneyId] = useState('');
+  // Call List dial source (Klenty-style selectable dial list) — available to
+  // every role, unlike "Load from Cadence" above. ANDs with the normal
+  // callable-status filter rather than replacing it, same as journeyId.
+  const [callListId, setCallListId] = useState('');
+  const [loading, setLoading] = useState(!restoredState);
   const [error, setError] = useState(null);
 
   const fetchQueue = useCallback(async () => {
@@ -38,10 +102,12 @@ export function usePowerDialerQueue() {
       const res = await LeadsService.getLeads({
         status: statusFilter.length ? statusFilter : CALLABLE_STATUSES, // never send an empty list — that's "all", not "none"
         search: search || undefined,
-        sort_by: 'priority',
+        sort_by: sequenceMode,
         sort_dir: 'desc',
         per_page: 50,
         exclude_dialer_done: true,
+        journey_id: journeyId || undefined,
+        call_list_id: callListId || undefined,
       });
       // totalAvailable is the server-side total before this filter — an
       // honest approximation when hideCalled is on, not an exact remaining count.
@@ -75,9 +141,25 @@ export function usePowerDialerQueue() {
     } finally {
       setLoading(false);
     }
-  }, [hideCalled, statusFilter, search]);
+  }, [hideCalled, statusFilter, search, sequenceMode, journeyId, callListId]);
 
-  useEffect(() => { fetchQueue(); }, [fetchQueue]);
+  useEffect(() => {
+    // Skip only the very first fetch when sessionStorage already restored
+    // state above — a later filter change (statusFilter/search/sequenceMode/
+    // journeyId/callListId, all in fetchQueue's own deps) still refetches
+    // normally, same as always.
+    if (!didInit.current) {
+      didInit.current = true;
+      if (restoredState) return;
+    }
+    fetchQueue();
+  }, [fetchQueue]);
+
+  // Keep sessionStorage current so the next remount (e.g. returning from a
+  // lead's detail page) restores exactly where this session left off.
+  useEffect(() => {
+    persistQueueState({ queue, currentIndex, sessionStatus, skipReasons });
+  }, [queue, currentIndex, sessionStatus, skipReasons]);
 
   const persistStatus = useCallback((leadId, status, skipReason) => {
     DialerService.setQueueStatus(leadId, TO_SERVER[status], skipReason).catch(() => {
@@ -112,8 +194,8 @@ export function usePowerDialerQueue() {
       persistStatus(leadId, 'called');
       setCallNextEnabled(true);
     }
-    window.addEventListener('rcm:call-outcome-resolved', handleResolved);
-    return () => window.removeEventListener('rcm:call-outcome-resolved', handleResolved);
+    window.addEventListener('alternate:call-outcome-resolved', handleResolved);
+    return () => window.removeEventListener('alternate:call-outcome-resolved', handleResolved);
   }, [queue, currentIndex, persistStatus]);
 
   const callNext = useCallback(() => {
@@ -178,6 +260,8 @@ export function usePowerDialerQueue() {
     queue, currentIndex, currentLead, upcoming, isDone, totalAvailable,
     sessionStatus, skipReasons, callNextEnabled,
     hideCalled, setHideCalled, statusFilter, setStatusFilter, search, setSearch,
+    sequenceMode, setSequenceMode, journeyId, setJourneyId,
+    callListId, setCallListId,
     loading, error,
     callNext, skip, reorderUpcoming, callBack,
     refresh: fetchQueue,

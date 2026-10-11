@@ -1,6 +1,6 @@
 # ── messaging_sync.py — inbound message reconciliation ──────────────────────
 """
-RCM Built-in Messaging's Converse Desk API has no push webhook for inbound
+Alternate Messenger/Messaging Provider's Converse Desk API has no push webhook for inbound
 messages (unlike calls, unlike email/Nylas) — the only way to learn about a
 lead's reply is to poll. This mirrors the existing nightly-sync pattern
 (dialer_service.sync_historical_calls) one layer over: periodically list
@@ -9,7 +9,7 @@ to the same sms_logs table the Widget's outbound sends and Cadence sends
 already write to — so a reply shows up in the Activity feed same as a send.
 
 Goes through the provider-agnostic MessagingProvider (messaging_service.py)
-rather than importing RCM directly, so a second provider's inbound
+rather than importing Alternate Messenger directly, so a second provider's inbound
 messages land in the same place with no changes here.
 """
 import logging
@@ -38,6 +38,7 @@ def sync_recent_conversations(db, count: int = 100) -> dict:
         "messages_already_logged": 0,
         "unmatched_phone": 0,
     }
+    replied_leads = {}   # lead_id -> (lead, channel): who to signal to the cadence engine
 
     provider = get_messaging_provider_for_org(db)
     if provider is None:
@@ -83,7 +84,15 @@ def sync_recent_conversations(db, count: int = 100) -> dict:
                 conversation_id=conv.conversation_id,
             ))
             stats["messages_inserted"] += 1
+            replied_leads[lead.id] = (lead, msg.channel)
 
     db.commit()
+    # Same cadence signal as the Alternate Messenger webhook path (one per lead).
+    from journey_engine.engine import notify_inbound_message
+    for lead, channel in replied_leads.values():
+        try:
+            notify_inbound_message(db, lead, channel)
+        except Exception as e:
+            logger.error("[MessagingSync] cadence reply trigger failed for lead %s: %s", lead.id, e)
     logger.info("[MessagingSync] %s", stats)
     return stats

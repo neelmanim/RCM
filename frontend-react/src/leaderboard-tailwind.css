@@ -1,0 +1,33 @@
+/*
+ * leaderboard-tailwind.css
+ *
+ * Tailwind entry point for the Leaderboard IIFE bundle ONLY. Mirrors
+ * sales-tools-tailwind.css exactly — omits @tailwind base to avoid leaking
+ * resets into the Vanilla JS shell, and reproduces just the border-reset
+ * half of Preflight, scoped to .leaderboard-hub.
+ */
+/*
+ * Radix (DropdownMenu/Popover) portals its content to document.body, so it
+ * renders as a sibling of .leaderboard-hub rather than a descendant — the
+ * shared DatePicker/Select components portal through this same literal
+ * class regardless of which bundle hosts them (see sales-tools-tailwind.css
+ * for the fuller explanation of why this exact class name is shared).
+ */
+.leaderboard-hub, .leaderboard-hub *, .leaderboard-hub *::before, .leaderboard-hub *::after,
+.activitymonitor-portal, .activitymonitor-portal *, .activitymonitor-portal *::before, .activitymonitor-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.leaderboard-hub, .activitymonitor-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

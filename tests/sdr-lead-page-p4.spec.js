@@ -3,7 +3,7 @@
 
 const { test, expect } = require('@playwright/test');
 
-const BASE = process.env.CRM_URL || 'https://rcm-frontend-staging.onrender.com';
+const BASE = process.env.CRM_URL || 'https://messenger-frontend-staging.onrender.com';
 const SDR_TOKEN          = process.env.SDR_TOKEN || '';
 const LEAD_IN_ASSIGNED   = process.env.LEAD_ASSIGNED_ID || '';
 const LEAD_IN_RESEARCH   = process.env.LEAD_RESEARCH_ID || '';
@@ -14,7 +14,9 @@ const LEAD_WITH_EMAIL    = process.env.LEAD_WITH_EMAIL_ID || '';
 
 async function goToLead(page, token, leadId) {
     await page.goto(`${BASE}/?token=${token}`);
-    await page.waitForSelector('#app-sidebar', { timeout: 30000 });
+    // RCA 2026-08-24 (see tests/helpers/auth.js's loginAs): #app-sidebar is
+    // stale — the app loads fine, wait on the sidebar's "Dashboard" link.
+    await page.waitForSelector('nav >> text=Dashboard', { timeout: 30000 });
     await page.evaluate((id) => { window.location.hash = `#lead-detail/${id}`; }, leadId);
     await page.waitForSelector('.pipeline-v2-card, #log-call-btn, #add-note-btn', { timeout: 30000 });
     await page.waitForTimeout(500);
@@ -330,7 +332,7 @@ test.describe('16. Emails Tab', () => {
 
 // ═══════════════════════════════════════════════════════════════════════
 // GROUP 17 — Messaging / Conversation Tab
-// NOTE: The tab is data-tab="conversation" (RCM messaging integration).
+// NOTE: The tab is data-tab="conversation" (Alternate Messenger messaging integration).
 //       "Messaging" terminology maps to the conversation tab in this app.
 // ═══════════════════════════════════════════════════════════════════════
 

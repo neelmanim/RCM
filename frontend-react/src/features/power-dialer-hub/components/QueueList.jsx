@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { GripVertical, Mail, PhoneCall, ChevronLeft, ChevronRight } from 'lucide-react';
+import { GripVertical, Mail, PhoneCall } from 'lucide-react';
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from '../../../components/ui/Table';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
+import { Pagination } from '../../../components/ui/Pagination';
 import { displayName } from '../../leads-hub/components/LeadRow';
 import { resolveLeadPhone } from '../../leads-hub/columns';
 
@@ -54,6 +55,7 @@ export function QueueList({ queue, currentIndex, sessionStatus, skipReasons, onR
         <TableRow>
           <TableHeader className="w-8" />
           <TableHeader>Lead</TableHeader>
+          <TableHeader>Company</TableHeader>
           <TableHeader>Phone</TableHeader>
           <TableHeader>Status</TableHeader>
           <TableHeader className="w-8" title="Emailed via a synced mailbox" data-tour="email-column">
@@ -84,6 +86,9 @@ export function QueueList({ queue, currentIndex, sessionStatus, skipReasons, onR
               <TableCell className={isCurrent ? 'font-semibold text-slate-900' : ''}>
                 {displayName(lead)}
                 {isCurrent && <span className="ml-2 text-xs text-blue-600 font-semibold">← Current</span>}
+              </TableCell>
+              <TableCell className="text-slate-500 truncate max-w-[160px]" title={lead.company || undefined}>
+                {lead.company || <span className="text-slate-400 italic">—</span>}
               </TableCell>
               <TableCell>{resolveLeadPhone(lead) || <span className="text-slate-400 italic">—</span>}</TableCell>
               <TableCell>
@@ -119,15 +124,13 @@ export function QueueList({ queue, currentIndex, sessionStatus, skipReasons, onR
       </TableBody>
     </Table>
     {totalPages > 1 && (
-      <div className="flex items-center justify-between text-sm text-slate-500 px-1">
-        <Button variant="ghost" size="sm" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>
-          <ChevronLeft size={14} /> Prev
-        </Button>
-        <span>Page {page + 1} of {totalPages}</span>
-        <Button variant="ghost" size="sm" onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}>
-          Next <ChevronRight size={14} />
-        </Button>
-      </div>
+      <Pagination
+        page={page + 1}
+        pages={totalPages}
+        total={queue.length}
+        perPage={PAGE_SIZE}
+        onChange={(p) => setPage(p - 1)}
+      />
     )}
     </div>
   );

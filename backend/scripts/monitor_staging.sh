@@ -1,14 +1,14 @@
 #!/bin/bash
 # Monitor staging endpoints for 5 minutes — checks every 30 seconds
-STAGING_URL="https://rcm-crm-staging.onrender.com"
-PROD_URL="https://api.rcm.rcm.ai"
+STAGING_URL="https://messenger-crm-staging.onrender.com"
+PROD_URL="https://api.alternatecrm.messenger.ai"
 DURATION=300  # 5 minutes
 INTERVAL=30
 END_TIME=$(($(date +%s) + DURATION))
 ROUND=1
 
 echo "============================================="
-echo "  RCM Staging Monitor — $(date)"
+echo "  Alternate CRM Staging Monitor — $(date)"
 echo "  Duration: ${DURATION}s | Interval: ${INTERVAL}s"
 echo "============================================="
 

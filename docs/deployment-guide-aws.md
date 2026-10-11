@@ -1,4 +1,4 @@
-# RCM CRM — AWS Deployment Guide
+# Alternate CRM CRM — AWS Deployment Guide
 
 > **Version:** 4.5.0 | **Date:** April 7, 2026 | **Author:** Engineering Team
 > **Repository:** https://github.com/neelmanimishrasf/crmalternate.git
@@ -27,7 +27,7 @@
 
 ## 1. Architecture Overview
 
-RCM is a **monolithic Python web application** serving both the API and frontend from a single container.
+Alternate CRM is a **monolithic Python web application** serving both the API and frontend from a single container.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -123,7 +123,7 @@ crmalternate/
 │   ├── auth.py                 # JWT + Google OAuth helpers
 │   ├── crypto.py               # AES-256-GCM encryption for stored secrets
 │   ├── salesforce.py           # SF API integration
-│   ├── audience_manager.py     # RCM Built-in Messaging contact sync
+│   ├── audience_manager.py     # Alternate Messenger/Messaging Provider contact sync
 │   ├── scheduled_jobs.py       # Background timer-based jobs
 │   ├── activity_logger.py      # User activity audit logging
 │   ├── requirements.txt        # Python dependencies
@@ -222,21 +222,21 @@ CMD uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-all
 
 ```bash
 # Build image
-docker build -t rcm-crm:latest .
+docker build -t alternatecrm-crm:latest .
 
 # Run with env file
 docker run -d \
-  --name rcm \
+  --name alternatecrm \
   -p 10000:10000 \
   --env-file backend/.env \
-  rcm-crm:latest
+  alternatecrm-crm:latest
 
 # Verify health
 curl http://localhost:10000/api/health
 # Expected: {"status":"ok"}
 
 # Check logs
-docker logs -f rcm
+docker logs -f alternatecrm
 ```
 
 ### Push to ECR
@@ -247,8 +247,8 @@ aws ecr get-login-password --region us-east-2 | \
   docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com
 
 # Tag and push
-docker tag rcm-crm:latest <ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/rcm-crm:latest
-docker push <ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/rcm-crm:latest
+docker tag alternatecrm-crm:latest <ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/alternatecrm-crm:latest
+docker push <ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/alternatecrm-crm:latest
 ```
 
 ---
@@ -280,15 +280,15 @@ docker push <ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/rcm-crm:latest
 
 ```json
 {
-  "family": "rcm-crm",
+  "family": "alternatecrm-crm",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "1024",
   "memory": "2048",
   "containerDefinitions": [
     {
-      "name": "rcm",
-      "image": "<ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/rcm-crm:latest",
+      "name": "alternatecrm",
+      "image": "<ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/alternatecrm-crm:latest",
       "portMappings": [
         {
           "containerPort": 10000,
@@ -300,17 +300,17 @@ docker push <ACCOUNT_ID>.dkr.ecr.us-east-2.amazonaws.com/rcm-crm:latest
         { "name": "ALLOW_DEMO", "value": "false" }
       ],
       "secrets": [
-        { "name": "DATABASE_URL", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/rcm/DATABASE_URL" },
-        { "name": "JWT_SECRET", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/rcm/JWT_SECRET" },
-        { "name": "GOOGLE_CLIENT_ID", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/rcm/GOOGLE_CLIENT_ID" },
-        { "name": "GOOGLE_CLIENT_SECRET", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/rcm/GOOGLE_CLIENT_SECRET" },
-        { "name": "GOOGLE_REDIRECT_URI", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/rcm/GOOGLE_REDIRECT_URI" },
-        { "name": "APP_ENCRYPTION_KEY", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/rcm/APP_ENCRYPTION_KEY" }
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/alternatecrm/DATABASE_URL" },
+        { "name": "JWT_SECRET", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/alternatecrm/JWT_SECRET" },
+        { "name": "GOOGLE_CLIENT_ID", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/alternatecrm/GOOGLE_CLIENT_ID" },
+        { "name": "GOOGLE_CLIENT_SECRET", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/alternatecrm/GOOGLE_CLIENT_SECRET" },
+        { "name": "GOOGLE_REDIRECT_URI", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/alternatecrm/GOOGLE_REDIRECT_URI" },
+        { "name": "APP_ENCRYPTION_KEY", "valueFrom": "arn:aws:ssm:REGION:ACCOUNT:parameter/alternatecrm/APP_ENCRYPTION_KEY" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/rcm-crm",
+          "awslogs-group": "/ecs/alternatecrm-crm",
           "awslogs-region": "us-east-2",
           "awslogs-stream-prefix": "ecs"
         }
@@ -349,11 +349,11 @@ sudo systemctl enable docker && sudo systemctl start docker
 # Clone and build
 git clone https://github.com/neelmanimishrasf/crmalternate.git
 cd crmalternate
-docker build -t rcm-crm:latest .
+docker build -t alternatecrm-crm:latest .
 
 # Create env file
 cat > .env << 'EOF'
-DATABASE_URL=postgresql://user:password@your-rds-endpoint:5432/rcm
+DATABASE_URL=postgresql://user:password@your-rds-endpoint:5432/alternatecrm
 JWT_SECRET=<generated-secret>
 GOOGLE_CLIENT_ID=<your-client-id>
 GOOGLE_CLIENT_SECRET=<your-client-secret>
@@ -365,11 +365,11 @@ EOF
 
 # Run
 docker run -d \
-  --name rcm \
+  --name alternatecrm \
   --restart unless-stopped \
   -p 10000:10000 \
   --env-file .env \
-  rcm-crm:latest
+  alternatecrm-crm:latest
 ```
 
 ---
@@ -392,9 +392,9 @@ docker run -d \
 
 ```bash
 # Create database
-psql -h <RDS_ENDPOINT> -U postgres -c "CREATE DATABASE rcm;"
-psql -h <RDS_ENDPOINT> -U postgres -c "CREATE USER rcm_user WITH PASSWORD '<STRONG_PASSWORD>';"
-psql -h <RDS_ENDPOINT> -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE rcm TO rcm_user;"
+psql -h <RDS_ENDPOINT> -U postgres -c "CREATE DATABASE alternatecrm;"
+psql -h <RDS_ENDPOINT> -U postgres -c "CREATE USER alternatecrm_user WITH PASSWORD '<STRONG_PASSWORD>';"
+psql -h <RDS_ENDPOINT> -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE alternatecrm TO alternatecrm_user;"
 ```
 
 > [!NOTE]
@@ -403,7 +403,7 @@ psql -h <RDS_ENDPOINT> -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE rcm TO r
 ### Connection String Format
 
 ```
-postgresql://rcm_user:<PASSWORD>@<RDS_ENDPOINT>:5432/rcm
+postgresql://alternatecrm_user:<PASSWORD>@<RDS_ENDPOINT>:5432/alternatecrm
 ```
 
 ### Database Schema (Auto-created — 20+ tables)
@@ -572,16 +572,16 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/rcm-crm:$IMAGE_TAG .
-          docker build -t $ECR_REGISTRY/rcm-crm:latest .
-          docker push $ECR_REGISTRY/rcm-crm:$IMAGE_TAG
-          docker push $ECR_REGISTRY/rcm-crm:latest
+          docker build -t $ECR_REGISTRY/alternatecrm-crm:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/alternatecrm-crm:latest .
+          docker push $ECR_REGISTRY/alternatecrm-crm:$IMAGE_TAG
+          docker push $ECR_REGISTRY/alternatecrm-crm:latest
 
       - name: Update ECS Service
         run: |
           aws ecs update-service \
-            --cluster rcm-cluster \
-            --service rcm-service \
+            --cluster alternatecrm-cluster \
+            --service alternatecrm-service \
             --force-new-deployment
 ```
 
@@ -611,13 +611,13 @@ These integrations are **configured via the Admin UI** at runtime and stored in 
 | Requires | `APP_ENCRYPTION_KEY` env var |
 | Outbound | HTTPS to `api.us.nylas.com` |
 
-### Audience Manager / RCM (SMS Messaging)
+### Audience Manager / Alternate Messenger (SMS Messaging)
 
 | Item | Details |
 |------|---------|
-| Purpose | Lead contact sync for SMS/RCM messaging |
-| Config | Admin connects via UI: Settings → RCM |
-| Outbound | HTTPS to `app.bercm.com` |
+| Purpose | Lead contact sync for SMS/Alternate Messenger messaging |
+| Config | Admin connects via UI: Settings → Alternate Messenger |
+| Outbound | HTTPS to `app.alternatecrm.com` |
 
 ### Aircall Dialer
 
@@ -683,13 +683,13 @@ The application is **stateless** — no data is stored on the container filesyst
 
 ```bash
 # View logs (ECS)
-aws logs get-log-events --log-group-name /ecs/rcm-crm --log-stream-name <stream>
+aws logs get-log-events --log-group-name /ecs/alternatecrm-crm --log-stream-name <stream>
 
 # SSH into EC2 for debugging
-docker exec -it rcm /bin/bash
+docker exec -it alternatecrm /bin/bash
 
 # Manual DB migration check
-docker exec -it rcm python -c "from database import engine; from migrations import run_schema_migrations; run_schema_migrations(engine); print('OK')"
+docker exec -it alternatecrm python -c "from database import engine; from migrations import run_schema_migrations; run_schema_migrations(engine); print('OK')"
 ```
 
 ### Database connection pooling
@@ -749,10 +749,10 @@ If migrating the existing production database from Render PostgreSQL to AWS RDS:
 
 ```bash
 # Export from Render
-pg_dump -Fc -h <RENDER_HOST> -U <USER> -d <DB_NAME> > rcm_backup.dump
+pg_dump -Fc -h <RENDER_HOST> -U <USER> -d <DB_NAME> > alternatecrm_backup.dump
 
 # Import to AWS RDS
-pg_restore -h <RDS_ENDPOINT> -U rcm_user -d rcm --no-owner --no-privileges rcm_backup.dump
+pg_restore -h <RDS_ENDPOINT> -U alternatecrm_user -d alternatecrm --no-owner --no-privileges alternatecrm_backup.dump
 ```
 
 > [!WARNING]

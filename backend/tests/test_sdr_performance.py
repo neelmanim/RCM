@@ -162,3 +162,37 @@ class TestSDRPerformanceStructure:
         assert data["productivity"]["total_leads_assigned"] == 0
         assert data["productivity"]["calls_made"] == 0
         assert data["conversion"]["conversion_rate"] == 0
+
+
+class TestCurrentPipelineAndDialerCalls:
+    """v13.9.4: the page used to show only what moved in the period, so a rep with 1,000 leads saw ~90."""
+
+    def test_assigned_now_and_current_funnel_ignore_the_period(self, client, db):
+        sdr = create_test_user(db, email="now@test.com", name="Now SDR", role="SDR")
+        old = datetime.now(timezone.utc) - timedelta(days=30)
+        for i, st in enumerate(["Calling", "Calling", "Lead Assigned"]):
+            lead = create_test_lead(db, last_name=f"L{i}", email=f"now{i}@test.com", status=st)
+            lead.status_changed_at = old          # nothing moved today
+            _assign_lead(db, lead, sdr)
+        db.commit()
+        data = client.get(f"/api/sdr-performance/{sdr.id}?period=today").json()
+        assert data["productivity"]["assigned_now"] == 3
+        assert data["funnel_now"]["Calling"] == 2 and data["funnel_now"]["Lead Assigned"] == 1
+        assert sum(data["funnel"].values()) == 0   # the period funnel is still "moved in the period"
+
+    def test_calls_made_includes_dialer_calls_without_a_call_log_twin(self, client, db):
+        sdr = create_test_user(db, email="dial@test.com", name="Dial SDR", role="SDR")
+        lead = create_test_lead(db, last_name="Dial", email="dial@test.com", status="Calling")
+        _assign_lead(db, lead, sdr)
+        create_test_call(db, lead_id=lead.id, user_id=sdr.id, outcome="No Answer")
+        db.add(models.DialerCall(lead_id=lead.id, user_id=sdr.id, provider="aircall", status="CALL_ENDED", direction="outbound"))
+        db.commit()
+        assert client.get(f"/api/sdr-performance/{sdr.id}").json()["productivity"]["calls_made"] == 2
+
+    def test_assigned_now_leaves_parked_leads_out_like_the_dashboard(self, client, db):
+        sdr = create_test_user(db, email="park@test.com", name="Park SDR", role="SDR")
+        for i, st in enumerate(["Calling", "Pending Review"]):
+            _assign_lead(db, create_test_lead(db, last_name=f"P{i}", email=f"park{i}@test.com", status=st), sdr)
+        data = client.get(f"/api/sdr-performance/{sdr.id}").json()
+        assert data["productivity"]["assigned_now"] == 1
+        assert sum(data["funnel_now"].values()) == 1

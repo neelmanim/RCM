@@ -13,7 +13,7 @@
  *  TC-F7   Dismiss without logging → auto-comment in lead history (EC-7)
  *  TC-F8   Outcome submit clears banner + localStorage
  *  TC-F9   Dialer tab: "Test Connection" passes correct provider key
- *  TC-F10  RCM messaging tab: "Test Connection" button exists and is independent
+ *  TC-F10  Alternate Messenger messaging tab: "Test Connection" button exists and is independent
  *  TC-F11  Both test buttons work independently when both providers configured
  *
  * Prerequisites:
@@ -436,7 +436,7 @@ test.describe('Dialer Outcome Gate — Frontend E2E', () => {
     await page.waitForTimeout(1000);
 
     // Click the Dialer / AI Dialer tab
-    const dialerTab = page.locator('[data-tab="dialer"], [data-settings-tab="dialer"], button:has-text("Dialer")').first();
+    const dialerTab = page.locator('[data-tab="channels"], [data-settings-tab="channels"], button:has-text("Calling & Messaging")').first();
     if (await dialerTab.isVisible()) await dialerTab.click();
     await page.waitForTimeout(500);
 
@@ -462,23 +462,23 @@ test.describe('Dialer Outcome Gate — Frontend E2E', () => {
     expect(providerKey).toBe('aircall');
   });
 
-  // ── TC-F10: RCM messaging tab — independent test button ────────────
-  test('TC-F10: P2 — RCM messaging tab has its own "Test Connection" button', async ({ page, request }) => {
+  // ── TC-F10: Alternate Messenger messaging tab — independent test button ────────────
+  test('TC-F10: P2 — Alternate Messenger messaging tab has its own "Test Connection" button', async ({ page, request }) => {
     await loginAs(page, request, process.env.ADMIN_EMAIL || process.env.SDR_EMAIL || '');
     await navigateTo(page, 'settings');
     await page.waitForTimeout(1000);
 
-    // Navigate to RCM messaging tab
-    const convTab = page.locator('[data-tab="rcm"], [data-settings-tab="rcm"], button:has-text("RCM")').first();
+    // Navigate to Alternate Messenger messaging tab
+    const convTab = page.locator('[data-tab="channels"], [data-settings-tab="channels"], button:has-text("Calling & Messaging")').first();
     if (await convTab.isVisible()) await convTab.click();
     await page.waitForTimeout(500);
 
     // The new button must exist
-    const convTestBtn = page.locator('#rcm-test-btn');
+    const convTestBtn = page.locator('#messenger-test-btn');
     await expect(convTestBtn).toBeVisible({ timeout: 8000 });
     await expect(convTestBtn).toContainText(/test connection/i);
 
-    // Click it and verify ?provider=rcm_messaging is sent
+    // Click it and verify ?provider=messaging_provider is sent
     const providerKeyPromise = captureTestConnectionProvider(page);
     await convTestBtn.click();
 
@@ -487,13 +487,13 @@ test.describe('Dialer Outcome Gate — Frontend E2E', () => {
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
     ]).catch(() => null);
 
-    expect(providerKey).toBe('rcm_messaging');
+    expect(providerKey).toBe('messaging_provider');
   });
 
   // ── TC-F11: Both buttons work independently ───────────────────────────────
   test('TC-F11: P2 — Both test buttons independent when both providers configured', async ({ page, request }) => {
     // This test verifies that clicking Aircall test never accidentally fires
-    // rcm_messaging, and vice versa.
+    // messaging_provider, and vice versa.
     const captured = [];
 
     await page.route('**/api/dialer/test**', (route) => {
@@ -510,7 +510,7 @@ test.describe('Dialer Outcome Gate — Frontend E2E', () => {
     await page.waitForTimeout(1000);
 
     // 1. Click Aircall test
-    const dialerTab = page.locator('[data-tab="dialer"], button:has-text("Dialer")').first();
+    const dialerTab = page.locator('[data-tab="channels"], button:has-text("Calling & Messaging")').first();
     if (await dialerTab.isVisible()) await dialerTab.click();
     const providerSelect = page.locator('#dialer-provider, select[name="dialer_provider"]').first();
     if (await providerSelect.isVisible()) await providerSelect.selectOption('aircall');
@@ -518,17 +518,17 @@ test.describe('Dialer Outcome Gate — Frontend E2E', () => {
     if (await dialerTestBtn.isVisible()) await dialerTestBtn.click();
     await page.waitForTimeout(1000);
 
-    // 2. Click RCM messaging test
-    const convTab = page.locator('[data-tab="rcm"], button:has-text("RCM")').first();
+    // 2. Click Alternate Messenger messaging test
+    const convTab = page.locator('[data-tab="channels"]').first();
     if (await convTab.isVisible()) await convTab.click();
-    const convTestBtn = page.locator('#rcm-test-btn').first();
+    const convTestBtn = page.locator('#messenger-test-btn').first();
     if (await convTestBtn.isVisible()) await convTestBtn.click();
     await page.waitForTimeout(1000);
 
     // Both must have been fired; order matters
     expect(captured.length).toBeGreaterThanOrEqual(2);
     expect(captured).toContain('aircall');
-    expect(captured).toContain('rcm_messaging');
+    expect(captured).toContain('messaging_provider');
 
     // They must be different
     const unique = [...new Set(captured)];

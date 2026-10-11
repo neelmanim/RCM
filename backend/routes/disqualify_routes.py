@@ -9,9 +9,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+import access_db
 import models
 from database import get_db
 from auth import get_current_user, require_pod_admin_or_above
+from routes.lead_helpers import lead_allowed
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/disqualify-requests", tags=["Disqualify Requests"])
@@ -63,10 +65,10 @@ def _serialize(req: models.DisqualifyRequest, db: Session) -> dict:
         "reason": req.reason,
         "requested_by": req.requested_by,
         "requested_by_name": (requester.name or requester.email) if requester else None,
-        "requested_at": str(req.requested_at) if req.requested_at else None,
+        "requested_at": req.requested_at.isoformat() if req.requested_at else None,
         "status": req.status,
         "reviewed_by": req.reviewed_by,
-        "reviewed_at": str(req.reviewed_at) if req.reviewed_at else None,
+        "reviewed_at": req.reviewed_at.isoformat() if req.reviewed_at else None,
         "rejection_reason": req.rejection_reason,
     }
 
@@ -124,6 +126,8 @@ def approve_request(req_id: str, db: Session = Depends(get_db), admin: dict = De
         lead = db.query(models.Lead).filter(models.Lead.id == lid).first()
         if not lead or lead.status in models.TERMINAL_STATUSES:
             continue  # already terminal (e.g. a prior overlapping request already disqualified it)
+        if not lead_allowed(admin, lead, edit=True):
+            continue  # a Pod Admin approves only for leads they may change (other pods' stay open)
         models.disqualify_lead(db, lead, req.reason, admin_name)
         count += 1
 
@@ -147,7 +151,9 @@ def reject_request(req_id: str, body: dict, db: Session = Depends(get_db), admin
     req = db.query(models.DisqualifyRequest).filter(
         models.DisqualifyRequest.id == req_id, models.DisqualifyRequest.status == "pending"
     ).first()
-    if not req:
+    if not req or (admin.get("role") == "Pod Admin" and not db.query(models.User.id).filter(
+            models.User.id == req.requested_by, models.User.pod_id == (access_db.pod_of(admin))).first()):
+        # v13.12.1: a Pod Admin may only review requests made by people in their own pod (reject had no such check)
         raise HTTPException(status_code=404, detail="Pending request not found (already reviewed?)")
 
     req.status = "rejected"

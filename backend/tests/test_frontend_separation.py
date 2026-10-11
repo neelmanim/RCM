@@ -183,7 +183,7 @@ class TestFrontendConfigFiles:
         staging_path = os.path.join(frontend_dir, "config.staging.js")
         content = open(staging_path).read()
         assert "API_BASE" in content
-        assert "rcm-crm-staging" in content
+        assert "messenger-crm-staging" in content
 
     def test_index_html_loads_config(self, frontend_dir):
         """index.html must include a <script src='config.js'> tag."""
@@ -229,7 +229,7 @@ class TestRenderYaml:
 
     def test_vanilla_frontend_static_site_defined(self, render_content):
         """render.yaml must define the vanilla frontend static site."""
-        assert "rcm-frontend-staging" in render_content
+        assert "messenger-frontend-staging" in render_content
 
     def test_serve_frontend_false_in_staging(self, render_content):
         """Staging backend should have SERVE_FRONTEND set to false."""
@@ -237,4 +237,4 @@ class TestRenderYaml:
 
     def test_frontend_url_points_to_vanilla_site(self, render_content):
         """FRONTEND_URL should point to the vanilla frontend, not React."""
-        assert "rcm-frontend-staging.onrender.com" in render_content
+        assert "messenger-frontend-staging.onrender.com" in render_content

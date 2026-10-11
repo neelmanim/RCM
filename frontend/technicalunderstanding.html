@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alternate CRM — Technical Handoff Bible</title>
+  <meta name="description" content="Complete technical reference for Alternate CRM CRM — admin-only operational handoff document." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & tokens ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #21262d;
+      --border:    #30363d;
+      --border2:   #484f58;
+      --text:      #e6edf3;
+      --text2:     #8b949e;
+      --text3:     #6e7681;
+      --primary:   #6366f1;
+      --primary2:  #4f46e5;
+      --green:     #3fb950;
+      --yellow:    #e3b341;
+      --red:       #f85149;
+      --orange:    #d29922;
+      --blue:      #58a6ff;
+      --purple:    #bc8cff;
+      --code-bg:   #1f2937;
+      --radius:    8px;
+      --shadow:    0 4px 24px rgba(0,0,0,.4);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    /* ── Auth gate ──────────────────────────────────────────────── */
+    #auth-gate {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh;
+      background: radial-gradient(ellipse at 50% 0%, #1e1b4b 0%, var(--bg) 70%);
+    }
+
+    .gate-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 48px 40px;
+      text-align: center;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: var(--shadow), 0 0 60px rgba(99,102,241,.08);
+    }
+
+    .gate-icon { font-size: 48px; margin-bottom: 16px; }
+    .gate-title { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .gate-sub { color: var(--text2); font-size: 13px; margin-bottom: 24px; }
+    .gate-error { color: var(--red); font-size: 13px; margin-top: 12px; display: none; }
+
+    .btn-primary {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      background: var(--primary);
+      color: #fff;
+      border: none; border-radius: var(--radius);
+      padding: 10px 24px;
+      font-size: 14px; font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+      width: 100%;
+      text-decoration: none;
+    }
+    .btn-primary:hover { background: var(--primary2); transform: translateY(-1px); }
+
+    /* ── App layout ─────────────────────────────────────────────── */
+    #app { display: none; }
+
+    .top-bar {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,17,23,.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 56px;
+    }
+
+    .top-bar-left { display: flex; align-items: center; gap: 12px; }
+    .top-bar-logo { font-size: 20px; }
+    .top-bar-title { font-weight: 700; font-size: 15px; color: var(--text); }
+    .top-bar-badge {
+      background: rgba(99,102,241,.2); color: var(--primary);
+      border: 1px solid rgba(99,102,241,.3);
+      border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight: 600;
+    }
+    .top-bar-right { display: flex; align-items: center; gap: 12px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .status-label { font-size: 12px; color: var(--text2); }
+
+    .layout { display: flex; max-width: 1400px; margin: 0 auto; }
+
+    /* ── Sidebar ────────────────────────────────────────────────── */
+    .sidebar {
+      width: 240px; min-width: 240px;
+      padding: 24px 16px;
+      border-right: 1px solid var(--border);
+      position: sticky; top: 56px;
+      height: calc(100vh - 56px);
+      overflow-y: auto;
+    }
+
+    .sidebar-section { margin-bottom: 24px; }
+    .sidebar-label {
+      font-size: 10px; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--text3);
+      padding: 0 8px; margin-bottom: 4px;
+    }
+
+    .sidebar-link {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      color: var(--text2);
+      font-size: 13px;
+      text-decoration: none;
+      transition: all .15s;
+      cursor: pointer;
+      border: none; background: none; width: 100%; text-align: left;
+    }
+    .sidebar-link:hover { color: var(--text); background: var(--bg3); }
+    .sidebar-link.active { color: var(--primary); background: rgba(99,102,241,.1); }
+    .sidebar-link .icon { font-size: 14px; width: 18px; flex-shrink: 0; }
+
+    /* ── Main content ───────────────────────────────────────────── */
+    .main { flex: 1; padding: 32px 40px; max-width: 960px; min-width: 0; }
+
+    .section { margin-bottom: 56px; }
+    .section-header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-icon { font-size: 22px; }
+    .section-title { font-size: 20px; font-weight: 700; color: var(--text); }
+
+    h3 { font-size: 15px; font-weight: 600; color: var(--text); margin: 20px 0 10px; }
+    h4 { font-size: 13px; font-weight: 600; color: var(--text2); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+
+    p { color: var(--text2); margin-bottom: 12px; line-height: 1.75; }
+
+    /* ── Cards ──────────────────────────────────────────────────── */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 12px;
+    }
+
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px; }
+
+    .stat-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .stat-label { font-size: 11px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: var(--text); }
+    .stat-sub { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+    /* ── Alert boxes ────────────────────────────────────────────── */
+    .alert {
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 12px;
+      display: flex; gap: 12px; align-items: flex-start;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .alert-body strong { display: block; margin-bottom: 2px; font-size: 13px; }
+    .alert-body p { margin: 0; font-size: 13px; }
+    .alert-green  { background: rgba(63,185,80,.08);  border: 1px solid rgba(63,185,80,.2);  color: #8ce99a; }
+    .alert-yellow { background: rgba(227,179,65,.08); border: 1px solid rgba(227,179,65,.2); color: #ffd43b; }
+    .alert-red    { background: rgba(248,81,73,.08);  border: 1px solid rgba(248,81,73,.2);  color: #ff8787; }
+    .alert-blue   { background: rgba(88,166,255,.08); border: 1px solid rgba(88,166,255,.2); color: #74c0fc; }
+    .alert-purple { background: rgba(188,140,255,.08);border: 1px solid rgba(188,140,255,.2);color: #b197fc; }
+
+    /* ── Tables ─────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      background: var(--bg3);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--text3);
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--bg3); }
+    tbody td { padding: 10px 14px; font-size: 13px; color: var(--text2); vertical-align: top; }
+    tbody td strong { color: var(--text); }
+    tbody td code { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+    /* ── Code ───────────────────────────────────────────────────── */
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #d1d5db;
+      margin-bottom: 12px;
+    }
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: var(--purple);
+    }
+
+    /* ── Badges ─────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px; font-weight: 600;
+    }
+    .badge-green  { background: rgba(63,185,80,.15);  color: var(--green);  border: 1px solid rgba(63,185,80,.3);  }
+    .badge-red    { background: rgba(248,81,73,.15);  color: var(--red);    border: 1px solid rgba(248,81,73,.3);  }
+    .badge-yellow { background: rgba(227,179,65,.15); color: var(--yellow); border: 1px solid rgba(227,179,65,.3); }
+    .badge-blue   { background: rgba(88,166,255,.15); color: var(--blue);   border: 1px solid rgba(88,166,255,.3); }
+    .badge-purple { background: rgba(188,140,255,.15);color: var(--purple); border: 1px solid rgba(188,140,255,.3);}
+
+    /* ── Steps ──────────────────────────────────────────────────── */
+    .steps { counter-reset: step; list-style: none; padding: 0; }
+    .steps li {
+      counter-increment: step;
+      display: flex; gap: 14px; align-items: flex-start;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .steps li:last-child { border-bottom: none; }
+    .steps li::before {
+      content: counter(step);
+      background: var(--primary);
+      color: #fff;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      flex-shrink: 0; margin-top: 2px;
+    }
+    .steps li .step-content { flex: 1; }
+    .steps li .step-title { font-weight: 600; color: var(--text); font-size: 13px; }
+    .steps li .step-body { color: var(--text2); font-size: 13px; margin-top: 2px; }
+
+    /* ── Priority items ─────────────────────────────────────────── */
+    .priority-list { list-style: none; padding: 0; }
+    .priority-item {
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 12px 16px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 8px;
+    }
+    .priority-icon { font-size: 18px; flex-shrink: 0; }
+    .priority-body { flex: 1; }
+    .priority-title { font-weight: 600; color: var(--text); font-size: 13px; margin-bottom: 3px; }
+    .priority-desc { color: var(--text2); font-size: 13px; }
+
+    /* ── Sanity check results ───────────────────────────────────── */
+    .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .check-item {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+    }
+    .check-item .ci-icon { font-size: 18px; flex-shrink: 0; }
+    .check-item .ci-body { flex: 1; }
+    .check-item .ci-label { font-size: 12px; font-weight: 600; color: var(--text); }
+    .check-item .ci-value { font-size: 11px; color: var(--text2); margin-top: 1px; }
+
+    /* ── Link ───────────────────────────────────────────────────── */
+    a.ext { color: var(--blue); text-decoration: none; }
+    a.ext:hover { text-decoration: underline; }
+
+    /* ── Copy button ────────────────────────────────────────────── */
+    .copy-btn {
+      cursor: pointer; font-size: 11px;
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text2); border-radius: 4px; padding: 2px 8px;
+      transition: all .15s; margin-left: 8px;
+    }
+    .copy-btn:hover { color: var(--text); border-color: var(--border2); }
+
+    /* ── Scroll to top ──────────────────────────────────────────── */
+    .back-to-top {
+      position: fixed; bottom: 24px; right: 24px;
+      width: 40px; height: 40px;
+      background: var(--primary);
+      border: none; border-radius: 50%;
+      color: #fff; font-size: 18px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      box-shadow: var(--shadow);
+      transition: transform .15s;
+    }
+    .back-to-top:hover { transform: translateY(-2px); }
+
+    /* ── Divider ────────────────────────────────────────────────── */
+    hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+    /* ── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+      .main { padding: 20px; }
+      .card-grid { grid-template-columns: 1fr; }
+      .check-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════
+     AUTH GATE
+     ════════════════════════════════════════════════════════════════ -->
+<div id="auth-gate">
+  <div class="gate-card">
+    <div class="gate-icon">🔐</div>
+    <div class="gate-title">Admin Access Required</div>
+    <div class="gate-sub">This page is restricted to Alternate CRM Administrators. You must be logged in as an Admin or Super Admin to view it.</div>
+    <button class="btn-primary" id="btn-verify" onclick="verifyAccess()">
+      ✓ Verify My Access
+    </button>
+    <div class="gate-error" id="gate-error">Access denied. Please log into Alternate CRM as an Admin first.</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     MAIN APP
+     ════════════════════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <span class="top-bar-logo">⚡</span>
+      <span class="top-bar-title">Alternate CRM Technical Handoff Bible</span>
+      <span class="top-bar-badge">Admin Only</span>
+    </div>
+    <div class="top-bar-right">
+      <div class="status-dot"></div>
+      <span class="status-label" id="prod-status">Production: checking…</span>
+      <span style="color:var(--text3);font-size:12px;">v9.7.7 — 2026-06-18</span>
+    </div>
+  </div>
+
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Overview</div>
+        <a class="sidebar-link active" onclick="scrollTo('sanity')"><span class="icon">🔍</span>Sanity Check Results</a>
+        <a class="sidebar-link" onclick="scrollTo('what-is')"><span class="icon">📖</span>What is Alternate CRM?</a>
+        <a class="sidebar-link" onclick="scrollTo('architecture')"><span class="icon">🏗️</span>Architecture</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Environments</div>
+        <a class="sidebar-link" onclick="scrollTo('envs')"><span class="icon">🌍</span>URLs & Environments</a>
+        <a class="sidebar-link" onclick="scrollTo('infra')"><span class="icon">☁️</span>Infrastructure</a>
+        <a class="sidebar-link" onclick="scrollTo('env-vars')"><span class="icon">🔑</span>Critical Env Vars</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Integrations</div>
+        <a class="sidebar-link" onclick="scrollTo('integrations')"><span class="icon">🔌</span>All Integrations</a>
+        <a class="sidebar-link" onclick="scrollTo('monitoring')"><span class="icon">📊</span>Monitoring</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Operations</div>
+        <a class="sidebar-link" onclick="scrollTo('deploy')"><span class="icon">🚀</span>Deployment Flow</a>
+        <a class="sidebar-link" onclick="scrollTo('git')"><span class="icon">🌿</span>Git Rules</a>
+        <a class="sidebar-link" onclick="scrollTo('incidents')"><span class="icon">🚨</span>Incident Playbook</a>
+        <a class="sidebar-link" onclick="scrollTo('rollback')"><span class="icon">↩️</span>Rollback Procedure</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Database</div>
+        <a class="sidebar-link" onclick="scrollTo('db')"><span class="icon">🗃️</span>Database & Migrations</a>
+        <a class="sidebar-link" onclick="scrollTo('cache')"><span class="icon">⚡</span>Cache Layer</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Backend</div>
+        <a class="sidebar-link" onclick="scrollTo('backend-modules')"><span class="icon">📦</span>Key Modules</a>
+        <a class="sidebar-link" onclick="scrollTo('scheduler')"><span class="icon">⏰</span>Scheduler / Jobs</a>
+        <a class="sidebar-link" onclick="scrollTo('tests')"><span class="icon">🧪</span>Tests</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Context</div>
+        <a class="sidebar-link" onclick="scrollTo('open-items')"><span class="icon">📌</span>Open Items</a>
+        <a class="sidebar-link" onclick="scrollTo('known-issues')"><span class="icon">⚠️</span>Known Issues / Gotchas</a>
+        <a class="sidebar-link" onclick="scrollTo('scripts')"><span class="icon">🛠️</span>Utility Scripts</a>
+        <a class="sidebar-link" onclick="scrollTo('agent-rules')"><span class="icon">🤖</span>AI Agent Rules</a>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+
+      <!-- SANITY CHECK RESULTS -->
+      <section class="section" id="sec-sanity">
+        <div class="section-header">
+          <span class="section-icon">🔍</span>
+          <span class="section-title">Live Sanity Check Results</span>
+          <span style="margin-left:auto;font-size:12px;color:var(--text3)">Run: 2026-06-18 08:40 IST</span>
+        </div>
+
+        <div class="check-grid">
+          <div class="check-item">
+            <span class="ci-icon">✅</span>
+            <div class="ci-body">
+              <div class="ci-label">Production Backend</div>
+              <div class="ci-value">api.alternatecrm.staging.in — HTTP 200</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">✅</span>
+            <div class="ci-body">
+              <div class="ci-label">DB Connected (deep)</div>
+              <div class="ci-value">PostgreSQL, latency 5.98ms, tables accessible</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">✅</span>
+            <div class="ci-body">
+              <div class="ci-label">Frontend Static Site</div>
+              <div class="ci-value">alternatecrm.staging.in — HTTP 200, 0.46s</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">✅</span>
+            <div class="ci-body">
+              <div class="ci-label">Data Integrity</div>
+              <div class="ci-value">12,912 leads, 34 users — no data loss risk</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">✅</span>
+            <div class="ci-body">
+              <div class="ci-label">Redis Cache</div>
+              <div class="ci-value">Upstash Redis active, 3 keys in memory</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">✅</span>
+            <div class="ci-body">
+              <div class="ci-label">Public API (CMT Bridge)</div>
+              <div class="ci-value">/api/public/health → status: ok</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">✅</span>
+            <div class="ci-body">
+              <div class="ci-label">Memory</div>
+              <div class="ci-value">243 MB / 512 MB — stable (post OOM fix)</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">✅</span>
+            <div class="ci-body">
+              <div class="ci-label">Python Syntax Check</div>
+              <div class="ci-value">664 backend files — zero syntax errors</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">⚠️</span>
+            <div class="ci-body">
+              <div class="ci-label">scheduler_alive: false</div>
+              <div class="ci-value">False alarm — timers complete & respawn normally</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">⚠️</span>
+            <div class="ci-body">
+              <div class="ci-label">last_sf_sync_at: null</div>
+              <div class="ci-value">Salesforce not configured or no completed sync logs</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">⚠️</span>
+            <div class="ci-body">
+              <div class="ci-label">64 uncommitted files</div>
+              <div class="ci-value">.gz bundles, daily logs, design-system/ — not blocking</div>
+            </div>
+          </div>
+          <div class="check-item">
+            <span class="ci-icon">⚠️</span>
+            <div class="ci-body">
+              <div class="ci-label">UptimeRobot: 2 KW Errors</div>
+              <div class="ci-value">/api/config and /api/auth/login monitors misconfigured</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert alert-green">
+          <span class="alert-icon">✅</span>
+          <div class="alert-body">
+            <strong>Production is Healthy</strong>
+            <p>All critical systems are operational. DB connected, no data loss, memory stable at 243 MB.</p>
+          </div>
+        </div>
+
+        <div class="alert alert-yellow">
+          <span class="alert-icon">⚠️</span>
+          <div class="alert-body">
+            <strong>False Alarm: scheduler_alive = false</strong>
+            <p>The monitoring check looks for alive <code>threading.Timer</code> threads. Between fire intervals, timers naturally complete and a new timer is spawned — briefly showing as "dead" before the new one starts. The scheduler IS working correctly. Stale call sweeper, nightly Aircall/Alternate Messenger syncs, and keep-alive pings all run on schedule.</p>
+          </div>
+        </div>
+
+        <div class="alert alert-yellow">
+          <span class="alert-icon">⚠️</span>
+          <div class="alert-body">
+            <strong>2 UptimeRobot Monitors Show KW Error</strong>
+            <p>Monitors for <code>/api/config</code> and <code>/api/auth/login</code> have <code>keyword_type</code> misconfiguration. Run <code>python3 scripts/setup_uptimerobot.py --fix</code> to correct. This was already partially run — 4 monitors are already correct.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- WHAT IS ALTERNATE_CRM -->
+      <section class="section" id="sec-what-is">
+        <div class="section-header">
+          <span class="section-icon">📖</span>
+          <span class="section-title">What Is Alternate CRM?</span>
+        </div>
+        <p>Alternate CRM is a <strong>production CRM platform</strong> built for SDR (Sales Development Representative) teams at <strong>Screen Magic / Alternate Messenger</strong>. It manages the full B2B lead lifecycle from import through outbound calling, emailing, Salesforce sync, and performance analytics.</p>
+        <div class="card-grid">
+          <div class="stat-card">
+            <div class="stat-label">Current Version</div>
+            <div class="stat-value">v9.7.7</div>
+            <div class="stat-sub">Deployed 2026-06-17 — OOM crash fix + dashboard staggering</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active Leads</div>
+            <div class="stat-value">12,912</div>
+            <div class="stat-sub">PostgreSQL production DB</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Users</div>
+            <div class="stat-value">34</div>
+            <div class="stat-sub">Super Admins, Pod Admins, SDRs, AEs</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Backend Tests</div>
+            <div class="stat-value">1,675+</div>
+            <div class="stat-sub">All passing as of v9.4.4</div>
+          </div>
+        </div>
+
+        <h3>User Roles</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Role</th><th>Access Level</th><th>Key Capabilities</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Super Admin</strong></td><td>Full org-wide</td><td>All leads, all users, settings, analytics, billing, SF admin</td></tr>
+              <tr><td><strong>Pod Admin</strong></td><td>Pod-scoped (or global toggle)</td><td>Own pod's leads, SDR management, pod analytics</td></tr>
+              <tr><td><strong>SDR</strong></td><td>Assigned leads only</td><td>Lead pipeline, calls (Aircall/Alternate Messenger), email, tasks</td></tr>
+              <tr><td><strong>AE</strong></td><td>Assigned leads only</td><td>Same as SDR — Account Executive variant</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ARCHITECTURE -->
+      <section class="section" id="sec-architecture">
+        <div class="section-header">
+          <span class="section-icon">🏗️</span>
+          <span class="section-title">Architecture</span>
+        </div>
+        <pre>alternatecrm.staging.in (Frontend — Render Static Site)
+    └── Vanilla JS + HTML/CSS SPA
+    └── React Analytics Hub (IIFE bundle — dashboard-hub.js)
+    └── React Email Hub (IIFE bundle — email-hub.js)
+
+api.alternatecrm.staging.in (Backend — Render Web Service)
+    └── Python FastAPI + Uvicorn
+    └── 40+ route modules (/routes/*.py)
+    └── SQLAlchemy ORM → PostgreSQL
+
+messenger-db-prod (Render PostgreSQL)
+    └── V36 migrations applied
+    └── 12,912 leads, 34 users, dialer_calls, upload_logs…
+
+Upstash Redis (Cache Layer)
+    └── 3-tier: Redis → in-memory dict → PostgreSQL
+    └── Keys prefixed ls:prod: / ls:staging:
+    └── 900s TTL on analytics, 120s on users/leaderboard</pre>
+
+        <h3>Frontend Architecture (Hybrid)</h3>
+        <div class="card">
+          <p style="margin:0">The frontend is a <strong>Vanilla JS SPA</strong> with <strong>React micro-frontends (IIFE bundles)</strong> embedded as self-contained scripts:</p>
+          <br/>
+          <div class="table-wrap" style="margin:0">
+            <table>
+              <thead><tr><th>Bundle</th><th>Source</th><th>Mount Point</th></tr></thead>
+              <tbody>
+                <tr><td><code>dashboard-hub.js</code></td><td>frontend-react/src/pages/Dashboard.jsx</td><td><code>window.DashboardHub.mount(el)</code></td></tr>
+                <tr><td><code>analytics-hub.js</code></td><td>frontend-react/src/pages/Analytics.jsx</td><td><code>window.AnalyticsHub.mount(el)</code></td></tr>
+                <tr><td><code>email-hub.js</code></td><td>frontend-react/src/pages/EmailHub.jsx</td><td><code>window.EmailHub.mount(el)</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <h3>Backend Route Modules (40+)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Module</th><th>Prefix</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td><code>lead_routes.py</code></td><td>/api/leads</td><td>Lead CRUD, kanban, dashboard-stats, activity feed</td></tr>
+              <tr><td><code>auth_routes.py</code></td><td>/api/auth</td><td>Login, Google SSO callback, health</td></tr>
+              <tr><td><code>admin_routes.py</code></td><td>/api/admin</td><td>User list, settings sync, call logs</td></tr>
+              <tr><td><code>admin_user_routes.py</code></td><td>/api/admin/users</td><td>User CRUD, dialer settings, pod assignment</td></tr>
+              <tr><td><code>dialer_routes.py</code></td><td>/api/dialer</td><td>Call initiation, playground, provider config</td></tr>
+              <tr><td><code>call_routes.py</code></td><td>/api/calls</td><td>Call start/end/status, SDR call summary</td></tr>
+              <tr><td><code>analytics_routes.py</code></td><td>/api/admin/analytics</td><td>Activity trend, SDR table, KPIs, lead sources</td></tr>
+              <tr><td><code>analytics_digest_routes.py</code></td><td>/api/admin/analytics/digest</td><td>Daily digest for admins</td></tr>
+              <tr><td><code>smart_analytics_routes.py</code></td><td>/api/smart-analytics</td><td>NL→DSL AI analytics query engine</td></tr>
+              <tr><td><code>email_routes.py</code></td><td>/api/email</td><td>Nylas email send/receive/sync</td></tr>
+              <tr><td><code>webhook_routes.py</code></td><td>/api/webhooks</td><td>Aircall + Alternate Messenger + Nylas webhooks</td></tr>
+              <tr><td><code>sf_connection_routes.py</code></td><td>/api/sf</td><td>Salesforce connect/disconnect/status</td></tr>
+              <tr><td><code>monitoring_routes.py</code></td><td>/api/monitoring</td><td>Authenticated deep health (UptimeRobot)</td></tr>
+              <tr><td><code>public_api_routes.py</code></td><td>/api/public</td><td>CMT ↔ SF bridge (external API key)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ENVIRONMENTS -->
+      <section class="section" id="sec-envs">
+        <div class="section-header">
+          <span class="section-icon">🌍</span>
+          <span class="section-title">URLs & Environments</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Env</th><th>Branch</th><th>Frontend</th><th>Backend</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="badge badge-green">Production</span></td>
+                <td><code>main</code></td>
+                <td><a href="https://alternatecrm.staging.in" class="ext" target="_blank">alternatecrm.staging.in</a></td>
+                <td><a href="https://api.alternatecrm.staging.in" class="ext" target="_blank">api.alternatecrm.staging.in</a></td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-yellow">Staging</span></td>
+                <td><code>staging</code></td>
+                <td><a href="https://messenger-frontend-staging.onrender.com" class="ext" target="_blank">messenger-frontend-staging.onrender.com</a></td>
+                <td><a href="https://messenger-crm-staging.onrender.com" class="ext" target="_blank">messenger-crm-staging.onrender.com</a></td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-blue">Develop</span></td>
+                <td><code>develop</code></td>
+                <td><a href="https://messenger-frontend-develop.onrender.com" class="ext" target="_blank">messenger-frontend-develop.onrender.com</a></td>
+                <td>local only</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="alert alert-blue">
+          <span class="alert-icon">ℹ️</span>
+          <div class="alert-body">
+            <strong>GitHub Repository</strong>
+            <p><a href="https://github.com/neelmanimishrasf/crmalternate" class="ext" target="_blank">github.com/neelmanimishrasf/crmalternate</a> — This is the single source of truth. All deployment is via git push to the appropriate branch → Render auto-deploys.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- INFRASTRUCTURE -->
+      <section class="section" id="sec-infra">
+        <div class="section-header">
+          <span class="section-icon">☁️</span>
+          <span class="section-title">Infrastructure (Render)</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Service</th><th>Render Name</th><th>Plan</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Backend (Prod)</strong></td><td>messenger-crm-prod</td><td>Starter 512 MB</td><td>FastAPI + Uvicorn, auto-deploy from main</td></tr>
+              <tr><td><strong>Frontend (Prod)</strong></td><td>messenger-frontend-prod</td><td>Static Site</td><td>Render serves frontend/ dir, _headers for cache control</td></tr>
+              <tr><td><strong>Backend (Staging)</strong></td><td>messenger-crm-staging</td><td>Starter</td><td>Auto-deploy from staging branch</td></tr>
+              <tr><td><strong>Frontend (Staging)</strong></td><td>messenger-frontend-staging</td><td>Static Site</td><td>Auto-deploy from staging branch</td></tr>
+              <tr><td><strong>DB (Prod)</strong></td><td>messenger-db-prod</td><td>Basic 256 MB</td><td>PostgreSQL, prod data — V36 migrations</td></tr>
+              <tr><td><strong>DB (Staging)</strong></td><td>messenger-db-staging</td><td>Basic 256 MB</td><td>PostgreSQL, staging data — separate from prod</td></tr>
+              <tr><td><strong>Redis Cache</strong></td><td>Upstash Redis</td><td>Free tier</td><td>Shared by prod+staging, prefixed keys, REST API</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="alert alert-red">
+          <span class="alert-icon">🚨</span>
+          <div class="alert-body">
+            <strong>CRITICAL: Render Env Var Rule — NEVER VIOLATE</strong>
+            <p>Render's <code>PUT /services/{id}/env-vars</code> <strong>REPLACES ALL env vars</strong> — there is no PATCH. <strong>Always</strong> use <code>python3 scripts/render_env_manager.py set KEY VALUE</code>. Never call the Render API directly. Direct API calls will wipe all other env vars silently.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ENV VARS -->
+      <section class="section" id="sec-env-vars">
+        <div class="section-header">
+          <span class="section-icon">🔑</span>
+          <span class="section-title">Critical Environment Variables</span>
+        </div>
+        <p>These are the env vars that MUST be present on production. The full snapshot is in <code>scripts/.prod.env</code> (gitignored — local only).</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Variable</th><th>Why Critical</th><th>What Breaks If Missing</th></tr></thead>
+            <tbody>
+              <tr><td><code>DATABASE_URL</code></td><td>Points to PostgreSQL</td><td>App silently uses SQLite → 0 leads shown (P1 incident 2026-05-13)</td></tr>
+              <tr><td><code>JWT_SECRET</code></td><td>Signs all auth tokens</td><td>All logins fail with 401</td></tr>
+              <tr><td><code>FRONTEND_URL</code></td><td>Google SSO redirect</td><td>OAuth callback fails → no one can log in</td></tr>
+              <tr><td><code>FRONTEND_URLS</code></td><td>CORS allowlist</td><td>All API calls blocked by browser CORS</td></tr>
+              <tr><td><code>MONITORING_API_KEY</code></td><td>UptimeRobot auth</td><td>Monitoring returns 401 → false-negative health status</td></tr>
+              <tr><td><code>APP_ENCRYPTION_KEY</code></td><td>Encrypts SF/Aircall credentials</td><td>Cannot decrypt stored credentials → integrations break</td></tr>
+              <tr><td><code>GOOGLE_CLIENT_ID</code></td><td>Google SSO OAuth</td><td>Google login button broken</td></tr>
+              <tr><td><code>GOOGLE_CLIENT_SECRET</code></td><td>Google SSO OAuth</td><td>Google login callback fails</td></tr>
+              <tr><td><code>GROQ_API_KEY</code></td><td>AI research + Smart Analytics</td><td>AI research fails silently, Smart Analytics returns error</td></tr>
+              <tr><td><code>UPSTASH_REDIS_REST_URL</code></td><td>Redis cache</td><td>Graceful degradation to in-memory cache — no crash but cache stampede risk</td></tr>
+              <tr><td><code>UPSTASH_REDIS_REST_TOKEN</code></td><td>Redis cache auth</td><td>Same as above</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <pre><span style="color:#8b949e"># ✅ CORRECT — safe env var update</span>
+python3 scripts/render_env_manager.py set KEY VALUE
+python3 scripts/render_env_manager.py set-many scripts/.prod.env
+python3 scripts/render_env_manager.py list
+python3 scripts/render_env_manager.py delete KEY
+
+<span style="color:#f85149"># ❌ FORBIDDEN — wipes ALL other env vars</span>
+curl -X PUT https://api.render.com/v1/services/.../env-vars -d '[{"key":"X","value":"Y"}]'</pre>
+      </section>
+
+      <!-- INTEGRATIONS -->
+      <section class="section" id="sec-integrations">
+        <div class="section-header">
+          <span class="section-icon">🔌</span>
+          <span class="section-title">All Integrations</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Integration</th><th>Purpose</th><th>Status</th><th>Config Location</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Salesforce</strong></td><td>Two-way lead sync, SDR metrics push, SF field enrichment</td><td><span class="badge badge-green">✅ Production</span></td><td>Admin → Settings → Salesforce</td></tr>
+              <tr><td><strong>Aircall</strong></td><td>Click-to-call, call recording, transcript, nightly catch-up sync</td><td><span class="badge badge-green">✅ Production</span></td><td>Admin → Settings → Dialer → Aircall</td></tr>
+              <tr><td><strong>Alternate Messenger</strong></td><td>Browser WebRTC calls, bridge calls, in-app SMS/WhatsApp, Conversations tab</td><td><span class="badge badge-green">✅ Production</span></td><td>Admin → Settings → Contact Center</td></tr>
+              <tr><td><strong>Nylas</strong></td><td>Email send/receive, open tracking, attachments, webhook delivery</td><td><span class="badge badge-green">✅ Production</span></td><td>Backend env var <code>NYLAS_*</code></td></tr>
+              <tr><td><strong>Groq (Llama 3.3 70B)</strong></td><td>AI research auto-fill, Smart Analytics NL→DSL, growth intelligence</td><td><span class="badge badge-green">✅ Production</span></td><td>Backend env var <code>GROQ_API_KEY</code></td></tr>
+              <tr><td><strong>Google OAuth</strong></td><td>SSO authentication for all users</td><td><span class="badge badge-green">✅ Production</span></td><td>Backend env vars <code>GOOGLE_CLIENT_*</code></td></tr>
+              <tr><td><strong>Upstash Redis</strong></td><td>Shared cache across workers — prevents stampede on cold start</td><td><span class="badge badge-green">✅ Production</span></td><td>Backend env vars <code>UPSTASH_*</code></td></tr>
+              <tr><td><strong>Public API (CMT Bridge)</strong></td><td>External webhook endpoint for CMT→Salesforce lead flow</td><td><span class="badge badge-green">✅ Production</span></td><td>Admin → Settings → API Keys</td></tr>
+              <tr><td><strong>Mixpanel</strong></td><td>User analytics — 16 custom events, session recording</td><td><span class="badge badge-green">✅ Production</span></td><td>Hardcoded token in index.html</td></tr>
+              <tr><td><strong>Microsoft Clarity</strong></td><td>Heatmaps, session replays</td><td><span class="badge badge-green">✅ Production</span></td><td>Hardcoded in index.html + login.html</td></tr>
+              <tr><td><strong>UptimeRobot</strong></td><td>6-tier production monitoring, 5-min intervals</td><td><span class="badge badge-yellow">⚠️ 2 KW errors</span></td><td><code>python3 scripts/setup_uptimerobot.py</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Alternate Messenger Call Flow (Critical — Read Before Touching)</h3>
+        <div class="alert alert-purple">
+          <span class="alert-icon">🔐</span>
+          <div class="alert-body">
+            <strong>Alternate Messenger API Payload Contract — Verified 2026-06-12</strong>
+            <p>The Alternate Messenger <code>/calls/initiate</code> payload was verified against 44 live call records. The ONLY accepted fields are:</p>
+          </div>
+        </div>
+        <pre><span style="color:#8b949e">// Browser call</span>
+{"phone_number": "+919580440262", "contact_name": "", "use_agent_phone": false, "from_number": "&lt;DID&gt;"}
+
+<span style="color:#8b949e">// Bridge call</span>
+{"phone_number": "+919580440262", "contact_name": "", "use_agent_phone": true, "from_number": "&lt;DID&gt;"}
+
+<span style="color:#f85149">// ❌ Fields that cause 422 "Unknown field":</span>
+// call_type, call_mode — DO NOT ADD THESE</pre>
+      </section>
+
+      <!-- MONITORING -->
+      <section class="section" id="sec-monitoring">
+        <div class="section-header">
+          <span class="section-icon">📊</span>
+          <span class="section-title">Monitoring</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tier</th><th>Monitor</th><th>URL</th><th>Check</th></tr></thead>
+            <tbody>
+              <tr><td>T1</td><td>Frontend</td><td>alternatecrm.staging.in</td><td>HTTP 200</td></tr>
+              <tr><td>T1</td><td>Backend reachable</td><td>/api/health</td><td>Keyword: <code>ok</code></td></tr>
+              <tr><td>T2</td><td>DB table accessible</td><td>/api/health/deep</td><td>Keyword: <code>true</code></td></tr>
+              <tr><td>T3</td><td>App config endpoint</td><td>/api/config</td><td>HTTP 200</td></tr>
+              <tr><td>T4</td><td>Login page</td><td>/api/auth/login</td><td>HTTP 200</td></tr>
+              <tr><td>T5</td><td>Public API</td><td>/api/public/health</td><td>Keyword: <code>ok</code></td></tr>
+              <tr><td>T6</td><td>Authenticated deep health</td><td>/api/monitoring/health?key=ls-monitor-v1-2026</td><td>Keyword: <code>"status":"ok"</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <pre><span style="color:#8b949e"># Quick full-stack health check command</span>
+curl https://api.alternatecrm.staging.in/api/monitoring/health?key=ls-monitor-v1-2026
+
+<span style="color:#8b949e"># Expected response fields to verify:</span>
+# "status": "ok"            ← MUST be "ok" (not "degraded" or "critical")
+# "db_tables_accessible": true
+# "db_url_type": "postgresql"  ← NOT "sqlite" (sqlite = misconfiguration)
+# "data_loss_risk": false
+# "leads_total": &gt;0        ← Should be ~12,912+</pre>
+      </section>
+
+      <!-- DEPLOYMENT -->
+      <section class="section" id="sec-deploy">
+        <div class="section-header">
+          <span class="section-icon">🚀</span>
+          <span class="section-title">Deployment Flow</span>
+        </div>
+        <div class="alert alert-red">
+          <span class="alert-icon">🚨</span>
+          <div class="alert-body">
+            <strong>NEVER push to staging or main without explicit user (Neelmani) approval.</strong>
+            <p>Every push to staging or main triggers a Render build and auto-deploys to live servers.</p>
+          </div>
+        </div>
+        <ol class="steps">
+          <li>
+            <div class="step-content">
+              <div class="step-title">Develop on <code>develop</code> branch</div>
+              <div class="step-body">All feature work, bug fixes, and experiments go on <code>develop</code>. Never commit directly to <code>main</code> or <code>staging</code>.</div>
+            </div>
+          </li>
+          <li>
+            <div class="step-content">
+              <div class="step-title">Run pre-deploy check</div>
+              <div class="step-body"><code>bash scripts/pre-deploy-check.sh</code> — also run <code>JWT_SECRET=test_secret python3 -m pytest tests/ -x -q</code> to verify all 1,675+ tests pass.</div>
+            </div>
+          </li>
+          <li>
+            <div class="step-content">
+              <div class="step-title">Run graph review (AI agent only)</div>
+              <div class="step-body">Use <code>detect_changes</code> + <code>get_impact_radius</code> + <code>get_affected_flows</code> from the code-review-graph MCP tools.</div>
+            </div>
+          </li>
+          <li>
+            <div class="step-content">
+              <div class="step-title">Merge <code>develop → staging</code></div>
+              <div class="step-body"><code>git checkout staging && git merge develop --no-ff -m "release: vX.Y.Z — staging deploy" && git push origin staging</code><br/>Wait ~2 min for Render staging deploy.</div>
+            </div>
+          </li>
+          <li>
+            <div class="step-content">
+              <div class="step-title">Verify staging health</div>
+              <div class="step-body"><code>curl https://messenger-crm-staging.onrender.com/api/health/deep</code><br/>Must return <code>{"db_tables_accessible": true}</code>. Also test with authenticated API calls.</div>
+            </div>
+          </li>
+          <li>
+            <div class="step-content">
+              <div class="step-title">Update release notes (TWO files, mandatory)</div>
+              <div class="step-body">Add entry to <code>docs/RELEASES.md</code> AND append an entry to <code>frontend-react/src/features/help-hub/data/releases.json</code> (the in-app "What's New" section, since the Help Hub migration — was <code>frontend/js/views/user_guide.js</code> before that). Skipping either = incomplete release.</div>
+            </div>
+          </li>
+          <li>
+            <div class="step-content">
+              <div class="step-title">Merge <code>staging → main</code></div>
+              <div class="step-body"><code>git checkout main && git merge staging --no-ff -m "release: vX.Y.Z — production deploy" && git push origin main</code><br/>Production auto-deploys in ~2 min.</div>
+            </div>
+          </li>
+          <li>
+            <div class="step-content">
+              <div class="step-title">Post-deploy verification</div>
+              <div class="step-body">Check <code>/api/health</code>, <code>/api/health/deep</code>, <code>/api/monitoring/health?key=ls-monitor-v1-2026</code>, Render logs for <code>[Startup] Background tasks complete</code> and <code>[Startup] DB type: postgresql</code>.</div>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <!-- GIT RULES -->
+      <section class="section" id="sec-git">
+        <div class="section-header">
+          <span class="section-icon">🌿</span>
+          <span class="section-title">Git Rules</span>
+        </div>
+        <div class="alert alert-red">
+          <span class="alert-icon">⛔</span>
+          <div class="alert-body">
+            <strong>Hard Rules</strong>
+            <p>NEVER commit directly to <code>main</code> or <code>staging</code>. NEVER use <code>git merge --no-edit</code>. NEVER push without explicit Neelmani approval. NEVER revert a merge commit in production (use <code>Render Dashboard → Manual Deploy → previous commit hash</code> instead).</p>
+          </div>
+        </div>
+        <h3>Commit Message Format</h3>
+        <pre>&lt;type&gt;(&lt;scope&gt;): &lt;short summary — 50 chars max&gt;
+
+&lt;what changed and why — 2–5 lines, wrap at 72 chars&gt;
+&lt;risks or migration notes&gt;
+&lt;testing done&gt;
+
+<span style="color:#8b949e"># Types: feat | fix | hotfix | refactor | chore | docs | test | hardening</span>
+<span style="color:#8b949e"># Scopes: migrations | auth | leads | dialer | health | frontend | deploy | api</span></pre>
+      </section>
+
+      <!-- INCIDENT PLAYBOOK -->
+      <section class="section" id="sec-incidents">
+        <div class="section-header">
+          <span class="section-icon">🚨</span>
+          <span class="section-title">Incident Playbook</span>
+        </div>
+
+        <h3>P1: App is Down (500 / no response)</h3>
+        <ol class="steps">
+          <li><div class="step-content"><div class="step-title">Check Render Dashboard</div><div class="step-body">Open Render → messenger-crm-prod → Events. Look for <code>server_failed</code>, OOM (<code>exit 137</code>), or deploy failures.</div></div></li>
+          <li><div class="step-content"><div class="step-title">Check logs for known patterns</div><div class="step-body">Look for: <code>[Startup] DB type: postgresql</code> (if sqlite → DATABASE_URL missing), <code>[Startup] DB sanity: N leads</code> where N must be &gt;0.</div></div></li>
+          <li><div class="step-content"><div class="step-title">If env vars suspect</div><div class="step-body">Run <code>python3 scripts/render_env_manager.py list</code> and compare against <code>scripts/.prod.env</code> line-by-line. NEVER restore from memory.</div></div></li>
+          <li><div class="step-content"><div class="step-title">Rollback if needed</div><div class="step-body">Render Dashboard → messenger-crm-prod → Manual Deploy → select last known good commit hash. Do NOT <code>git revert</code> a merge.</div></div></li>
+          <li><div class="step-content"><div class="step-title">Fix forward on develop</div><div class="step-body">Fix the issue on <code>develop</code>, run tests, then get explicit approval before merging to staging → main.</div></div></li>
+        </ol>
+
+        <h3>P1 Exception: Skip Staging (only during active outage)</h3>
+        <div class="alert alert-yellow">
+          <span class="alert-icon">⚠️</span>
+          <div class="alert-body">
+            <strong>When to use the P1 exception path</strong>
+            <p>Only when: (1) there is an active user-impacting outage, AND (2) staging is also affected or unavailable. Fix on <code>develop</code>, test locally, then deploy to main WITH EXPLICIT user approval. Document the staging bypass in the release note. Write an RCA within 24h.</p>
+          </div>
+        </div>
+
+        <h3>SDR Stuck "Active Call" (Ghost Call)</h3>
+        <div class="card">
+          <p style="margin:0"><strong>Symptom:</strong> SDR sees "You already have an active call in progress" and can't make new calls.</p>
+          <p style="margin-top:8px"><strong>Self-healing path (v9.5.4+):</strong> The frontend auto-detects and clears ghost calls on retry. SDR should see "✅ Cleared a stuck call."</p>
+          <p style="margin-top:8px"><strong>Manual fix:</strong> Find the stuck <code>DialerCall</code> record in the DB and set <code>status = 'CALL_ENDED'</code>, <code>ended_at = now()</code>. Or wait for the 15-min stale call sweeper (runs every 900s on the backend).</p>
+        </div>
+
+        <h3>Salesforce Sync Errors</h3>
+        <div class="card">
+          <p style="margin:0">Check <strong>Admin → SF Logs</strong> in the app for specific error types:</p>
+          <ul style="margin-top:8px;color:var(--text2);padding-left:20px;line-height:2">
+            <li><code>INVALID_EMAIL_ADDRESS</code> — Email sanitizer should catch this; check salesforce.py <code>_sanitize_email()</code></li>
+            <li><code>DUPLICATES_DETECTED</code> — Gracefully links to existing lead (v8.5.0+); check SF Logs for <code>linked_to_existing_duplicate</code></li>
+            <li><code>Resource Lead Not Found</code> — Local ID (MIG-/MANUAL-/upload-) reached SF; check sentinel ID guard in salesforce.py</li>
+            <li><code>auth_required</code> on connection status — SF credentials expired; re-enter in Admin → Settings → Salesforce</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ROLLBACK -->
+      <section class="section" id="sec-rollback">
+        <div class="section-header">
+          <span class="section-icon">↩️</span>
+          <span class="section-title">Rollback Procedure</span>
+        </div>
+        <div class="alert alert-red">
+          <span class="alert-icon">⛔</span>
+          <div class="alert-body">
+            <strong>NEVER use <code>git revert</code> on a merge commit</strong>
+            <p>Reverting a merge commit on production causes silent feature loss — subsequent merges will NOT re-apply those changes. Always use Render's Manual Deploy instead.</p>
+          </div>
+        </div>
+        <ol class="steps">
+          <li><div class="step-content"><div class="step-title">Open Render Dashboard</div><div class="step-body">Go to Render → messenger-crm-prod (backend) or messenger-frontend-prod (frontend).</div></div></li>
+          <li><div class="step-content"><div class="step-title">Manual Deploy</div><div class="step-body">Click "Manual Deploy" → select the last known good commit hash from the deploy history.</div></div></li>
+          <li><div class="step-content"><div class="step-title">Fix forward on develop</div><div class="step-body">Fix the issue on develop, test on staging, then merge to main when verified.</div></div></li>
+        </ol>
+      </section>
+
+      <!-- DATABASE -->
+      <section class="section" id="sec-db">
+        <div class="section-header">
+          <span class="section-icon">🗃️</span>
+          <span class="section-title">Database & Migrations</span>
+        </div>
+        <div class="card">
+          <div style="display:flex;gap:24px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Production</div>
+              <div style="font-size:13px;color:var(--text)"><strong>messenger-db-prod</strong></div>
+              <div style="font-size:13px;color:var(--text2)">PostgreSQL, Basic 256 MB, Render managed</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Staging</div>
+              <div style="font-size:13px;color:var(--text)"><strong>messenger-db-staging</strong></div>
+              <div style="font-size:13px;color:var(--text2)">PostgreSQL, Basic 256 MB, separate from prod</div>
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Dev</div>
+              <div style="font-size:13px;color:var(--text)"><strong>SQLite</strong></div>
+              <div style="font-size:13px;color:var(--text2)">backend/crm.db — local dev only. Set DATABASE_URL=sqlite:///./crm.db in .env</div>
+            </div>
+          </div>
+        </div>
+        <h3>Migration System</h3>
+        <p>Migrations are in <code>backend/migrations.py</code> and run automatically on startup via <code>run_migrations()</code>. They use <code>_applied_migrations</code> tracking (DB flag) to ensure one-time application. Currently at <strong>V36</strong>.</p>
+        <div class="alert alert-yellow">
+          <span class="alert-icon">⚠️</span>
+          <div class="alert-body">
+            <strong>Migration Rules (Rule 12)</strong>
+            <p>Column migrations MUST fail loudly — never catch and log as warning. A silently-skipped column causes ORM to boot broken: <code>SELECT *</code> throws <code>ProgrammingError</code> but <code>/api/health</code> still returns 200.</p>
+          </div>
+        </div>
+        <h3>Emergency Column Add (if migration skipped silently)</h3>
+        <pre>import psycopg2, os
+conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+conn.autocommit = False
+cur = conn.cursor()
+cur.execute("ALTER TABLE leads ADD COLUMN &lt;col&gt; &lt;type&gt; DEFAULT &lt;val&gt;")
+conn.commit()
+<span style="color:#8b949e"># Or use: POST /api/admin/force-add-column (Super Admin JWT required)</span></pre>
+
+        <h3>Aircall Duration Backfill (PENDING — dry-run first)</h3>
+        <div class="alert alert-yellow">
+          <span class="alert-icon">⚠️</span>
+          <div class="alert-body">
+            <strong>Do NOT run without approval</strong>
+            <p>The backfill script <code>backend/scripts/backfill_aircall_duration.py</code> exists to heal 4,749 Aircall DialerCall records with <code>duration=NULL</code>. Always dry-run first: <code>python3 backend/scripts/backfill_aircall_duration.py --dry-run</code>. Only execute with Neelmani's explicit approval.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- CACHE -->
+      <section class="section" id="sec-cache">
+        <div class="section-header">
+          <span class="section-icon">⚡</span>
+          <span class="section-title">Cache Layer</span>
+        </div>
+        <div class="card">
+          <p style="margin:0"><strong>3-tier architecture:</strong> <code>Upstash Redis</code> → <code>in-memory dict (per worker)</code> → <code>PostgreSQL</code></p>
+          <ul style="margin-top:8px;color:var(--text2);padding-left:20px;line-height:2">
+            <li>Redis is <strong>shared across workers</strong> — survives deploys, prevents stampedes</li>
+            <li>If Redis is down → graceful fallback to in-memory (no crash)</li>
+            <li>Keys prefixed: <code>ls:prod:</code> or <code>ls:staging:</code> (auto-detected from DATABASE_URL)</li>
+            <li>TTLs: <code>users</code> 120s, <code>leaderboard</code> 120s, <code>growth_intelligence</code> 900s</li>
+          </ul>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Namespace</th><th>TTL</th><th>Stampede Guard</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td><code>users</code></td><td>120s</td><td>✅ Yes</td><td>Admin user list — write routes invalidate immediately</td></tr>
+              <tr><td><code>leaderboard</code></td><td>120s</td><td>✅ Yes</td><td>SDR/AE leaderboard</td></tr>
+              <tr><td><code>growth_intelligence</code></td><td>900s</td><td>No</td><td>Groq AI insights — was unbounded dict, fixed in v9.7.7</td></tr>
+              <tr><td><code>analytics</code></td><td>300s</td><td>No</td><td>Analytics hub queries</td></tr>
+              <tr><td><code>dashboard</code></td><td>30s</td><td>No</td><td>Dashboard stats per user</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- BACKEND MODULES -->
+      <section class="section" id="sec-backend-modules">
+        <div class="section-header">
+          <span class="section-icon">📦</span>
+          <span class="section-title">Key Backend Modules</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>File</th><th>Purpose</th><th>⚠️ Critical?</th></tr></thead>
+            <tbody>
+              <tr><td><code>backend/main.py</code></td><td>App entry, router registration, startup sequence, CORS</td><td>Yes</td></tr>
+              <tr><td><code>backend/auth.py</code></td><td>JWT decode, Google SSO, role guards (<code>require_admin</code>, <code>require_super_admin</code>)</td><td>Yes</td></tr>
+              <tr><td><code>backend/models.py</code></td><td>All SQLAlchemy ORM models (~919 lines)</td><td>Yes</td></tr>
+              <tr><td><code>backend/migrations.py</code></td><td>V1–V36 schema migrations, startup-time, idempotent</td><td>Yes</td></tr>
+              <tr><td><code>backend/database.py</code></td><td>DB engine, session factory, pool config (pool=8, overflow=15)</td><td>Yes</td></tr>
+              <tr><td><code>backend/salesforce.py</code></td><td>SF push/pull/sync — do NOT modify without impact review</td><td>🚨 Critical</td></tr>
+              <tr><td><code>backend/dialer_service.py</code></td><td>Dialer orchestration, provider dispatch, EC-16 zombie heal</td><td>🚨 Critical</td></tr>
+              <tr><td><code>backend/messaging_provider.py</code></td><td>Alternate Messenger API adapter — call initiation, webhook parsing</td><td>Yes</td></tr>
+              <tr><td><code>backend/aircall_provider.py</code></td><td>Aircall API adapter — call initiation, recording fetch</td><td>Yes</td></tr>
+              <tr><td><code>backend/scheduled_jobs.py</code></td><td>All background jobs — nightly syncs, stale call sweeper, keep-alive</td><td>Yes</td></tr>
+              <tr><td><code>backend/cache.py</code></td><td>3-tier cache (Redis → in-memory → DB), stampede guards</td><td>Yes</td></tr>
+              <tr><td><code>backend/crypto.py</code></td><td>Fernet encryption/decryption for SF/Aircall credentials</td><td>Yes</td></tr>
+              <tr><td><code>backend/routes/lead_helpers.py</code></td><td>Core lead query builder — pod scoping, permissions, filters</td><td>🚨 Critical</td></tr>
+              <tr><td><code>scripts/render_env_manager.py</code></td><td>Safe Render env var management (GET→merge→PUT)</td><td>🚨 Critical</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- SCHEDULER -->
+      <section class="section" id="sec-scheduler">
+        <div class="section-header">
+          <span class="section-icon">⏰</span>
+          <span class="section-title">Scheduler / Background Jobs</span>
+        </div>
+        <p>All background jobs use <code>threading.Timer</code> loops — lightweight, no Celery or APScheduler required. Started once on app startup via <code>start_scheduled_jobs()</code> in <code>main.py</code>.</p>
+        <div class="alert alert-yellow">
+          <span class="alert-icon">⚠️</span>
+          <div class="alert-body">
+            <strong>scheduler_alive = false is a FALSE ALARM</strong>
+            <p>The monitoring check looks for alive timers. Between intervals, timers naturally complete and a new one is spawned. The monitoring endpoint will briefly report <code>scheduler_alive: false</code> — this is expected and not an emergency.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Job</th><th>Interval</th><th>Purpose</th></tr></thead>
+            <tbody>
+              <tr><td>SF Health Check</td><td>30 min (configurable)</td><td>Pings Salesforce, updates connection_status in DB</td></tr>
+              <tr><td>Daily Activity Aggregation</td><td>24h</td><td>Aggregates UserActivityLog into UserActivityDailySummary</td></tr>
+              <tr><td>Log Cleanup</td><td>24h</td><td>Deletes activity logs older than 90 days</td></tr>
+              <tr><td>Error Log Cleanup</td><td>24h</td><td>Deletes error logs older than 15 days</td></tr>
+              <tr><td>Keep-Alive Ping</td><td>10 min</td><td>Self-pings /api/health to prevent Render spin-down</td></tr>
+              <tr><td>Aircall Nightly Sync</td><td>24h</td><td>Pulls last 25h of Aircall calls — heals duration=NULL records</td></tr>
+              <tr><td>Alternate Messenger Nightly Sync</td><td>24h</td><td>Pulls last 25h of Alternate Messenger calls — heals zombie CALL_STARTED records (EC-16)</td></tr>
+              <tr><td>Stale Call Sweeper</td><td>15 min</td><td>EC-16: Auto-heals DialerCall stuck in CALL_STARTED/CALL_ANSWERED &gt;90 min</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TESTS -->
+      <section class="section" id="sec-tests">
+        <div class="section-header">
+          <span class="section-icon">🧪</span>
+          <span class="section-title">Tests</span>
+        </div>
+        <div class="card-grid">
+          <div class="stat-card">
+            <div class="stat-label">Backend Tests</div>
+            <div class="stat-value">1,675+</div>
+            <div class="stat-sub">pytest — all passing as of v9.4.4</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Frontend Tests</div>
+            <div class="stat-value">146+</div>
+            <div class="stat-sub">Vitest unit tests</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">E2E Tests</div>
+            <div class="stat-value">102+</div>
+            <div class="stat-sub">Playwright (run against staging)</div>
+          </div>
+        </div>
+        <pre><span style="color:#8b949e"># Run backend tests (required before any staging merge)</span>
+JWT_SECRET=test_secret python3 -m pytest tests/ -x -q
+
+<span style="color:#8b949e"># Run with verbose output for a specific file</span>
+JWT_SECRET=test_secret python3 -m pytest tests/test_lead_routes.py -v
+
+<span style="color:#8b949e"># Python syntax check (run before every commit)</span>
+python3 -m py_compile backend/&lt;file&gt;.py &amp;&amp; echo OK</pre>
+      </section>
+
+      <!-- OPEN ITEMS -->
+      <section class="section" id="sec-open-items">
+        <div class="section-header">
+          <span class="section-icon">📌</span>
+          <span class="section-title">Open Items (Carry-Forward)</span>
+        </div>
+        <ul class="priority-list">
+          <li class="priority-item">
+            <span class="priority-icon">⛔</span>
+            <div class="priority-body">
+              <div class="priority-title">Bridge Mode E2E Test — Blocked</div>
+              <div class="priority-desc">Needs Super Admin to toggle Aditya's <code>dialer_enabled</code> ON via Admin → Users → SDRs tab. Aditya places one bridge call, toggle OFF to confirm. Cannot proceed without that action.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">🔧</span>
+            <div class="priority-body">
+              <div class="priority-title">Neelmani's messenger_user_id = None in Prod</div>
+              <div class="priority-desc">Can self-fix via Admin → Users → Super Admins tab → Dialer Override dropdown. No code change needed (v9.5.6+ already supports this).</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">🔧</span>
+            <div class="priority-body">
+              <div class="priority-title">Alternate Messenger Agent Column — All Tabs</div>
+              <div class="priority-desc">The 3-field agent config block (Agent ID + from_number + email) only shows on SDR/AE tabs. Needs to be extended to Super Admin and Pod Admin tabs in <code>frontend/js/views/admin.js</code>.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">📊</span>
+            <div class="priority-body">
+              <div class="priority-title">Cold Calling Data Export — Not Started</div>
+              <div class="priority-desc">Meetings booked/missed analysis requested. CSV exports exist in root (2026-06-15 files) but no backend endpoint built yet.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">🗃️</span>
+            <div class="priority-body">
+              <div class="priority-title">Aircall Duration Backfill — Not Run on Prod</div>
+              <div class="priority-desc">Script exists: <code>backend/scripts/backfill_aircall_duration.py</code>. 4,749 records have <code>duration=NULL</code>. <strong>Always dry-run first</strong>: <code>python3 backend/scripts/backfill_aircall_duration.py --dry-run</code>. Requires Neelmani approval before running.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">⏸️</span>
+            <div class="priority-body">
+              <div class="priority-title">AI Command Bar Redesign — Deferred</div>
+              <div class="priority-desc">Expand-on-click design for the AI Command Bar. No urgency. Pick up when capacity allows.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">🧹</span>
+            <div class="priority-body">
+              <div class="priority-title">Untracked Files — Need Decision</div>
+              <div class="priority-desc">64 untracked files on <code>develop</code>: <code>.gz</code> compressed JS bundles (add to <code>.gitignore</code>?), <code>.agents/</code>, <code>design-system/</code>, <code>skills-lock.json</code>, CSV exports, <code>leaddetail-mockup.html</code>. Needs cleanup decision.</div>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- KNOWN ISSUES -->
+      <section class="section" id="sec-known-issues">
+        <div class="section-header">
+          <span class="section-icon">⚠️</span>
+          <span class="section-title">Known Issues / Gotchas</span>
+        </div>
+
+        <h3>Critical Gotchas (Read Before Touching Core Code)</h3>
+        <ul class="priority-list">
+          <li class="priority-item">
+            <span class="priority-icon">🚨</span>
+            <div class="priority-body">
+              <div class="priority-title">DATABASE_URL must NEVER have a SQLite default</div>
+              <div class="priority-desc">Do NOT add <code>os.getenv("DATABASE_URL", "sqlite:///./crm.db")</code> in database.py. If DATABASE_URL is missing, the app must fail loudly. SQLite fallback = silent 0-leads production incident (RCA 2026-05-13).</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">🚨</span>
+            <div class="priority-body">
+              <div class="priority-title">Lead import: single atomic commit (Rule 11)</div>
+              <div class="priority-desc">Any route creating leads MUST commit leads AND <code>LeadUploadLog</code> in a single <code>db.commit()</code>. Two separate commits = split-brain risk. Per-row loops MUST use <code>db.begin_nested()</code> savepoints.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">🚨</span>
+            <div class="priority-body">
+              <div class="priority-title">Column migrations must fail loudly (Rule 12)</div>
+              <div class="priority-desc">A silent column migration failure lets the ORM boot but all queries fail with <code>ProgrammingError</code>. <code>/api/health</code> (COUNT(*)) still returns 200. Dashboard 500s for users. Always raise, never catch-and-log.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">🔑</span>
+            <div class="priority-body">
+              <div class="priority-title">Alternate Messenger payload format is exact — no guessing</div>
+              <div class="priority-desc">Developer curl examples and documentation were wrong. The real contract was discovered from 44 live call records (2026-06-12). Only send: <code>phone_number</code> (E.164), <code>from_number</code> (verbatim from Settings), <code>use_agent_phone</code>, <code>contact_name</code>. Extra fields cause 422.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">⚡</span>
+            <div class="priority-body">
+              <div class="priority-title">Dashboard OOM: 7 concurrent API calls (fixed in v9.7.7)</div>
+              <div class="priority-desc">The React Dashboard fired 7 simultaneous API calls on mount. Fixed with 200/400/600/800ms staggering. Also: <code>growth_intelligence_routes.py</code> had an unbounded module-level dict — migrated to cache.py in v9.7.7. Do not reintroduce module-level dicts as caches.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">⛔</span>
+            <div class="priority-body">
+              <div class="priority-title">Never git revert a merge commit in production</div>
+              <div class="priority-desc"><code>git revert</code> on a merge commit silently drops ALL changes from that branch. Subsequent merges will NOT re-apply them. Always roll back via Render Manual Deploy → previous commit hash.</div>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- SCRIPTS -->
+      <section class="section" id="sec-scripts">
+        <div class="section-header">
+          <span class="section-icon">🛠️</span>
+          <span class="section-title">Utility Scripts</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Script</th><th>Purpose</th><th>Usage</th></tr></thead>
+            <tbody>
+              <tr><td><code>scripts/render_env_manager.py</code></td><td>Safe Render env var management</td><td><code>python3 scripts/render_env_manager.py set KEY VALUE</code></td></tr>
+              <tr><td><code>scripts/pre-deploy-check.sh</code></td><td>Pre-deploy checklist verification</td><td><code>bash scripts/pre-deploy-check.sh</code></td></tr>
+              <tr><td><code>scripts/start_day.sh</code></td><td>Morning context briefing</td><td><code>bash scripts/start_day.sh</code></td></tr>
+              <tr><td><code>scripts/close_day.sh</code></td><td>End-of-day context capture → PROJECT_JOURNAL.md</td><td><code>bash scripts/close_day.sh</code></td></tr>
+              <tr><td><code>scripts/setup_uptimerobot.py</code></td><td>UptimeRobot monitor management</td><td><code>python3 scripts/setup_uptimerobot.py --list</code></td></tr>
+              <tr><td><code>backend/scripts/backfill_aircall_duration.py</code></td><td>One-time Aircall duration backfill (NOT run yet)</td><td><code>python3 ... --dry-run</code> first</td></tr>
+              <tr><td><code>scripts/staging_redistribute_leads.py</code></td><td>Round-robin lead redistribution for staging QA</td><td>Staging only</td></tr>
+              <tr><td><code>scripts/.prod.env</code></td><td>Full production env var snapshot (gitignored)</td><td>Emergency reference — compare against Render on incident</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- AI AGENT RULES -->
+      <section class="section" id="sec-agent-rules">
+        <div class="section-header">
+          <span class="section-icon">🤖</span>
+          <span class="section-title">AI Agent Rules (If Using an AI Agent)</span>
+        </div>
+        <div class="alert alert-purple">
+          <span class="alert-icon">📖</span>
+          <div class="alert-body">
+            <strong>Single Source of Truth</strong>
+            <p>The complete protocol is in <code>docs/AGENT_PROTOCOL.md</code>. Always read it first. Deprecated: MYAGENT.md, Dev_Protocol.md, DEPLOYMENT_PROTOCOL.md.</p>
+          </div>
+        </div>
+        <h3>Hard Rules for Any AI Agent</h3>
+        <ul class="priority-list">
+          <li class="priority-item">
+            <span class="priority-icon">⛔</span>
+            <div class="priority-body">
+              <div class="priority-title">NEVER push to staging or main without explicit user approval</div>
+              <div class="priority-desc">Every push triggers a Render build. Even during an incident. Even under time pressure.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">⛔</span>
+            <div class="priority-body">
+              <div class="priority-title">NEVER call Render API directly for env vars</div>
+              <div class="priority-desc">Always use <code>python3 scripts/render_env_manager.py</code>. Direct API calls wipe all env vars.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">🔍</span>
+            <div class="priority-body">
+              <div class="priority-title">Use graph tools BEFORE reading files</div>
+              <div class="priority-desc">Use <code>semantic_search_nodes</code>, <code>query_graph</code>, <code>get_impact_radius</code> from the code-review-graph MCP. Only fall back to Grep/Read when the graph doesn't cover it.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">✂️</span>
+            <div class="priority-body">
+              <div class="priority-title">Surgical changes only (Karpathy Rule)</div>
+              <div class="priority-desc">Touch only what you must. Don't refactor adjacent code. Don't add "flexibility" that wasn't asked for. Every changed line should trace directly to the user's request.</div>
+            </div>
+          </li>
+          <li class="priority-item">
+            <span class="priority-icon">🧪</span>
+            <div class="priority-body">
+              <div class="priority-title">Never assume third-party API format</div>
+              <div class="priority-desc">Always verify against real API data (call history, live test) before coding any integration. Developer curl examples may be wrong (this burned us with Alternate Messenger: 5+ failed fix attempts).</div>
+            </div>
+          </li>
+        </ul>
+
+        <h3>Quick Start for a New Agent</h3>
+        <pre><span style="color:#8b949e"># 1. Get context</span>
+bash scripts/start_day.sh
+cat docs/AGENT_PROTOCOL.md
+cat docs/PROJECT_JOURNAL.md
+
+<span style="color:#8b949e"># 2. Before writing any code, run graph tools</span>
+<span style="color:#8b949e"># semantic_search_nodes, query_graph, get_impact_radius</span>
+
+<span style="color:#8b949e"># 3. Before any staging merge</span>
+bash scripts/pre-deploy-check.sh
+JWT_SECRET=test_secret python3 -m pytest tests/ -x -q
+
+<span style="color:#8b949e"># 4. Check prod health</span>
+curl https://api.alternatecrm.staging.in/api/monitoring/health?key=ls-monitor-v1-2026</pre>
+      </section>
+
+      <!-- Footer -->
+      <hr/>
+      <p style="text-align:center;color:var(--text3);font-size:12px;padding:16px 0">
+        Alternate CRM Technical Handoff Bible — Generated 2026-06-18 — v9.7.7 Production<br/>
+        <a href="https://github.com/neelmanimishrasf/crmalternate" class="ext" target="_blank">github.com/neelmanimishrasf/crmalternate</a>
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<button class="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Back to top">↑</button>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const API_BASE = (function() {
+  try {
+    const cfg = window.__CRM_CONFIG__ || {};
+    if (cfg.apiBase) return cfg.apiBase.replace(/\/$/, '');
+  } catch(e) {}
+  // Auto-detect: if on alternatecrm.staging.in, use the prod API
+  if (location.hostname === 'alternatecrm.staging.in') return 'https://api.alternatecrm.staging.in';
+  if (location.hostname === 'messenger-frontend-staging.onrender.com') return 'https://messenger-crm-staging.onrender.com';
+  return 'http://localhost:8000';
+})();
+
+// ── Auth Gate ─────────────────────────────────────────────────────────────────
+async function verifyAccess() {
+  const btn = document.getElementById('btn-verify');
+  const errEl = document.getElementById('gate-error');
+  errEl.style.display = 'none';
+  btn.textContent = 'Verifying…';
+  btn.disabled = true;
+
+  // Get JWT from sessionStorage (same key used by the main app)
+  const token = sessionStorage.getItem('crm_token') || localStorage.getItem('crm_token');
+  if (!token) {
+    errEl.textContent = 'No session found. Please log into Alternate CRM first, then return to this page.';
+    errEl.style.display = 'block';
+    btn.textContent = '✓ Verify My Access';
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/admin/users?page=1&page_size=1`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok || res.status === 200) {
+      showApp(token);
+    } else if (res.status === 403) {
+      errEl.textContent = 'Access denied. This page requires Admin or Super Admin role.';
+      errEl.style.display = 'block';
+      btn.textContent = '✓ Verify My Access';
+      btn.disabled = false;
+    } else if (res.status === 401) {
+      errEl.textContent = 'Session expired. Please log into Alternate CRM again, then return.';
+      errEl.style.display = 'block';
+      btn.textContent = '✓ Verify My Access';
+      btn.disabled = false;
+    } else {
+      errEl.textContent = `Verification failed (HTTP ${res.status}). Please try again.`;
+      errEl.style.display = 'block';
+      btn.textContent = '✓ Verify My Access';
+      btn.disabled = false;
+    }
+  } catch(e) {
+    errEl.textContent = 'Could not reach the Alternate CRM API. Are you connected?';
+    errEl.style.display = 'block';
+    btn.textContent = '✓ Verify My Access';
+    btn.disabled = false;
+  }
+}
+
+function showApp(token) {
+  document.getElementById('auth-gate').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  checkProdStatus();
+}
+
+// ── Live prod status check ────────────────────────────────────────────────────
+async function checkProdStatus() {
+  const el = document.getElementById('prod-status');
+  try {
+    const res = await fetch('https://api.alternatecrm.staging.in/api/health/deep', { cache: 'no-store' });
+    const data = await res.json();
+    if (data.db_tables_accessible && data.startup_complete) {
+      el.textContent = `Production: ✅ Healthy — ${data.db_latency_ms}ms`;
+      el.style.color = '#3fb950';
+    } else {
+      el.textContent = 'Production: ⚠️ Degraded';
+      el.style.color = '#e3b341';
+    }
+  } catch(e) {
+    el.textContent = 'Production: ❌ Unreachable';
+    el.style.color = '#f85149';
+  }
+}
+
+// ── Sidebar navigation ────────────────────────────────────────────────────────
+function scrollTo(id) {
+  const el = document.getElementById('sec-' + id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+}
+
+// ── Active section highlighting ───────────────────────────────────────────────
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id.replace('sec-', '');
+      document.querySelectorAll('.sidebar-link').forEach(l => {
+        const onclick = l.getAttribute('onclick') || '';
+        l.classList.toggle('active', onclick.includes(`'${id}'`));
+      });
+    }
+  });
+}, { rootMargin: '-20% 0px -60% 0px' });
+
+document.querySelectorAll('.section').forEach(s => observer.observe(s));
+
+// ── Auto-verify if already logged in ─────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const token = sessionStorage.getItem('crm_token') || localStorage.getItem('crm_token');
+  if (token) {
+    verifyAccess();
+  }
+});
+</script>
+</body>
+</html>

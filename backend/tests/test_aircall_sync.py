@@ -239,7 +239,7 @@ class TestSyncHistoricalCalls:
 
     # TC-03
     def test_unmatched_phone_is_ignored(self, db):
-        """Calls for numbers not in RCM are skipped."""
+        """Calls for numbers not in Alternate CRM are skipped."""
         call = _make_aircall_call(raw_digits="+910000000000")  # no lead has this
 
         result = self._sync(db, [call])
@@ -252,7 +252,7 @@ class TestSyncHistoricalCalls:
         """Previously the historical sync silently dropped any call whose
         number didn't already match a lead — worse than the webhook path,
         which at least stored the call. Now, when the calling SDR IS a known
-        RCM user (user.email matches), a lead is auto-created and
+        Alternate CRM user (user.email matches), a lead is auto-created and
         assigned to them, mirroring Klenty's own create-on-miss sync logic."""
         pod = create_test_pod(db)
         sdr = create_test_user(db, email="sync-autolead@test.com", role="SDR", pod_id=pod.id)
@@ -270,9 +270,9 @@ class TestSyncHistoricalCalls:
         assert dc.lead_id == lead.id
 
     def test_unmatched_phone_stays_unmatched_for_unknown_sdr(self, db):
-        """A call from a user who isn't in RCM at all must not create a
+        """A call from a user who isn't in Alternate CRM at all must not create a
         lead — same policy as the live webhook path."""
-        call = _make_aircall_call(raw_digits="+910000000002", user_email="not-in-rcm@test.com")
+        call = _make_aircall_call(raw_digits="+910000000002", user_email="not-in-alternatecrm@test.com")
 
         result = self._sync(db, [call])
 
@@ -530,7 +530,7 @@ class TestHandleWebhookSync:
 
     # TC-14
     def test_unknown_caller_creates_aircall_direct_record(self, db):
-        """WH arriving with no prior RCM record gets source='aircall_direct'."""
+        """WH arriving with no prior Alternate CRM record gets source='aircall_direct'."""
         create_test_lead(db, phone="+919876543210", status="Lead Assigned")
 
         self._fire_webhook(db, phone="+919876543210")
@@ -595,6 +595,41 @@ class TestHandleWebhookSync:
         dc = db.query(models.DialerCall).first()
         assert dc.lead_id == lead.id
 
+
+
+class TestHungupMapsToCallEnded:
+    """RCA 2026-08-21 (live, prod): 'call.hungup' fires the instant the line
+    disconnects; this org's Aircall account only sends 'call.ended' ~30s
+    later. Every outcome-modal "delay" reported live was this exact gap --
+    the frontend/SSE path itself resolves in ~2ms once it gets a terminal
+    event. call.hungup must map to CALL_ENDED so the real end time is used."""
+
+    def _provider(self):
+        from aircall_provider import AircallDialerProvider
+        return AircallDialerProvider(api_id="test-id", api_token="test-token")
+
+    def test_call_hungup_maps_to_call_ended(self):
+        from dialer_service import CallEventType
+        event = self._provider().handle_webhook({
+            "event": "call.hungup",
+            "data": {"id": 999, "raw_digits": "+919876543210", "direction": "outbound"},
+        })
+        assert event is not None
+        assert event.event_type == CallEventType.CALL_ENDED
+
+    def test_call_ended_still_maps_to_call_ended(self):
+        """Unchanged behavior for the pre-existing event."""
+        from dialer_service import CallEventType
+        event = self._provider().handle_webhook({
+            "event": "call.ended",
+            "data": {"id": 999, "raw_digits": "+919876543210", "direction": "outbound"},
+        })
+        assert event is not None
+        assert event.event_type == CallEventType.CALL_ENDED
+
+    def test_unmapped_event_still_ignored(self):
+        event = self._provider().handle_webhook({"event": "call.some_future_event", "data": {}})
+        assert event is None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -727,6 +762,85 @@ class TestStartupCatchUp:
         finally:
             _db_mod.SessionLocal = orig
 
+    def test_returns_false_when_disabled_even_if_overdue(self, db):
+        """v11.5.3: aircall_sync_enabled=False must short-circuit startup
+        catch-up regardless of how overdue the last sync is."""
+        import database as _db_mod
+        orig = _db_mod.SessionLocal
+        settings = create_sync_settings(db)
+        settings.aircall_last_sync_at = datetime.now(timezone.utc) - timedelta(hours=999)
+        settings.aircall_sync_enabled = False
+        db.commit()
+
+        _db_mod.SessionLocal = lambda: db
+        try:
+            from scheduled_jobs import _should_run_aircall_sync_on_startup
+            assert _should_run_aircall_sync_on_startup() is False
+        finally:
+            _db_mod.SessionLocal = orig
+
+
+class TestNightlySyncKillSwitch:
+    """v11.5.3: aircall_sync_enabled gates _aircall_nightly_sync itself, not
+    just the startup catch-up check — the nightly scheduled job still fires
+    every 24h regardless, so the function itself must no-op when disabled."""
+
+    def test_nightly_sync_skips_when_disabled(self, db, monkeypatch):
+        import database as _db_mod
+        orig = _db_mod.SessionLocal
+        settings = create_sync_settings(db)
+        settings.aircall_sync_enabled = False
+        db.commit()
+
+        _db_mod.SessionLocal = lambda: db
+        called = {"sync": False}
+
+        def _fake_get_active_provider(db):
+            class P:
+                provider_name = "aircall"
+            return P()
+
+        def _fake_sync_historical_calls(*a, **kw):
+            called["sync"] = True
+            return {}
+
+        monkeypatch.setattr("dialer_service.get_active_provider", _fake_get_active_provider)
+        monkeypatch.setattr("dialer_service.sync_historical_calls", _fake_sync_historical_calls)
+        try:
+            from scheduled_jobs import _aircall_nightly_sync
+            _aircall_nightly_sync()
+            assert called["sync"] is False, "sync_historical_calls must not run while disabled"
+        finally:
+            _db_mod.SessionLocal = orig
+
+    def test_nightly_sync_runs_when_enabled(self, db, monkeypatch):
+        import database as _db_mod
+        orig = _db_mod.SessionLocal
+        settings = create_sync_settings(db)
+        settings.aircall_sync_enabled = True
+        db.commit()
+
+        _db_mod.SessionLocal = lambda: db
+        called = {"sync": False}
+
+        def _fake_get_active_provider(db):
+            class P:
+                provider_name = "aircall"
+            return P()
+
+        def _fake_sync_historical_calls(*a, **kw):
+            called["sync"] = True
+            return {}
+
+        monkeypatch.setattr("dialer_service.get_active_provider", _fake_get_active_provider)
+        monkeypatch.setattr("dialer_service.sync_historical_calls", _fake_sync_historical_calls)
+        try:
+            from scheduled_jobs import _aircall_nightly_sync
+            _aircall_nightly_sync()
+            assert called["sync"] is True
+        finally:
+            _db_mod.SessionLocal = orig
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 6. _format_e164 — extension stripping + E.164 normalisation (RCA: 2026-05-27)
@@ -806,6 +920,187 @@ class TestFormatE164:
 # ══════════════════════════════════════════════════════════════════════════════
 # 7. initiate_call — 405 non-agent role handling (RCA: 2026-05-27)
 # ══════════════════════════════════════════════════════════════════════════════
+
+class TestGetCallStatus:
+    """Unit tests for AircallDialerProvider.get_call_status (RCA 2026-08-19:
+    added for the live self-heal check in dialer_service._try_live_self_heal)."""
+
+    def _make_provider(self):
+        from aircall_provider import AircallDialerProvider
+        return AircallDialerProvider(api_id="test-id", api_token="test-token")
+
+    def test_fast_reports_completed_when_call_has_ended(self):
+        provider = self._make_provider()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"call": {"ended_at": "2026-08-19T10:00:00Z"}}
+        with patch("aircall_provider.requests.get", return_value=mock_resp) as mock_get:
+            result = provider.get_call_status("ac-123", fast=True)
+        assert result == {"status": "completed"}
+        assert mock_get.call_args.kwargs["timeout"] == 4
+
+    def test_fast_reports_active_when_call_has_not_ended(self):
+        provider = self._make_provider()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"call": {"ended_at": None}}
+        with patch("aircall_provider.requests.get", return_value=mock_resp):
+            result = provider.get_call_status("ac-123", fast=True)
+        assert result == {"status": "active"}
+
+    def test_fast_never_raises_on_network_error(self):
+        """The self-heal caller relies on this never raising — any failure must
+        fall back to 'unknown' so the caller safely treats the call as still active."""
+        provider = self._make_provider()
+        with patch("aircall_provider.requests.get", side_effect=Exception("boom")):
+            result = provider.get_call_status("ac-123", fast=True)
+        assert result["status"] == "unknown"
+
+    def test_non_fast_delegates_to_fetch_call(self):
+        provider = self._make_provider()
+        with patch.object(provider, "fetch_call", return_value={"status": "CALL_ENDED"}) as mock_fetch:
+            result = provider.get_call_status("ac-123")
+        mock_fetch.assert_called_once_with("ac-123")
+        assert result == {"status": "CALL_ENDED"}
+
+
+class TestFindRecentCallByPhone:
+    """Unit tests for AircallDialerProvider.find_recent_call_by_phone (RCA
+    2026-09-03: staging test session showed every bridge-mode Aircall call
+    that session had provider_call_id == "" — the old self-heal bailed out
+    whenever that was falsy, leaving the SDR blocked until the full EC-16
+    staleness window or a manual Force Clear. This is the phone+recency
+    fallback lookup used when there's no call id to poll by.
+
+    v11.11.3: user_email is required. Aircall's GET /calls is company-wide
+    and ignores a user_id param, so the first version of this could match a
+    *teammate's* call to the same number and heal the wrong SDR's row."""
+
+    SDR = "sdr@test.com"
+
+    def _make_provider(self):
+        from aircall_provider import AircallDialerProvider
+        return AircallDialerProvider(api_id="test-id", api_token="test-token")
+
+    def _mock_calls_response(self, calls):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {"calls": calls}
+        return mock_resp
+
+    def _call(self, since_ts, **over):
+        call = {
+            "id": 555111,
+            "raw_digits": "+18002633394",
+            "started_at": since_ts + 5,
+            "ended_at": since_ts + 30,
+            "duration": 25,
+            "user": {"email": self.SDR},
+        }
+        call.update(over)
+        return call
+
+    def test_matches_by_digit_suffix_and_reports_ended(self):
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        since = datetime(2026, 9, 3, 7, 0, 0, tzinfo=timezone.utc)
+        calls = [self._call(int(since.timestamp()))]
+        with patch("aircall_provider.requests.get", return_value=self._mock_calls_response(calls)) as mock_get:
+            result = provider.find_recent_call_by_phone("1-800-263-3394", since, self.SDR)
+        assert result == {"id": "555111", "ended": True, "duration": 25}
+        assert mock_get.call_args.kwargs["timeout"] == 4
+        assert mock_get.call_args.kwargs["params"]["per_page"] == 50
+
+    def test_matches_when_stored_number_has_an_extension(self):
+        """RCA 2026-09-04: every one of the 105 dialer_calls placed to a phone
+        number with an "ext. NNNN" suffix in the last 30 days had provider_call_id
+        == "" — the old target_digits (raw digit-strip of the full string) glued
+        the extension's digits onto the real number, so no Aircall call_digits
+        (which never carries an extension) could ever suffix-match, and self-heal
+        silently failed 100% of the time for these leads. Aircall's own dial path
+        already strips the extension before calling out; this lookup must do the
+        same before matching back."""
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        since = datetime(2026, 9, 3, 7, 0, 0, tzinfo=timezone.utc)
+        calls = [self._call(int(since.timestamp()))]
+        with patch("aircall_provider.requests.get", return_value=self._mock_calls_response(calls)):
+            result = provider.find_recent_call_by_phone("(800) 263-3394 ext. 2227", since, self.SDR)
+        assert result == {"id": "555111", "ended": True, "duration": 25}
+
+    def test_still_active_call_reports_not_ended(self):
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        since = datetime(2026, 9, 3, 7, 0, 0, tzinfo=timezone.utc)
+        calls = [self._call(int(since.timestamp()), id=555222, ended_at=None, duration=None)]
+        with patch("aircall_provider.requests.get", return_value=self._mock_calls_response(calls)):
+            result = provider.find_recent_call_by_phone("1-800-263-3394", since, self.SDR)
+        assert result == {"id": "555222", "ended": False, "duration": None}
+
+    def test_no_matching_number_returns_none(self):
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        since = datetime(2026, 9, 3, 7, 0, 0, tzinfo=timezone.utc)
+        calls = [self._call(int(since.timestamp()), id=555333, raw_digits="+919545455721")]
+        with patch("aircall_provider.requests.get", return_value=self._mock_calls_response(calls)):
+            assert provider.find_recent_call_by_phone("1-800-263-3394", since, self.SDR) is None
+
+    def test_ignores_calls_older_than_since(self):
+        """A call to the same number from before this attempt started must
+        never be mistaken for it — newest-first list, older calls skipped."""
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        since = datetime(2026, 9, 3, 7, 0, 0, tzinfo=timezone.utc)
+        calls = [self._call(int(since.timestamp()), id=555444, started_at=int(since.timestamp()) - 3600)]
+        with patch("aircall_provider.requests.get", return_value=self._mock_calls_response(calls)):
+            assert provider.find_recent_call_by_phone("1-800-263-3394", since, self.SDR) is None
+
+    def test_ignores_a_teammates_call_to_the_same_number(self):
+        """v11.11.3 regression guard. Two SDRs dialling one lead is routine
+        after a reassignment; healing SDR B's row from SDR A's call would
+        close B's call at the wrong time (or hold it open on A's live one)."""
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        since = datetime(2026, 9, 3, 7, 0, 0, tzinfo=timezone.utc)
+        calls = [self._call(int(since.timestamp()), user={"email": "someone.else@test.com"})]
+        with patch("aircall_provider.requests.get", return_value=self._mock_calls_response(calls)):
+            assert provider.find_recent_call_by_phone("1-800-263-3394", since, self.SDR) is None
+
+    def test_short_number_never_suffix_matches(self):
+        """Suffix matching a 3-4 digit string against a company-wide call log
+        matches almost anything (Aircall extensions are 3 digits)."""
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        since = datetime(2026, 9, 3, 7, 0, 0, tzinfo=timezone.utc)
+        with patch("aircall_provider.requests.get") as mock_get:
+            assert provider.find_recent_call_by_phone("3394", since, self.SDR) is None
+        mock_get.assert_not_called()
+
+    def test_network_error_returns_none_not_raise(self):
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        with patch("aircall_provider.requests.get", side_effect=Exception("boom")):
+            result = provider.find_recent_call_by_phone(
+                "1-800-263-3394", datetime.now(timezone.utc), self.SDR)
+        assert result is None
+
+    def test_empty_phone_number_returns_none_without_a_network_call(self):
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        with patch("aircall_provider.requests.get") as mock_get:
+            result = provider.find_recent_call_by_phone("", datetime.now(timezone.utc), self.SDR)
+        assert result is None
+        mock_get.assert_not_called()
+
+    def test_missing_user_email_returns_none_without_a_network_call(self):
+        from datetime import datetime, timezone
+        provider = self._make_provider()
+        with patch("aircall_provider.requests.get") as mock_get:
+            result = provider.find_recent_call_by_phone(
+                "1-800-263-3394", datetime.now(timezone.utc), "")
+        assert result is None
+        mock_get.assert_not_called()
+
 
 class TestInitiateCallErrors:
     """
@@ -1027,103 +1322,343 @@ class TestValidatePhoneForAircall:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 9. Availability pre-check in initiate_call (RCA: 2026-05-27)
+# 9. Outbound-dial 405 handling (RCA 2026-09-03, LIVE prod investigation)
+#
+# There used to be an "availability pre-check" here, blocking a dial when the
+# Aircall user's availability_status was "do_not_disturb" or "offline", plus
+# five tests proving it worked. Aircall emits neither value on a *user* (they
+# are number-level statuses), so the guard was dead code that had never fired
+# once in production — and the tests passed only because their fixture
+# hand-set a value the real API never sends. The mock encoded the same wrong
+# assumption as the code.
+#
+# The sibling boolean `available` IS Aircall's real reachability flag, but live
+# prod data shows it does not predict dialability: the SDR with the highest
+# 405 rate (38%) reads available:true, while two SDRs reading available:false
+# placed 766 and 596 successful calls. So there is no pre-check at all now.
+# Instead: a 405 is retried once, because 89% of the 665 prod 405s over 14
+# days were followed by a connected call to the same number by the same SDR
+# (median 10.9s — the SDR re-clicking by hand), and 90% needed only one retry.
 # ══════════════════════════════════════════════════════════════════════════════
 
-class TestAvailabilityPreCheck:
-    """
-    Tests for the availability pre-check in initiate_call().
-    When Aircall reports a user as 'offline' or 'do_not_disturb', we surface
-    a clear message BEFORE attempting the API call — avoiding a cryptic 405.
-    """
+class TestOutboundDial405Retry:
+    """initiate_call must retry a 405 once, and must NOT pre-block on any
+    availability field."""
 
     def _make_provider(self):
         from aircall_provider import AircallDialerProvider
         return AircallDialerProvider(api_id="test-id", api_token="test-token")
 
-    def _make_user(self, availability: str = "available", number_id: int = 999):
-        return {
+    def _make_user(self, **over):
+        user = {
             "id": 1759179,
             "name": "Test SDR",
             "email": "sdr@test.com",
-            "availability_status": availability,
-            "numbers": [{"id": number_id}],
-            "default_number_id": number_id,
+            "numbers": [{"id": 999}],
+            "default_number_id": 999,
         }
+        user.update(over)
+        return user
 
-    def test_offline_user_blocked_with_friendly_message(self):
-        """User marked 'offline' in Aircall → blocked before API call, clear message."""
+    def _http_405(self):
+        import requests
+        resp = MagicMock()
+        resp.status_code = 405
+        resp.json.return_value = {"troubleshoot": "User is not available to take a call"}
+        return requests.HTTPError("405 Client Error: Method Not Allowed", response=resp)
+
+    def test_405_is_retried_once_and_succeeds(self):
+        """The whole point: the SDR never sees the error when the retry works."""
         provider = self._make_provider()
-
-        with patch.object(provider, "_find_user_by_email", return_value=self._make_user("offline")), \
-             patch.object(provider, "_post") as mock_post:
+        with patch.object(provider, "_find_user_by_email", return_value=self._make_user()), \
+             patch("aircall_provider.time.sleep") as mock_sleep, \
+             patch.object(provider, "_post",
+                          side_effect=[self._http_405(), {"call": {"id": "AC200"}}]) as mock_post:
             result = provider.initiate_call(
-                phone_number="+12125551234",
-                user_email="sdr@test.com",
-                lead_id="lead-1",
+                phone_number="+12125551234", user_email="sdr@test.com", lead_id="lead-1",
             )
-
-        mock_post.assert_not_called()  # must not hit Aircall API at all
-        assert result.success is False
-        assert "offline" in result.error.lower()
-        assert "available" in result.error.lower()  # tells them what to do
-
-    def test_do_not_disturb_user_blocked(self):
-        """User in DND → blocked with actionable message."""
-        provider = self._make_provider()
-
-        with patch.object(provider, "_find_user_by_email", return_value=self._make_user("do_not_disturb")), \
-             patch.object(provider, "_post") as mock_post:
-            result = provider.initiate_call(
-                phone_number="+12125551234",
-                user_email="sdr@test.com",
-                lead_id="lead-2",
-            )
-
-        mock_post.assert_not_called()
-        assert result.success is False
-        assert "do_not_disturb" in result.error.lower() or "dnd" in result.error.lower() or "do not disturb" in result.error.lower()
-
-    def test_available_user_proceeds_to_api(self):
-        """User marked 'available' → pre-check passes, call proceeds to Aircall."""
-        provider = self._make_provider()
-
-        with patch.object(provider, "_find_user_by_email", return_value=self._make_user("available")), \
-             patch.object(provider, "_post", return_value={"call": {"id": "AC100"}}):
-            result = provider.initiate_call(
-                phone_number="+12125551234",
-                user_email="sdr@test.com",
-                lead_id="lead-3",
-            )
-
         assert result.success is True
+        assert result.provider_call_id == "AC200"
+        assert mock_post.call_count == 2
+        # Both attempts must carry the identical payload — a retry that dials
+        # something else would be worse than the original failure.
+        assert mock_post.call_args_list[0] == mock_post.call_args_list[1]
+        mock_sleep.assert_called_once()
 
-    def test_custom_status_proceeds_to_api(self):
-        """'custom' status (not explicitly blocked) → optimistically proceeds."""
+    def test_405_twice_surfaces_the_error_and_does_not_retry_again(self):
         provider = self._make_provider()
-
-        with patch.object(provider, "_find_user_by_email", return_value=self._make_user("custom")), \
-             patch.object(provider, "_post", return_value={"call": {"id": "AC101"}}):
+        with patch.object(provider, "_find_user_by_email", return_value=self._make_user()), \
+             patch("aircall_provider.time.sleep"), \
+             patch.object(provider, "_post",
+                          side_effect=[self._http_405(), self._http_405()]) as mock_post:
             result = provider.initiate_call(
-                phone_number="+12125551234",
-                user_email="sdr@test.com",
-                lead_id="lead-4",
+                phone_number="+12125551234", user_email="sdr@test.com", lead_id="lead-2",
             )
+        assert result.success is False
+        assert "could not receive the call" in result.error
+        assert mock_post.call_count == 2
 
-        assert result.success is True
-
-    def test_missing_availability_status_proceeds(self):
-        """If availability_status not in response, we default to optimistic → proceeds."""
+    def test_non_405_http_error_is_not_retried(self):
+        """Only a 405 is known not to have placed a call. A 400 must not be
+        re-sent, and a retry must never be used to paper over a real reject."""
+        import requests
         provider = self._make_provider()
-        user = self._make_user()
-        del user["availability_status"]  # simulate missing field
+        resp = MagicMock()
+        resp.status_code = 400
+        resp.json.return_value = {"troubleshoot": "to is invalid"}
+        err = requests.HTTPError("400 Client Error: Bad Request", response=resp)
+        with patch.object(provider, "_find_user_by_email", return_value=self._make_user()), \
+             patch.object(provider, "_post", side_effect=err) as mock_post:
+            result = provider.initiate_call(
+                phone_number="+12125551234", user_email="sdr@test.com", lead_id="lead-3",
+            )
+        assert result.success is False
+        assert mock_post.call_count == 1
+        # Aircall's own explanation must reach the SDR. This used to be dropped
+        # because `if e.response` is falsy for every error Response.
+        assert "to is invalid" in result.error
 
+    def test_unavailable_user_is_not_pre_blocked(self):
+        """Regression guard for the disproven fix: blocking on available:false
+        would have killed the calling of SDRs who dial successfully all day."""
+        provider = self._make_provider()
+        user = self._make_user(available=False, availability_status="unavailable")
         with patch.object(provider, "_find_user_by_email", return_value=user), \
-             patch.object(provider, "_post", return_value={"call": {"id": "AC102"}}):
+             patch.object(provider, "_post", return_value={"call": {"id": "AC201"}}) as mock_post:
             result = provider.initiate_call(
-                phone_number="+12125551234",
-                user_email="sdr@test.com",
-                lead_id="lead-5",
+                phone_number="+12125551234", user_email="sdr@test.com", lead_id="lead-4",
             )
-
         assert result.success is True
+        mock_post.assert_called_once()
+
+    def test_get_users_reports_availability_from_the_real_boolean(self):
+        """availability_status reads "available" on unreachable users, so
+        deriving from it reported virtually the whole org as available."""
+        provider = self._make_provider()
+        page = {
+            "users": [
+                {"id": 1, "name": "A", "email": "a@t.com", "available": False,
+                 "availability_status": "available"},
+                {"id": 2, "name": "B", "email": "b@t.com", "available": True,
+                 "availability_status": "available"},
+            ],
+            "meta": {"total": 2, "per_page": 50},
+        }
+        with patch.object(provider, "_get", return_value=page):
+            users = provider.get_users()
+        assert [u["available"] for u in users] == [False, True]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. Aircall tag → outcome auto-log (RCA 2026-08-18, LIVE prod incident)
+#
+# Grepped a full evening's worth of real, tagged production calls and found
+# ZERO [AutoLog] log lines. Root cause was two-layered: (1) this org's Aircall
+# account never sends a standalone call.tagged webhook — tags only ever ride
+# inside call.ended's own payload, which the code didn't check; (2) even if it
+# had, this org's real tag names ("Not Answered", "Bad Number", "Answered –
+# Not Interested") never matched the hardcoded generic mapping at all.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestAircallTagExtraction:
+    """Provider-level: handle_webhook() must pull tags off ANY event that
+    carries them, not just a literal 'call.tagged' event — confirmed via real
+    prod raw_payload data that tags arrive bundled inside call.ended."""
+
+    def _make_provider(self):
+        from aircall_provider import AircallDialerProvider
+        return AircallDialerProvider(api_id="test-id", api_token="test-token")
+
+    def test_tags_extracted_from_call_ended_payload(self):
+        provider = self._make_provider()
+        payload = {
+            "event": "call.ended",
+            "data": {
+                "id": 4057785376,
+                "raw_digits": "+12487059009",
+                "direction": "outbound",
+                "user": {"email": "sdr@test.com"},
+                "tags": [{"id": 1, "name": "Not Answered"}],
+            },
+        }
+        event = provider.handle_webhook(payload)
+        assert event is not None
+        assert event.tags == ["Not Answered"]
+
+    def test_no_tags_key_yields_empty_list_not_error(self):
+        provider = self._make_provider()
+        payload = {"event": "call.ended", "data": {"id": 1, "raw_digits": "+12487059009"}}
+        event = provider.handle_webhook(payload)
+        assert event.tags == []
+
+
+class TestAutoLogFromRealOrgTags:
+    """Service-level: dialer_service.handle_webhook auto-logs from tags on a
+    CALL_ENDED event (not just CALL_TAGGED), using this org's real tag names."""
+
+    def _fire_webhook_with_tags(self, db, tags, event_type="CALL_ENDED",
+                                 phone="+919876543210", provider_call_id="WH-TAG-001"):
+        from dialer_service import handle_webhook
+        from dialer_provider import NormalizedCallEvent, CallEventType
+
+        et = getattr(CallEventType, event_type, event_type)
+        event = NormalizedCallEvent(
+            event_type=et, provider="aircall", provider_call_id=provider_call_id,
+            phone_number=phone, direction="outbound", user_email="sdr@test.com",
+            raw_payload={}, tags=tags,
+        )
+        _configure_aircall(db)
+        with patch("dialer_service._instantiate_provider") as mock_provider:
+            provider_mock = MagicMock()
+            provider_mock.provider_name = "aircall"
+            provider_mock.handle_webhook.return_value = event
+            mock_provider.return_value = provider_mock
+            return handle_webhook(db, "aircall", {})
+
+    def test_real_org_tag_not_answered_maps_to_no_answer(self, db):
+        create_test_lead(db, phone="+919876543210", status="Calling")
+        self._fire_webhook_with_tags(db, tags=["Not Answered"], provider_call_id="WH-TAG-001")
+        dc = db.query(models.DialerCall).filter(
+            models.DialerCall.provider_call_id == "WH-TAG-001"
+        ).first()
+        assert dc is not None
+        assert dc.outcome == "No Answer"
+
+    def test_real_org_tag_bad_number_maps_to_wrong_number(self, db):
+        create_test_lead(db, phone="+919876543210", status="Calling")
+        self._fire_webhook_with_tags(db, tags=["Bad Number"], provider_call_id="WH-TAG-002")
+        dc = db.query(models.DialerCall).filter(
+            models.DialerCall.provider_call_id == "WH-TAG-002"
+        ).first()
+        assert dc.outcome == "Wrong Number"
+
+    def test_real_org_tag_answered_dash_not_interested_maps(self, db):
+        create_test_lead(db, phone="+919876543210", status="Calling")
+        self._fire_webhook_with_tags(db, tags=["Answered – Not Interested"], provider_call_id="WH-TAG-003")
+        dc = db.query(models.DialerCall).filter(
+            models.DialerCall.provider_call_id == "WH-TAG-003"
+        ).first()
+        assert dc.outcome == "Not Interested"
+
+    def test_unrecognized_tag_still_skips_silently_not_errors(self, db):
+        """'Cold Call' is a real org tag but not an outcome — must not crash,
+        must not fabricate an outcome."""
+        create_test_lead(db, phone="+919876543210", status="Calling")
+        self._fire_webhook_with_tags(db, tags=["Cold Call"], provider_call_id="WH-TAG-004")
+        dc = db.query(models.DialerCall).filter(
+            models.DialerCall.provider_call_id == "WH-TAG-004"
+        ).first()
+        assert dc is not None
+        assert dc.outcome is None
+
+
+class TestTranscriptionEventNoOrphanRow:
+    """RCA 2026-08-18 (LIVE prod): found 88 DialerCall rows stuck forever at
+    status=TRANSCRIPTION_READY with no ended_at — a transcript that can't be
+    matched to an existing call must never fabricate a new row, since
+    TRANSCRIPTION_READY isn't a terminal state and nothing would ever close it."""
+
+    def test_unmatched_transcription_event_creates_no_row(self, db):
+        from dialer_service import handle_webhook
+        from dialer_provider import NormalizedCallEvent, CallEventType
+
+        _configure_aircall(db)
+        before = db.query(models.DialerCall).count()
+        event = NormalizedCallEvent(
+            event_type=CallEventType.TRANSCRIPTION_READY, provider="aircall",
+            provider_call_id="", phone_number="+919876543210",
+            transcript_url="https://example.com/t.mp3", raw_payload={},
+        )
+        with patch("dialer_service._instantiate_provider") as mock_provider:
+            provider_mock = MagicMock()
+            provider_mock.provider_name = "aircall"
+            provider_mock.handle_webhook.return_value = event
+            mock_provider.return_value = provider_mock
+            result = handle_webhook(db, "aircall", {})
+
+        after = db.query(models.DialerCall).count()
+        assert after == before  # no phantom row created
+        assert result["ok"] is True
+
+
+class TestEmbeddedCallReconciliation:
+    """RCA 2026-08-24 (live, prod): Aircall Everywhere (embedded) webhooks
+    often arrive with no user attributed yet, which defeated the user_id-
+    scoped pending-row match on the very first webhook and fell through to
+    creating a duplicate '{provider}_direct' row — the SDR's original call
+    stayed stuck at CALL_STARTED with no outcome, while the real terminal
+    data landed on a second, invisible row."""
+
+    def _set_created_at_minutes_ago(self, db, row_id, minutes):
+        # NOTE: must match the naive, space-separated format SQLAlchemy's
+        # SQLite dialect binds a Python datetime as (e.g. "2026-08-24
+        # 08:14:09.496800") — a tz-aware `.isoformat()` string ("...T...+00:00")
+        # sorts as lexicographically GREATER regardless of actual time (the
+        # 'T'/offset bytes outrank the space format at the same string
+        # position), which would make an old row look newer than any cutoff.
+        ts = str((datetime.now(timezone.utc) - timedelta(minutes=minutes)).replace(tzinfo=None))
+        db.execute(
+            __import__("sqlalchemy").text("UPDATE dialer_calls SET created_at = :ts WHERE id = :id"),
+            {"ts": ts, "id": row_id},
+        )
+        db.commit()
+
+    def _fire_unattributed_webhook(self, db, phone, provider_call_id):
+        from dialer_service import handle_webhook
+        from dialer_provider import NormalizedCallEvent, CallEventType
+
+        _configure_aircall(db)
+        event = NormalizedCallEvent(
+            event_type=CallEventType.CALL_ENDED, provider="aircall",
+            provider_call_id=provider_call_id, phone_number=phone,
+            direction="outbound", user_email=None, raw_payload={},
+        )
+        with patch("dialer_service._instantiate_provider") as mock_provider:
+            provider_mock = MagicMock()
+            provider_mock.provider_name = "aircall"
+            provider_mock.handle_webhook.return_value = event
+            mock_provider.return_value = provider_mock
+            return handle_webhook(db, "aircall", {})
+
+    def test_reconciles_recent_pending_row_despite_no_webhook_user(self, db):
+        lead = create_test_lead(db, phone="+919876500001", status="Calling")
+        sdr = create_test_user(db, email="embedded-sdr@t.com")
+        pending = models.DialerCall(
+            lead_id=lead.id, user_id=sdr.id, provider="aircall",
+            provider_call_id="", phone_number="+919876500001",
+            status="CALL_STARTED", source="alternatecrm", direction="outbound",
+        )
+        db.add(pending)
+        db.commit()
+        self._set_created_at_minutes_ago(db, pending.id, 8)
+
+        self._fire_unattributed_webhook(db, "+919876500001", "WH-EMBED-1")
+
+        assert db.query(models.DialerCall).count() == 1  # reconciled, no duplicate _direct row
+        db.refresh(pending)
+        assert pending.provider_call_id == "WH-EMBED-1"
+        assert pending.source == "alternatecrm"
+
+    def test_does_not_reconcile_a_stale_pending_row(self, db):
+        # Falls through to today's create-new behavior unchanged — the time
+        # bound must not let an old zombie row (pre-sweeper) cross-match a
+        # later, unrelated call reusing the same number.
+        lead = create_test_lead(db, phone="+919876500002", status="Calling")
+        sdr = create_test_user(db, email="stale-sdr@t.com")
+        stale = models.DialerCall(
+            lead_id=lead.id, user_id=sdr.id, provider="aircall",
+            provider_call_id="", phone_number="+919876500002",
+            status="CALL_STARTED", source="alternatecrm", direction="outbound",
+        )
+        db.add(stale)
+        db.commit()
+        self._set_created_at_minutes_ago(db, stale.id, 20)
+
+        self._fire_unattributed_webhook(db, "+919876500002", "WH-STALE-1")
+
+        assert db.query(models.DialerCall).count() == 2  # unchanged: creates a new _direct row
+        db.refresh(stale)
+        assert stale.provider_call_id == ""  # untouched
+        new_row = db.query(models.DialerCall).filter(models.DialerCall.provider_call_id == "WH-STALE-1").first()
+        assert new_row is not None
+        assert new_row.source == "aircall_direct"

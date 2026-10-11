@@ -90,15 +90,14 @@ describe('LeadsHub — column layout (reorder / resize / show-hide)', () => {
     expect(screen.getByRole('columnheader', { name: /Phone/ })).toBeInTheDocument();
 
     await userEvent.click(screen.getByText('Columns'));
-    const columnsMenu = screen.getByText('Show columns').parentElement;
-    const phoneMenuItem = within(columnsMenu).getByRole('button', { name: 'Phone' });
-    await userEvent.click(phoneMenuItem);
+    const getPhoneMenuItem = () => within(screen.getByText('Show columns').parentElement).getByRole('menuitem', { name: 'Phone' });
+    await userEvent.click(getPhoneMenuItem());
     expect(screen.queryByRole('columnheader', { name: /Phone/ })).not.toBeInTheDocument();
 
-    await userEvent.click(phoneMenuItem); // re-show
+    await userEvent.click(getPhoneMenuItem()); // re-show
     expect(screen.getByRole('columnheader', { name: /Phone/ })).toBeInTheDocument();
 
-    await userEvent.click(phoneMenuItem);
+    await userEvent.click(getPhoneMenuItem());
     expect(screen.queryByRole('columnheader', { name: /Phone/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByText('Reset column layout'));
     expect(screen.getByRole('columnheader', { name: /Phone/ })).toBeInTheDocument();

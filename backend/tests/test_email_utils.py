@@ -125,11 +125,11 @@ class TestSanitizePreview:
 
     def test_html_entities_preserved(self):
         """HTML entities like &middot; and &amp; are preserved in output."""
-        html = "<p>RCM &middot; Powered by RCM</p>"
+        html = "<p>Alternate CRM &middot; Powered by Alternate Messenger</p>"
         result = sanitize_preview(html)
         assert "&middot;" in result or "·" in result
-        assert "RCM" in result
-        assert "RCM" in result
+        assert "Alternate CRM" in result
+        assert "Alternate Messenger" in result
 
     def test_large_html_body(self):
         """Large HTML email body (e.g. newsletter) is stored without truncation at 200."""

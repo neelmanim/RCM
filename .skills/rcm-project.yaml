@@ -9,8 +9,8 @@
 skills:
   - id: rcm-no-legacy-brands
     priority: critical
-    trigger: "any mention of conversive, sms-magic, leadspark"
-    action: "STOP — these brands are removed. Use 'RCM', 'Built-in Messaging', or 'rcm_*' equivalents."
+    trigger: "any mention of deprecated brand names"
+    action: "STOP — legacy brand names are strictly removed. Use 'Alternate CRM', 'Built-in Messaging', or 'alternate_*' equivalents."
     learned_from: "2026-08-15 rebrand session"
 
   - id: rcm-no-db-commits
@@ -40,7 +40,7 @@ skills:
   - id: rcm-messaging-label
     priority: medium
     trigger: "UI label for messaging, dialer, SMS"
-    action: "Use 'Built-in Messaging' for UI-facing labels. Never use 'Conversive' or 'SMS Magic'."
+    action: "Use 'Built-in Messaging' for UI-facing labels. Never use deprecated third-party provider names."
     learned_from: "2026-08-15 rebrand session"
 
   - id: rcm-mcp-graph-first

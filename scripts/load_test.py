@@ -25,7 +25,7 @@ from typing import List
 import httpx
 
 # ── Config ────────────────────────────────────────────────────────────────────
-BASE_URL    = "https://rcm-crm-staging.onrender.com"
+BASE_URL    = "https://messenger-crm-staging.onrender.com"
 CONCURRENCY = 5   # concurrent workers per endpoint
 REQUESTS    = 10  # requests per endpoint total
 

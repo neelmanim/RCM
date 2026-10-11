@@ -7,9 +7,11 @@ check (duplicate claim doesn't double-send), wait-node timing, the
 suppression gate (Gap 1), the runaway-loop cap (Gap 3), and auto-enrollment
 entry triggers (Gap 4).
 """
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -59,13 +61,20 @@ def _setup_email_infra(db, owner_id="owner-1"):
     create_user_mailbox(db, user_id=owner_id)
 
 
-def _setup_sms_infra(db, owner_id="owner-1", enabled=True):
-    if not db.query(models.User).filter(models.User.id == owner_id).first():
-        create_test_user(db, email="owner@test.com", name="Owner", role="Pod Admin", id=owner_id)
+def _setup_sms_infra(db, owner_id="owner-1", enabled=True, granted=True):
+    owner = db.query(models.User).filter(models.User.id == owner_id).first()
+    if not owner:
+        owner = create_test_user(db, email="owner@test.com", name="Owner", role="Pod Admin", id=owner_id)
+    # v11.10.0: sends resolve against the cadence owner's own SMS grant.
+    owner.sms_enabled = granted
     settings = models.SyncSettings(
-        id=1, rcm_enabled=enabled,
-        rcm_api_key="fake-key" if enabled else None,
-        rcm_from_number="+15550001111" if enabled else None,
+        id=1, messenger_enabled=enabled,
+        messenger_api_key="fake-key" if enabled else None,
+        messenger_user_id="355746" if enabled else None,
+        messenger_account_id="80054247" if enabled else None,
+        # Both channels now resolve one messaging sender; messenger_from_number
+        # stays populated to prove the legacy fallback still works.
+        messenger_from_number="+15550001111" if enabled else None,
     )
     db.add(settings)
     db.commit()
@@ -158,6 +167,82 @@ def test_check_entry_triggers_auto_enrolls_on_matching_event(db):
 
     assert len(enrolled) == 1
     assert enrolled[0].journey_id == journey.id
+
+
+def _calling_graph(to_status="Calling"):
+    g = {k: [dict(n) for n in v] for k, v in LINEAR_GRAPH.items()}
+    g["nodes"][0] = {"id": "n1", "type": "trigger", "data": {"event": "status_changed", "to_status": to_status}}
+    return g
+
+
+def _enrollments(db, lead):
+    return db.query(models.JourneyEnrollment).filter(models.JourneyEnrollment.lead_id == lead.id).all()
+
+
+def test_same_status_change_does_not_enroll(db):
+    """AE report: a cadence starting at 'status changes to Calling' also took leads
+    ALREADY in Calling. A Calling -> Calling 'change' is not a change."""
+    _make_journey(db, graph=_calling_graph())
+    lead = create_test_lead(db, status="Calling")
+
+    models.log_status_change(db, lead.id, "Calling", "Calling", changed_by="test")
+    db.commit()
+    assert _enrollments(db, lead) == []
+    # ... and the engine guards it for any other caller too
+    assert je.check_entry_triggers(db, "status_changed", lead, to_status="Calling", from_status="Calling") == []
+
+
+def test_real_transition_and_creation_still_enroll(db):
+    _make_journey(db, graph=_calling_graph())
+    moved = create_test_lead(db, status="New", email="moved@t.com")
+    created = create_test_lead(db, status="Calling", email="created@t.com")
+
+    models.log_status_change(db, moved.id, "New", "Calling", changed_by="test")
+    models.log_status_change(db, created.id, None, "Calling", changed_by="test")  # creation: from None
+    db.commit()
+
+    assert len(_enrollments(db, moved)) == 1
+    assert len(_enrollments(db, created)) == 1
+
+
+def test_kanban_move_to_the_same_column_does_not_enroll(client, db):
+    _make_journey(db, graph=_calling_graph())
+    lead = create_test_lead(db, status="Calling")
+
+    resp = client.patch("/api/leads/kanban/move", params={"lead_id": lead.id, "new_status": "Calling"})
+
+    assert resp.status_code == 200
+    assert _enrollments(db, lead) == []
+
+
+def test_live_graph_with_a_blank_status_enrolls_nobody(db):
+    """v13.9.0: a status trigger with no status used to mean "every status change" — enrolling leads the
+    owner never meant. Publish rejects a blank one (v13.8.0); this stops an older live graph acting on it."""
+    _make_journey(db, graph=_calling_graph(to_status=None))
+    lead = create_test_lead(db, status="New")
+
+    models.log_status_change(db, lead.id, "New", "Calling", changed_by="test")
+    db.commit()
+
+    assert _enrollments(db, lead) == []
+
+
+def test_enrolled_via_is_recorded_in_the_audit_row(db):
+    create_test_user(db, email="owner@test.com", name="Owner", role="Pod Admin", id="owner-1")
+    journey, _ = _make_journey(db, graph=_calling_graph())
+    auto, hand, box = (create_test_lead(db, status="New", email=f"{n}@t.com") for n in ("auto", "hand", "box"))
+
+    models.log_status_change(db, auto.id, "New", "Calling", changed_by="test")
+    db.commit()
+    je.enroll_lead(db, journey, hand, via="manual")
+    je.enroll_lead(db, journey, box, via="sandbox")
+
+    via = {}
+    for e in db.query(models.JourneyEnrollment).all():
+        row = db.query(models.UserActivityLog).filter(
+            models.UserActivityLog.action_type == "JOURNEY_ENROLLED", models.UserActivityLog.object_id == e.id).one()
+        via[e.lead_id] = json.loads(row.metadata_json)["via"]
+    assert via == {auto.id: "trigger:status_changed", hand.id: "manual", box.id: "sandbox"}
 
 
 def test_check_entry_triggers_ignores_non_matching_status(db):
@@ -560,8 +645,8 @@ SMS_GRAPH = {
 
 
 class TestSmsChannel:
-    """v10.9.9 — SMS cadence step, wired to the existing RCM SMS send
-    path (routes/sms_routes.py / rcm_sms_service.py) rather than a
+    """v10.9.9 — SMS cadence step, wired to the existing Alternate Messenger SMS send
+    path (routes/sms_routes.py / sms_service.py) rather than a
     new vendor integration."""
 
     def test_successful_sms_send_creates_a_linked_sms_log_row(self, db):
@@ -573,16 +658,24 @@ class TestSmsChannel:
             models.JourneyExecutionQueue.enrollment_id == enrollment.id
         ).first()
 
-        with patch("journey_engine.channels.sms_channel.sms_service.send_sms",
-                    return_value={"success": True, "message_id": "rcm-sms-1"}) as mock_send:
+        from messaging_provider import SendMessageResult
+        fake_result = SendMessageResult(
+            success=True, provider="messenger", channel="sms", message_id="alternatecrm-sms-1",
+        )
+        with patch("messaging_service.resolve_messaging_for_user") as mock_resolve:
+            mock_provider = MagicMock()
+            mock_provider.send.return_value = fake_result
+            mock_resolve.return_value = SimpleNamespace(
+                provider=mock_provider, sender_id="918956778474",
+                provider_name="messenger", error=None, retryable=True,
+            )
             je._handle_channel_node(db, enrollment, journey, queue_row, SMS_GRAPH, "sms", SMS_GRAPH["nodes"][1]["data"])
             db.commit()
 
         # Merge fields substituted before the SMS provider is called.
-        sent_message = mock_send.call_args[0][3]
-        assert sent_message == "Hi Priya, following up."
+        assert mock_provider.send.call_args.kwargs["text"] == "Hi Priya, following up."
 
-        log = db.query(models.SmsLog).filter(models.SmsLog.message_id == "rcm-sms-1").first()
+        log = db.query(models.SmsLog).filter(models.SmsLog.message_id == "alternatecrm-sms-1").first()
         assert log is not None
         assert log.direction == "outbound"
         assert log.journey_id == journey.id
@@ -601,16 +694,35 @@ class TestSmsChannel:
             models.JourneyExecutionQueue.enrollment_id == enrollment.id
         ).first()
 
-        with patch("journey_engine.channels.sms_channel.sms_service.send_sms") as mock_send:
+        with patch("messaging_provider_provider.AlternateMessenger.send") as mock_send:
             je._handle_channel_node(db, enrollment, journey, queue_row, SMS_GRAPH, "sms", SMS_GRAPH["nodes"][1]["data"])
             db.commit()
 
         mock_send.assert_not_called()
         # Retryable failure — the queue row is released to retry, not the enrollment failed outright,
-        # since an admin could enable RCM within the retry window.
+        # since an admin could enable Alternate Messenger within the retry window.
         assert queue_row.status == "pending"
 
-    def test_lead_with_no_phone_fails_non_retryable(self, db):
+    def test_owner_without_the_sms_grant_cannot_send(self, db):
+        """The SMS half of the same gate — see the WhatsApp equivalent."""
+        _setup_sms_infra(db, granted=False)
+        journey, version = _make_journey(db, graph=SMS_GRAPH)
+        lead = create_test_lead(db, status="New", phone="+919876543210")
+        enrollment = je.enroll_lead(db, journey, lead)
+        queue_row = db.query(models.JourneyExecutionQueue).filter(
+            models.JourneyExecutionQueue.enrollment_id == enrollment.id
+        ).first()
+
+        with patch("messaging_provider_provider.AlternateMessenger.send") as mock_send:
+            je._handle_channel_node(db, enrollment, journey, queue_row, SMS_GRAPH, "sms", SMS_GRAPH["nodes"][1]["data"])
+            db.commit()
+
+        mock_send.assert_not_called()
+        assert queue_row.status == "failed"
+
+    def test_lead_with_no_phone_skips_the_step(self, db):
+        """v13.0.0: "text only once a number exists" — used to fail the whole
+        enrollment; now the step is logged as skipped and the journey moves on."""
         _setup_sms_infra(db)
         journey, version = _make_journey(db, graph=SMS_GRAPH)
         lead = create_test_lead(db, status="New", phone=None)
@@ -622,10 +734,9 @@ class TestSmsChannel:
         je._handle_channel_node(db, enrollment, journey, queue_row, SMS_GRAPH, "sms", SMS_GRAPH["nodes"][1]["data"])
         db.commit()
 
-        assert queue_row.status == "failed"
+        assert queue_row.status == "done"
         db.refresh(enrollment)
-        assert enrollment.status == "failed"
-        assert enrollment.exited_reason == "send_failed"
+        assert enrollment.status in ("active", "completed")
 
     def test_sms_send_failure_logs_a_failed_sms_log_row(self, db):
         _setup_sms_infra(db)
@@ -636,8 +747,16 @@ class TestSmsChannel:
             models.JourneyExecutionQueue.enrollment_id == enrollment.id
         ).first()
 
-        with patch("journey_engine.channels.sms_channel.sms_service.send_sms",
-                    return_value={"success": False, "error": "FORBIDDEN-API-KEY"}):
+        from messaging_provider import SendMessageResult
+        with patch("messaging_service.resolve_messaging_for_user") as mock_resolve:
+            mock_provider = MagicMock()
+            mock_provider.send.return_value = SendMessageResult(
+                success=False, provider="messenger", channel="sms", error="FORBIDDEN-API-KEY",
+            )
+            mock_resolve.return_value = SimpleNamespace(
+                provider=mock_provider, sender_id="918956778474",
+                provider_name="messenger", error=None, retryable=True,
+            )
             je._handle_channel_node(db, enrollment, journey, queue_row, SMS_GRAPH, "sms", SMS_GRAPH["nodes"][1]["data"])
             db.commit()
 
@@ -645,15 +764,17 @@ class TestSmsChannel:
         assert log.status == "failed"
 
 
-def _setup_whatsapp_infra(db, owner_id="owner-1", enabled=True):
-    if not db.query(models.User).filter(models.User.id == owner_id).first():
-        create_test_user(db, email="owner@test.com", name="Owner", role="Pod Admin", id=owner_id)
+def _setup_whatsapp_infra(db, owner_id="owner-1", enabled=True, granted=True):
+    owner = db.query(models.User).filter(models.User.id == owner_id).first()
+    if not owner:
+        owner = create_test_user(db, email="owner@test.com", name="Owner", role="Pod Admin", id=owner_id)
+    owner.whatsapp_enabled = granted
     settings = models.SyncSettings(
-        id=1, rcm_enabled=enabled,
-        rcm_api_key="fake-key" if enabled else None,
-        rcm_user_id="355746" if enabled else None,
-        rcm_account_id="80054247" if enabled else None,
-        rcm_sender_id="918956778474" if enabled else None,
+        id=1, messenger_enabled=enabled,
+        messenger_api_key="fake-key" if enabled else None,
+        messenger_user_id="355746" if enabled else None,
+        messenger_account_id="80054247" if enabled else None,
+        messenger_sender_id="918956778474" if enabled else None,
     )
     db.add(settings)
     db.commit()
@@ -671,7 +792,7 @@ WHATSAPP_GRAPH = {
 
 class TestWhatsAppChannel:
     """WhatsApp cadence step — goes through the provider-agnostic
-    messaging_service resolver (RCM today) rather than a hardcoded
+    messaging_service resolver (Alternate Messenger today) rather than a hardcoded
     vendor import, so a second provider can be added without touching this
     channel or engine.py."""
 
@@ -687,13 +808,16 @@ class TestWhatsAppChannel:
         ).first()
 
         fake_result = SendMessageResult(
-            success=True, provider="rcm", channel="whatsapp",
+            success=True, provider="messenger", channel="whatsapp",
             message_id="wa-temp-1", conversation_id="42",
         )
-        with patch("journey_engine.channels.whatsapp_channel.get_messaging_provider_for_org") as mock_get:
+        with patch("messaging_service.resolve_messaging_for_user") as mock_resolve:
             mock_provider = MagicMock()
             mock_provider.send.return_value = fake_result
-            mock_get.return_value = mock_provider
+            mock_resolve.return_value = SimpleNamespace(
+                provider=mock_provider, sender_id="918956778474",
+                provider_name="messenger", error=None, retryable=True,
+            )
             je._handle_channel_node(db, enrollment, journey, queue_row, WHATSAPP_GRAPH, "whatsapp", WHATSAPP_GRAPH["nodes"][1]["data"])
             db.commit()
 
@@ -705,7 +829,7 @@ class TestWhatsAppChannel:
         log = db.query(models.SmsLog).filter(models.SmsLog.message_id == "wa-temp-1").first()
         assert log is not None
         assert log.channel == "whatsapp"
-        assert log.provider == "rcm"
+        assert log.provider == "messenger"
         assert log.conversation_id == "42"
         assert log.template_name == "lead_followup_attempt"
         assert log.journey_id == journey.id
@@ -723,14 +847,15 @@ class TestWhatsAppChannel:
             models.JourneyExecutionQueue.enrollment_id == enrollment.id
         ).first()
 
-        with patch("journey_engine.channels.whatsapp_channel.get_messaging_provider_for_org") as mock_get:
+        with patch("messaging_provider_provider.AlternateMessenger.send") as mock_get:
             je._handle_channel_node(db, enrollment, journey, queue_row, WHATSAPP_GRAPH, "whatsapp", WHATSAPP_GRAPH["nodes"][1]["data"])
             db.commit()
 
         mock_get.assert_not_called()
         assert queue_row.status == "pending"
 
-    def test_lead_with_no_phone_fails_non_retryable(self, db):
+    def test_lead_with_no_phone_skips_the_step(self, db):
+        """v13.0.0: skipped, not a failed enrollment (see the SMS test above)."""
         _setup_whatsapp_infra(db)
         journey, version = _make_journey(db, graph=WHATSAPP_GRAPH)
         lead = create_test_lead(db, status="New", phone=None)
@@ -742,9 +867,9 @@ class TestWhatsAppChannel:
         je._handle_channel_node(db, enrollment, journey, queue_row, WHATSAPP_GRAPH, "whatsapp", WHATSAPP_GRAPH["nodes"][1]["data"])
         db.commit()
 
-        assert queue_row.status == "failed"
+        assert queue_row.status == "done"
         db.refresh(enrollment)
-        assert enrollment.status == "failed"
+        assert enrollment.status in ("active", "completed")
 
     def test_send_failure_logs_a_failed_sms_log_row(self, db):
         from messaging_provider import SendMessageResult
@@ -758,19 +883,89 @@ class TestWhatsAppChannel:
         ).first()
 
         fake_result = SendMessageResult(
-            success=False, provider="rcm", channel="whatsapp",
+            success=False, provider="messenger", channel="whatsapp",
             error="Template 'lead_followup_attempt' not found",
         )
-        with patch("journey_engine.channels.whatsapp_channel.get_messaging_provider_for_org") as mock_get:
+        with patch("messaging_service.resolve_messaging_for_user") as mock_resolve:
             mock_provider = MagicMock()
             mock_provider.send.return_value = fake_result
-            mock_get.return_value = mock_provider
+            mock_resolve.return_value = SimpleNamespace(
+                provider=mock_provider, sender_id="918956778474",
+                provider_name="messenger", error=None, retryable=True,
+            )
             je._handle_channel_node(db, enrollment, journey, queue_row, WHATSAPP_GRAPH, "whatsapp", WHATSAPP_GRAPH["nodes"][1]["data"])
             db.commit()
 
         log = db.query(models.SmsLog).filter(models.SmsLog.enrollment_id == enrollment.id).first()
         assert log.status == "failed"
         assert log.channel == "whatsapp"
+        # RCA 2026-08-25: every failed send used to collapse to a bare
+        # status="failed" — the real reason was computed but discarded.
+        assert log.failure_reason == "Template 'lead_followup_attempt' not found"
+
+    def test_owner_whatsapp_sender_override_takes_priority_over_org_default(self, db):
+        # RCA 2026-08-25: WhatsApp used one org-wide sender for every SDR,
+        # unlike calling (which already assigns each SDR their own Alternate Messenger
+        # number) — this asserts the owner's own sender wins once assigned.
+        from messaging_provider import SendMessageResult
+
+        settings = _setup_whatsapp_infra(db)
+        owner = db.query(models.User).filter(models.User.id == "owner-1").first()
+        owner.messenger_whatsapp_sender_id = "911111111111"
+        db.commit()
+        journey, version = _make_journey(db, graph=WHATSAPP_GRAPH)
+        lead = create_test_lead(db, status="New", phone="+919876543210", first_name="Priya")
+        enrollment = je.enroll_lead(db, journey, lead)
+        queue_row = db.query(models.JourneyExecutionQueue).filter(
+            models.JourneyExecutionQueue.enrollment_id == enrollment.id
+        ).first()
+
+        fake_result = SendMessageResult(success=True, provider="messenger", channel="whatsapp", message_id="wa-2")
+        with patch("messaging_provider_provider.AlternateMessenger.send",
+                    return_value=fake_result) as mock_send:
+            je._handle_channel_node(db, enrollment, journey, queue_row, WHATSAPP_GRAPH, "whatsapp", WHATSAPP_GRAPH["nodes"][1]["data"])
+            db.commit()
+
+        assert mock_send.call_args.kwargs["sender_id"] == "911111111111"
+
+    def test_falls_back_to_org_default_sender_when_owner_has_no_override(self, db):
+        settings = _setup_whatsapp_infra(db)
+        journey, version = _make_journey(db, graph=WHATSAPP_GRAPH)
+        lead = create_test_lead(db, status="New", phone="+919876543210")
+        enrollment = je.enroll_lead(db, journey, lead)
+        queue_row = db.query(models.JourneyExecutionQueue).filter(
+            models.JourneyExecutionQueue.enrollment_id == enrollment.id
+        ).first()
+
+        from messaging_provider import SendMessageResult
+        fake_result = SendMessageResult(success=True, provider="messenger", channel="whatsapp", message_id="wa-3")
+        with patch("messaging_provider_provider.AlternateMessenger.send",
+                    return_value=fake_result) as mock_send:
+            je._handle_channel_node(db, enrollment, journey, queue_row, WHATSAPP_GRAPH, "whatsapp", WHATSAPP_GRAPH["nodes"][1]["data"])
+            db.commit()
+
+        assert mock_send.call_args.kwargs["sender_id"] == settings.messenger_sender_id
+
+    def test_owner_without_the_whatsapp_grant_cannot_send(self, db):
+        """v11.10.0: before the per-SDR gate, any cadence sent WhatsApp as long
+        as the *org* was configured — the owner's own access was never checked,
+        so a cadence could message on behalf of someone never granted it."""
+        _setup_whatsapp_infra(db, granted=False)
+        journey, version = _make_journey(db, graph=WHATSAPP_GRAPH)
+        lead = create_test_lead(db, status="New", phone="+919876543210")
+        enrollment = je.enroll_lead(db, journey, lead)
+        queue_row = db.query(models.JourneyExecutionQueue).filter(
+            models.JourneyExecutionQueue.enrollment_id == enrollment.id
+        ).first()
+
+        with patch("messaging_provider_provider.AlternateMessenger.send") as mock_send:
+            je._handle_channel_node(db, enrollment, journey, queue_row, WHATSAPP_GRAPH, "whatsapp", WHATSAPP_GRAPH["nodes"][1]["data"])
+            db.commit()
+
+        mock_send.assert_not_called()
+        # A missing grant is permanent until an admin acts, so the enrollment
+        # fails outright rather than retrying against an unchanged decision.
+        assert queue_row.status == "failed"
 
 
 def test_duplicate_claim_does_not_double_send(db):
@@ -1023,8 +1218,58 @@ def test_call_node_creates_a_task_not_a_real_dial(db):
     assert task is not None
     assert task.user_id == "sdr-1"
     assert "Follow-up call" in task.title
+    # Due now (the bell shows it straight away), not at a 24h step deadline:
+    # the cadence never waits on a call reminder.
+    due = task.due_time if task.due_time.tzinfo else task.due_time.replace(tzinfo=timezone.utc)
+    assert abs((due - datetime.now(timezone.utc)).total_seconds()) < 60
     db.refresh(enrollment)
     assert enrollment.status == "completed"
+
+
+def test_call_node_script_carries_onto_the_task_description(db):
+    """The Power Dialer card's cadence-default script comes from
+    Task.description — a call node with a script filled in (NodeConfigPanel's
+    CallFields) must land there, not just the title."""
+    sdr = create_test_user(db, email="sdr-script@test.com", role="SDR", id="sdr-script")
+    journey, version = _make_journey(db, graph=CALL_GRAPH)
+    lead = create_test_lead(db, status="New")
+    lead.assigned_users.append(sdr)
+    db.commit()
+
+    enrollment = je.enroll_lead(db, journey, lead)
+    queue_row = db.query(models.JourneyExecutionQueue).filter(
+        models.JourneyExecutionQueue.enrollment_id == enrollment.id
+    ).first()
+
+    je._handle_channel_node(
+        db, enrollment, journey, queue_row, CALL_GRAPH, "call",
+        {"title": "Follow-up call", "script": "Lead in with the renewal discount."},
+    )
+    db.commit()
+
+    task = db.query(models.Task).filter(models.Task.lead_id == lead.id).first()
+    assert task.description == "Lead in with the renewal discount."
+
+
+def test_call_node_with_no_script_leaves_description_blank(db):
+    """Most call nodes won't set a script — must not become an empty string
+    (which the dialer card would then have to distinguish from 'no script')."""
+    sdr = create_test_user(db, email="sdr-noscript@test.com", role="SDR", id="sdr-noscript")
+    journey, version = _make_journey(db, graph=CALL_GRAPH)
+    lead = create_test_lead(db, status="New")
+    lead.assigned_users.append(sdr)
+    db.commit()
+
+    enrollment = je.enroll_lead(db, journey, lead)
+    queue_row = db.query(models.JourneyExecutionQueue).filter(
+        models.JourneyExecutionQueue.enrollment_id == enrollment.id
+    ).first()
+
+    je._handle_channel_node(db, enrollment, journey, queue_row, CALL_GRAPH, "call", {"title": "Follow-up call"})
+    db.commit()
+
+    task = db.query(models.Task).filter(models.Task.lead_id == lead.id).first()
+    assert task.description is None
 
 
 def test_call_node_with_no_assigned_sdr_fails_non_retryably(db):

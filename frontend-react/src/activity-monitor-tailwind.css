@@ -1,0 +1,66 @@
+/*
+ * activity-monitor-tailwind.css
+ *
+ * Tailwind entry point for the Activity Monitor IIFE bundle ONLY. Mirrors
+ * pods-tailwind.css exactly — omits @tailwind base to avoid leaking resets
+ * into the Vanilla JS shell, and reproduces just the border-reset half of
+ * Preflight, scoped to .activitymonitor.
+ */
+/*
+ * Radix (DropdownMenu/Popover) portals its content to document.body, so it
+ * renders as a sibling of .activitymonitor rather than a descendant — the
+ * reset below re-applies to .activitymonitor-portal for that reason.
+ */
+.activitymonitor, .activitymonitor *, .activitymonitor *::before, .activitymonitor *::after,
+.activitymonitor-portal, .activitymonitor-portal *, .activitymonitor-portal *::before, .activitymonitor-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.activitymonitor, .activitymonitor-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;
+
+/* react-day-picker theme — matches this feature's slate/indigo palette */
+.activitymonitor-calendar.rdp-root {
+  --rdp-accent-color: #4f46e5;
+  --rdp-accent-background-color: #eef2ff;
+  --rdp-today-color: #4f46e5;
+  --rdp-day-height: 36px;
+  --rdp-day-width: 36px;
+  --rdp-day_button-height: 34px;
+  --rdp-day_button-width: 34px;
+  font-family: inherit;
+}
+.activitymonitor-calendar .rdp-day_button {
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+}
+.activitymonitor-calendar .rdp-weekday {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+.activitymonitor-calendar .rdp-month_caption {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.activitymonitor-calendar .rdp-selected .rdp-day_button {
+  background-color: #4f46e5;
+  color: #fff;
+}
+.activitymonitor-calendar .rdp-range_middle .rdp-day_button {
+  background-color: #eef2ff;
+  color: #1e293b;
+}

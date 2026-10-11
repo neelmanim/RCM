@@ -8,6 +8,13 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { POWERED_BY } from '../generated/version.js';
+import { Avatar } from '../components/ui/Avatar';
+import { hasSeen, markSeen } from '../utils/seenFlag';
+
+// Bumped 2026-09-04 when Control Center gained Upload Center history/rollback
+// + the 9 missing SF Sync settings and opened to all Super Admins — clears
+// itself the first time a Super Admin visits, same pattern as GuidedTour.
+const CONTROL_CENTER_UPDATE_KEY = 'alternate:control-center-2026-09-parity-seen';
 
 // ── Nav item definitions ──────────────────────────────────────────────────────
 // SVG paths are taken directly from the existing index.html icons.
@@ -17,7 +24,12 @@ const NAV_ITEMS = [
     id: 'dashboard',
     label: 'Dashboard',
     tooltip: 'Dashboard',
-    roles: ['all'],
+    // 2026-09-16: excludes CSM — this dashboard's whole model (My Leads,
+    // Calling, Meetings Booked, an SDR/AE meetings leaderboard) is
+    // lead/call activity that doesn't exist for a CSM's account-portfolio
+    // work; it rendered as an all-zero, meaningless landing screen. CSM's
+    // default landing view is now csm-portal itself (see app.js _parseHash).
+    roles: ['Super Admin', 'Pod Admin', 'AE', 'SDR'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/>
@@ -26,9 +38,27 @@ const NAV_ITEMS = [
     ),
   },
   {
+    id: 'my-tasks',
+    label: 'My Tasks',
+    tooltip: 'My Tasks',
+    // Tasks (models.Task) have no role restriction — any user can be
+    // assigned one, whether created manually from a lead's detail page or
+    // by a cadence step. v13.7.0: Super Admin too — reversing 2026-09-16's
+    // exclusion (product owner, 2026-10-06): a Super Admin who owns leads
+    // gets cadence approvals and had nowhere to find them.
+    roles: ['Super Admin', 'Pod Admin', 'AE', 'SDR', 'CSM'],
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5" width="6" height="6" rx="1"/>
+        <path d="m3 17 2 2 4-4"/>
+        <path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>
+      </svg>
+    ),
+  },
+  {
     id: 'digest',
-    label: 'Daily Digest',
-    tooltip: 'Daily Digest',
+    label: 'Team Digest',
+    tooltip: 'Team Digest',
     roles: ['Super Admin', 'Pod Admin'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -41,7 +71,10 @@ const NAV_ITEMS = [
     id: 'leads',
     label: 'Leads',
     tooltip: 'Leads',
-    roles: ['all'],
+    // 2026-09-16: excludes CSM — live check showed "0 leads in pipeline"
+    // plus a guided tour teaching Call Lists/Cadence/Email Campaigns, none
+    // of which apply to a CSM (leads belong to SDR/AE; a CSM works accounts).
+    roles: ['Super Admin', 'Pod Admin', 'AE', 'SDR'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
@@ -51,15 +84,22 @@ const NAV_ITEMS = [
     ),
   },
   {
-    id: 'sales-journeys',
-    label: 'Sales Cadences',
-    tooltip: 'Sales Cadences',
-    // Widened to Pod Admin+ (2026-08-14) to match the backend's
-    // require_pod_admin_or_above gate on journey_routes.py — was
-    // Super-Admin-only for a one-week soft launch starting 2026-08-07. SDRs
-    // still see their own leads' enrollment status via the Lead Detail page's
-    // Journey Status card, which uses a separate, unrestricted endpoint.
-    roles: ['Super Admin', 'Admin', 'Pod Admin'],
+    // v12: renamed from 'sales-journeys'/"Sales Cadences" — Cadence is now a
+    // tab inside this umbrella (Sales Tools), alongside the new Campaigns
+    // (bulk email) tab. Widened from the old Pod-Admin+ gate to 'all':
+    // Campaigns has no role restriction (any SDR can email their own
+    // selected leads, same reasoning as Call Lists), so the nav entry itself
+    // must be reachable by everyone — Cadence keeps its own Pod-Admin+
+    // restriction as an internal check inside SalesToolsHub.jsx instead of a
+    // nav-level gate, mirroring Control Center's per-component gate idiom.
+    id: 'sales-tools',
+    label: 'Sales Tools',
+    tooltip: 'Sales Tools',
+    // 2026-09-16: excludes CSM — every tab here (Cadence, Email/SMS
+    // Campaigns) operates on leads a rep selects themselves; a CSM has no
+    // leads to select. Live check showed a CSM's Cadence tab listing other
+    // reps' cadences with nothing of their own to act on.
+    roles: ['Super Admin', 'Pod Admin', 'AE', 'SDR'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <rect width="8" height="8" x="3" y="3" rx="2"/><rect width="8" height="8" x="13" y="13" rx="2"/>
@@ -71,7 +111,10 @@ const NAV_ITEMS = [
     id: 'pods',
     label: 'POD Management',
     tooltip: 'POD Management',
-    roles: ['Super Admin'],
+    // Widened to Pod Admin (2026-08-19) — the Team Roster tab was built
+    // specifically for Pod Admins to see their own team's lead activity;
+    // the backend's GET /pods already scoped results to their own pod.
+    roles: ['Super Admin', 'Pod Admin'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
@@ -83,7 +126,10 @@ const NAV_ITEMS = [
     id: 'leaderboard',
     label: 'Leaderboard',
     tooltip: 'Leaderboard',
-    roles: ['all'],
+    // 2026-09-16: excludes CSM, same reasoning as Dashboard above — it's a
+    // meetings-booked competition, a metric that only applies to SDR/AE
+    // outbound activity.
+    roles: ['Super Admin', 'Pod Admin', 'AE', 'SDR'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
@@ -95,57 +141,113 @@ const NAV_ITEMS = [
     ),
   },
   {
-    id: 'settings',
-    label: 'Settings',
-    tooltip: 'Settings',
-    roles: ['Super Admin', 'Pod Admin'],
+    id: 'ae-pipeline',
+    label: 'AE Pipeline',
+    tooltip: 'AE Pipeline',
+    // Own-Opportunity view for AE; Pod Admin gets the same oversight
+    // extension already given to the AE leaderboard. SDR excluded.
+    // 2026-09-16: Super Admin removed — they now reach this same view (plus
+    // CSM Portal) through the merged 'pipeline-hub' item below, one nav
+    // entry with a tab for each instead of two entries for the same content.
+    roles: ['AE', 'Pod Admin'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 7h-9"/><path d="M14 17H5"/>
-        <circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>
+        <path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+      </svg>
+    ),
+  },
+  // 2026-09-16: CSM Portal's 4 sections promoted to their own flat top-level
+  // nav items for a CSM, replacing the single 'csm-portal' item + its
+  // internal tab strip — explicit product direction: "all the tabs should
+  // come outside for the CSM's — a view which greets them." Super Admin
+  // oversight of these same 4 sections moved to the merged 'pipeline-hub'
+  // item below (CSM Portal tab), which keeps the internal tab strip since
+  // that's browsing, not a CSM's own daily-driver nav.
+  {
+    id: 'csm-inbox',
+    label: 'Inbox',
+    tooltip: 'Inbox — accounts that need you today',
+    roles: ['CSM'],
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+        <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
       </svg>
     ),
   },
   {
-    id: 'admin',
-    label: 'Admin',
-    tooltip: 'Admin',
-    roles: ['Super Admin', 'Pod Admin'],
+    id: 'csm-portfolio',
+    label: 'Portfolio',
+    tooltip: 'Portfolio — your accounts',
+    roles: ['CSM'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
       </svg>
     ),
   },
   {
-    id: 'upload',
-    label: 'Upload Center',
-    tooltip: 'Upload Center',
+    id: 'csm-playbooks',
+    label: 'Playbooks',
+    tooltip: 'Playbooks — plays worth acting on today',
+    roles: ['CSM'],
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="5" width="6" height="6" rx="1"/>
+        <path d="m3 17 2 2 4-4"/>
+        <path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'csm-digest',
+    label: 'Digest',
+    tooltip: 'Digest — your weekly roll-up',
+    roles: ['CSM'],
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/>
+        <path d="M4 7h5v7H4z"/><path d="M11 7h8"/><path d="M11 11h8"/><path d="M11 15h5"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'pipeline-hub',
+    // Short label — the full "AE Pipeline & CSM Portal" name truncated to
+    // "AE Pipeline & CSM Po..." at the sidebar's real width (live screenshot,
+    // 2026-09-16). Tooltip keeps the full name for clarity on hover.
+    label: 'Pipeline & CSM',
+    tooltip: 'AE Pipeline & CSM Portal',
+    // 2026-09-16: Super Admin's merged view of the two items above —
+    // "the both the items should be merged as they have a tab for
+    // themselves" — one nav entry, an AE Pipeline tab and a CSM Portal tab
+    // inside (see features/pipeline-hub/PipelineHub.jsx).
     roles: ['Super Admin'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        <path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
       </svg>
     ),
   },
+  // 2026-09-09 (v12.2): 'settings' and 'admin' entries removed. Both were
+  // down to roles:['Pod Admin'] purely because "Control Center is
+  // Super-Admin-only for now" — no longer true, leaving a Pod Admin four
+  // config entries for two concerns. Team & Access covers #admin for them;
+  // #settings showed them only read-only SF status (every action on it is
+  // isSuperAdmin-gated). Routes still resolve in app.js, as with
+  // v11.12.3's upload/audit-logs removal.
+  // 2026-09-04: 'upload' (Upload Center) and 'audit-logs' (System Logs)
+  // removed entirely — both were Super-Admin-only in legacy (no Pod Admin
+  // dependency to preserve, unlike Settings/Admin above) and are now fully
+  // covered by Control Center's Data and Monitoring sections. Routes
+  // (#upload, #audit-logs) still work in app.js if navigated to directly;
+  // only the nav entries are gone.
   {
-    id: 'audit-logs',
-    label: 'System Logs',
-    tooltip: 'System Logs',
-    roles: ['Super Admin'],
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/>
-        <path d="M19 17V5a2 2 0 0 0-2-2H4"/>
-        <line x1="10" y1="13" x2="16" y2="13"/><line x1="10" y1="9" x2="16" y2="9"/>
-      </svg>
-    ),
-  },
-  {
-    id: 'call-monitor',
-    label: 'Call Monitor',
-    tooltip: 'Call Monitor',
+    id: 'activity-monitor',
+    label: 'Activity Monitor',
+    tooltip: 'Activity Monitor',
     roles: ['Super Admin', 'Pod Admin'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
@@ -157,7 +259,7 @@ const NAV_ITEMS = [
     id: 'analytics',
     label: 'Analytics Hub',
     tooltip: 'Analytics Hub',
-    roles: ['Super Admin', 'Pod Admin', 'AE'],
+    roles: ['Super Admin', 'Pod Admin', 'AE', 'SDR'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <path d="M3 3v18h18"/><path d="M18 17V5"/><path d="M13 17V9"/><path d="M8 17v-5"/>
@@ -192,7 +294,16 @@ const NAV_ITEMS = [
     id: 'my-settings',
     label: 'My Settings',
     tooltip: 'My Settings',
-    roles: ['SDR', 'AE', 'Pod Admin'],
+    // 2026-09-09 (v12.2): Super Admin added. Legacy hid this from them
+    // ("Super Admin has full Settings"), but no Settings/Control Center page
+    // has ever had a signature editor — so a Super Admin sent every email
+    // with no signature and nowhere to set one. Route was already ungated.
+    // 2026-09-16: CSM added — this item's roles list was never updated when
+    // CSM was introduced, so a CSM had no way at all to connect their email
+    // or manage their own dialer access. MySettingsHub itself has no role
+    // logic (Email Sync/Dialer/Signature apply to any user), so this was a
+    // pure nav-gating omission, not a feature that needed building.
+    roles: ['Super Admin', 'SDR', 'AE', 'Pod Admin', 'CSM'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="18" cy="15" r="3"/>
@@ -208,11 +319,36 @@ const NAV_ITEMS = [
     id: 'playground',
     label: 'Playground',
     tooltip: 'Playground',
-    roles: ['Super Admin', 'Pod Admin'],
+    // GET /api/dialer/playground returns the global Alternate Messenger credentials unmasked and is Super-Admin-only
+    // (dialer_routes.py); Pod Admin used to see this item and land on "Access Denied".
+    roles: ['Super Admin'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
         <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3z"/>
         <path d="M5 3v4"/><path d="M3 5h4"/><path d="M19 17v4"/><path d="M17 19h4"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'control-center',
+    label: 'Control Center',
+    tooltip: 'Control Center',
+    // 2026-09-04: widened from single-owner allowedEmails to all Super
+    // Admins — see app.js's control-center route guard for why this is
+    // safe (every legacy page it consolidates is already at minimum
+    // Super-Admin-accessible). Placed above Help (2026-09-04) — it's the
+    // more frequently used of the two for this role.
+    // 2026-09-09 (v12.2): Pod Admin added — sections are individually
+    // role-gated now (control-center/constants.js), so a Pod Admin gets
+    // only Team & Access, matching what admin.js already gives them.
+    roles: ['Super Admin', 'Pod Admin'],
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="4" width="18" height="16" rx="2"/>
+        <path d="M3 9h18"/>
+        <path d="M8 4v5"/>
+        <circle cx="12.5" cy="14.5" r="1.5"/>
+        <circle cx="17" cy="14.5" r="1.5"/>
       </svg>
     ),
   },
@@ -251,15 +387,30 @@ const CollapseIcon = ({ collapsed }) => (
 );
 
 // ── Role visibility helper ────────────────────────────────────────────────────
-function isItemVisible(item, userRole) {
-  if (item.roles.includes('all')) return true;
-  const role = (userRole || '').trim();
-  return item.roles.some(r => r.toLowerCase() === role.toLowerCase());
+// Temporary lockdown: Pipeline & CSM Portal (the Super Admin oversight tab,
+// AE's own AE Pipeline, and CSM's own Inbox/Portfolio/Playbooks/Digest) are
+// hidden from EVERYONE, including admins, while that surface is reworked —
+// additive on top of the existing role check, so restoring it for a role
+// later is a one-line revert. Nav-hide only, not a backend gate (see
+// routes/ae_pipeline_routes.py, routes/csm_portal_routes.py). Unlocked only
+// for this one account, by navigating to #mogambo once per browser session
+// (see app.js _parseHash, which sets MOGAMBO_KEY in sessionStorage and
+// itself checks the email too — this is a second, independent gate).
+export const MOGAMBO_KEY = 'alternate:mogambo-unlocked';
+const PIPELINE_CSM_LOCKDOWN_EMAIL = 'neelmani.mishra@screen-magic.com';
+const isPipelineOrCsmItem = (id) => id === 'pipeline-hub' || id === 'ae-pipeline' || id.startsWith('csm-');
+
+function hasMogamboUnlock(userEmail) {
+  if ((userEmail || '').trim().toLowerCase() !== PIPELINE_CSM_LOCKDOWN_EMAIL) return false;
+  try { return sessionStorage.getItem(MOGAMBO_KEY) === '1'; } catch { return false; }
 }
 
-// ── Avatar initials helper ───────────────────────────────────────────────────
-function getInitial(name) {
-  return (name || 'U')[0].toUpperCase();
+function isItemVisible(item, userRole, userEmail) {
+  const role = (userRole || '').trim();
+  const roleAllowed = item.roles.includes('all') || item.roles.some(r => r.toLowerCase() === role.toLowerCase());
+  if (!roleAllowed) return false;
+  if (isPipelineOrCsmItem(item.id)) return hasMogamboUnlock(userEmail);
+  return true;
 }
 
 function getRoleColor(userRole) {
@@ -274,8 +425,11 @@ function getRoleColor(userRole) {
 export function NavSidebar({
   userRole = '',
   userName = '',
+  userEmail = '',
   activeView = 'dashboard',
   collapsed: initialCollapsed = false,
+  mobileNavOpen = false,
+  onCloseMobileNav,
   onNavigate,
   onAction,
   onLogout,
@@ -283,9 +437,17 @@ export function NavSidebar({
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem('sidebar_collapsed') === 'true' || initialCollapsed
   );
+  const [ccUnseen, setCcUnseen] = useState(() => !hasSeen(CONTROL_CENTER_UPDATE_KEY));
+  // v13.7.0: approvals waiting on me, for the My Tasks badge — the bell
+  // (NavTopbar) already polls them and broadcasts the count, so no second poll.
+  const [approvals, setApprovals] = useState(0);
+  useEffect(() => {
+    const onCounts = (e) => setApprovals(e.detail?.approvals || 0);
+    window.addEventListener('alternate:task-counts', onCounts);
+    return () => window.removeEventListener('alternate:task-counts', onCounts);
+  }, []);
   const tooltipRef = useRef(null);
   const roleColor = getRoleColor(userRole);
-  const initial   = getInitial(userName);
 
   // Persist collapse state to localStorage — keeps app.js toggle in sync too
   const toggleCollapse = useCallback(() => {
@@ -315,21 +477,37 @@ export function NavSidebar({
   }, []);
 
   // Visible items for this role
-  const visibleItems = NAV_ITEMS.filter(item => isItemVisible(item, userRole));
+  const visibleItems = NAV_ITEMS.filter(item => isItemVisible(item, userRole, userEmail));
+
+  // Tapping a nav link closes the mobile drawer too — a no-op on desktop.
+  const navigate = useCallback((id) => {
+    if (id === 'control-center' && ccUnseen) {
+      markSeen(CONTROL_CENTER_UPDATE_KEY);
+      setCcUnseen(false);
+    }
+    onNavigate?.(id);
+    onCloseMobileNav?.();
+  }, [onNavigate, onCloseMobileNav, ccUnseen]);
 
   return (
-    <aside className={`nh-sidebar${collapsed ? ' nh-sidebar--collapsed' : ''}`}>
+    <>
+    <div
+      className={`nh-mobile-backdrop${mobileNavOpen ? ' nh-mobile-backdrop--open' : ''}`}
+      onClick={onCloseMobileNav}
+      aria-hidden="true"
+    />
+    <aside className={`nh-sidebar${collapsed ? ' nh-sidebar--collapsed' : ''}${mobileNavOpen ? ' nh-sidebar--mobile-open' : ''}`}>
 
       {/* Logo */}
       <div className="nh-logo">
         <img
-          src="img/rcm-logo.png"
-          alt="RCM"
+          src="img/alternatecrm-logo.png"
+          alt="Alternate CRM"
           className="nh-logo__icon"
         />
         {!collapsed && (
           <div className="nh-logo__text">
-            <span className="nh-logo__name">RCM</span>
+            <span className="nh-logo__name">Alternate CRM</span>
             <span className="nh-logo__sub">{POWERED_BY}</span>
           </div>
         )}
@@ -340,19 +518,28 @@ export function NavSidebar({
         <ul className="nh-nav__list">
           {visibleItems.map(item => {
             const isActive = activeView === item.id;
+            // One badge slot per item: "Updated" for a changed page, or a count.
+            const badge = item.id === 'control-center' && ccUnseen ? 'Updated'
+              : item.id === 'my-tasks' && approvals > 0 ? String(approvals) : null;
             return (
               <li key={item.id} className={`nh-nav__item${isActive ? ' nh-nav__item--active' : ''}`}>
                 <a
                   href="#"
                   className="nh-nav__link"
-                  onClick={e => { e.preventDefault(); onNavigate?.(item.id); }}
+                  onClick={e => { e.preventDefault(); navigate(item.id); }}
                   onMouseEnter={e => showTooltip(e, item.tooltip)}
                   onMouseLeave={hideTooltip}
                   aria-label={item.label}
                   aria-current={isActive ? 'page' : undefined}
                 >
-                  <span className="nh-nav__icon">{item.icon}</span>
+                  <span className="nh-nav__icon">
+                    {item.icon}
+                    {badge && collapsed && <span className="nh-nav__dot" aria-hidden="true" />}
+                  </span>
                   {!collapsed && <span className="nh-nav__label">{item.label}</span>}
+                  {!collapsed && badge && (
+                    <span className="nh-nav__badge" title={item.id === 'my-tasks' ? `${badge} approvals waiting for you` : undefined}>{badge}</span>
+                  )}
                 </a>
               </li>
             );
@@ -363,7 +550,7 @@ export function NavSidebar({
             <a
               href="#"
               className="nh-nav__link"
-              onClick={e => { e.preventDefault(); onAction?.('feedback'); }}
+              onClick={e => { e.preventDefault(); onAction?.('feedback'); onCloseMobileNav?.(); }}
               onMouseEnter={e => showTooltip(e, 'Send Feedback')}
               onMouseLeave={hideTooltip}
               aria-label="Send Feedback"
@@ -385,13 +572,12 @@ export function NavSidebar({
         onMouseEnter={e => collapsed && showTooltip(e, userName || 'Account')}
         onMouseLeave={hideTooltip}
       >
-        <div
+        <Avatar
+          name={userName}
+          background={`linear-gradient(135deg, ${roleColor}, #7c3aed)`}
           className="nh-avatar"
-          style={{ background: `linear-gradient(135deg, ${roleColor}, #7c3aed)` }}
-          title={!collapsed ? undefined : userName}
-        >
-          {initial}
-        </div>
+          size={34}
+        />
         {!collapsed && (
           <div className="nh-footer__info">
             <span className="nh-footer__name">{userName}</span>
@@ -424,5 +610,6 @@ export function NavSidebar({
       {/* Fixed-position tooltip div — escapes overflow:hidden (v9.7.11 pattern) */}
       <div ref={tooltipRef} className="nh-tooltip" aria-hidden="true" />
     </aside>
+    </>
   );
 }

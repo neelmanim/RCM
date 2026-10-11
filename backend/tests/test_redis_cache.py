@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import httpx
 import pytest
 
 
@@ -114,6 +115,23 @@ class TestRedisDisabled:
         assert cache.get_cached("ns1", "a") is None
         assert cache.get_cached("ns2", "b") is None
 
+    def test_expired_entries_swept_once_namespace_grows_past_threshold(self):
+        """RCA 2026-08-25: high-cardinality keys (search/filter/page combos)
+        are set once and never re-read, so lazy delete-on-read alone never
+        frees them — this let the in-memory dict grow unbounded and OOM-kill
+        staging. Crossing the sweep threshold must purge already-expired keys.
+        """
+        cache = _reload_cache()
+        store, lock = cache._get_store("leads_page")
+        now = cache.time.monotonic()
+        with lock:
+            for i in range(cache._SWEEP_THRESHOLD):
+                store[f"stale{i}"] = ({"i": i}, now - 1)  # already expired
+        assert len(store) == cache._SWEEP_THRESHOLD
+        cache.set_cached("leads_page", "fresh", {"ok": True}, ttl=30)
+        assert len(store) == 1
+        assert cache.get_cached("leads_page", "fresh") == {"ok": True}
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. TestRedisEnabled — When Redis is available
@@ -128,6 +146,18 @@ class TestRedisEnabled:
         cache._redis_client = mock
         cache._redis_available = True
         return cache, mock
+
+    def test_a_change_made_on_another_worker_is_seen_here_at_once(self):
+        """Two workers each keep an in-memory copy. Worker B changes a setting and invalidates: that clears Redis and B's own
+        copy, but not A's. A must treat Redis's "nothing here" as the truth, not serve its stale copy for the rest of the TTL
+        (the "I switched it off and it still shows On" bug)."""
+        cache, mock = self._setup_cache_with_redis()
+        cache.set_cached("users", "list", [{"id": 1, "export_enabled": True}])
+        assert cache.get_cached("users", "list") == [{"id": 1, "export_enabled": True}]     # A now holds a local copy
+        mock.delete(cache._redis_key("users", "list"))                                      # worker B invalidated in Redis only
+        assert cache.get_cached("users", "list") is None
+        store, _ = cache._get_store("users")
+        assert "list" not in store
 
     def test_set_writes_to_redis_and_get_populates_memory(self):
         """When Redis SET succeeds, in-memory is skipped (no dual storage).
@@ -283,7 +313,7 @@ class TestRedisKeyFormat:
         assert parts[3] == "all_super_admin"
 
     def test_staging_env_uses_staging_prefix(self):
-        cache = _reload_cache(DATABASE_URL="postgres://user:pass@host/rcm_db_staging")
+        cache = _reload_cache(DATABASE_URL="postgres://user:pass@host/messenger_db_staging")
         # Force re-read of env prefix
         cache._ENV_PREFIX = "ls:staging" if "staging" in os.environ.get("DATABASE_URL", "") else "ls:prod"
         key = cache._redis_key("users", "k1")
@@ -301,6 +331,32 @@ class TestRedisKeyFormat:
 # ═══════════════════════════════════════════════════════════════════════════════
 # 5. TestStampedeGuardWithRedis — Stampede guard still works
 # ═══════════════════════════════════════════════════════════════════════════════
+
+class TestRedisInitTimeout:
+    """RCA 2026-10-01: upstash-redis hardcodes its internal httpx client to
+    timeout=None, so a slow/degraded Upstash endpoint blocked every cached
+    route's worker thread for up to 46s with app CPU and DB both idle.
+    _init_redis() must bound that timeout and skip the SDK's own retry wait."""
+
+    def test_init_redis_bounds_the_http_timeout(self):
+        cache = _reload_cache()
+        env = {"UPSTASH_REDIS_REST_URL": "https://example.upstash.io",
+               "UPSTASH_REDIS_REST_TOKEN": "fake-token"}
+        with patch.dict(os.environ, env), patch("upstash_redis.Redis.ping", return_value="PONG"):
+            cache._init_redis()
+        assert cache._redis_available is True
+        assert cache._redis_client._http._client.timeout == httpx.Timeout(
+            cache._REDIS_TIMEOUT_SECONDS
+        )
+
+    def test_init_redis_disables_sdk_retries(self):
+        cache = _reload_cache()
+        env = {"UPSTASH_REDIS_REST_URL": "https://example.upstash.io",
+               "UPSTASH_REDIS_REST_TOKEN": "fake-token"}
+        with patch.dict(os.environ, env), patch("upstash_redis.Redis.ping", return_value="PONG"):
+            cache._init_redis()
+        assert cache._redis_client._http._retries == 0
+
 
 class TestStampedeGuardWithRedis:
     """Stampede guard stays in-memory only and works regardless of Redis state."""

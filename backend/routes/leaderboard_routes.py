@@ -1,5 +1,5 @@
 # ── routes/leaderboard_routes.py — SDR performance leaderboard ─────────────────
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, case, distinct
 from sqlalchemy.orm import Session
@@ -29,7 +29,13 @@ def get_leaderboard(
     Pod Admins see only their pod's SDRs unless global_view=True.
     Uses bulk SQL queries instead of per-SDR loops.
     """
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    # RCA 2026-08-31: this used to be a naive datetime.combine(date.today(), ...)
+    # boundary compared against a tz-aware column — worked in practice only
+    # because this deployment's app process and DB session both happen to run
+    # UTC, but relied on that coincidence rather than being explicit about it
+    # (the my/today-calls dialer-panel endpoint already used an explicit UTC
+    # boundary, one of two things that made its "today" disagree with this one).
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     cutoff = None
     if range and range > 0:
         cutoff = datetime.now(timezone.utc) - timedelta(days=range)
@@ -68,7 +74,7 @@ def get_leaderboard(
     sdr_ids = [s.id for s in sdrs]
 
     # ── BULK QUERY 1: Calls today per SDR ───────────────────────────────────
-    # UNION dialer_calls (RCM/Aircall) + call_logs (manual)
+    # UNION dialer_calls (Alternate Messenger/Aircall) + call_logs (manual)
     dc_today_q = (
         db.query(
             models.DialerCall.user_id,
@@ -77,7 +83,15 @@ def get_leaderboard(
         .filter(
             models.DialerCall.user_id.in_(sdr_ids),
             models.DialerCall.direction == "outbound",
-            models.dialer_call_event_time() >= today_start,
+            # RCA 2026-08-31: dialer_call_event_time()'s coalesce(started_at,
+            # created_at) counted a FAILED call that never reached the
+            # provider (started_at never set) via its created_at instead —
+            # the my/today-calls dialer-panel endpoint requires a real
+            # started_at for the same "calls today" concept, so this counted
+            # attempts that panel didn't. started_at is non-null here for
+            # any call that actually went out; NULL never satisfies >=, so
+            # this naturally excludes never-attempted rows.
+            models.DialerCall.started_at >= today_start,
         )
         .group_by(models.DialerCall.user_id)
     )
@@ -111,7 +125,7 @@ def get_leaderboard(
         )
     )
     if cutoff:
-        dc_total_q = dc_total_q.filter(models.dialer_call_event_time() >= cutoff)
+        dc_total_q = dc_total_q.filter(models.DialerCall.started_at >= cutoff)
     dc_total_q = dc_total_q.group_by(models.DialerCall.user_id)
 
     cl_total_q = (
@@ -157,21 +171,38 @@ def get_leaderboard(
     for user_id, status, cnt in lead_status_q.all():
         sdr_status_counts.setdefault(user_id, {})[status] = cnt
 
+    # ── BULK QUERY 4: meetings each SDR BOOKED (v13.11.0) ───────────────────
+    # "Meetings" used to be leads the person currently owns that sit in a meeting stage — a stock that credits whoever
+    # inherited a lead (or still holds it after leaving) and ignores the period. Bookings are recorded per booking with
+    # the booker (meeting_log); a cancelled booking (lead disqualified before it happened) is not a meeting.
+    from services import offboarding
+    booked_q = (db.query(models.LeadMeeting.booked_by_user_id, func.count(models.LeadMeeting.id))
+                .join(models.Lead, models.Lead.id == models.LeadMeeting.lead_id)
+                .filter(models.LeadMeeting.booked_by_user_id.in_(sdr_ids), models.LeadMeeting.status != "cancelled"))
+    booked_q = models.exclude_test_and_deleted_leads(booked_q)
+    if cutoff:
+        booked_q = booked_q.filter(models.LeadMeeting.booked_at >= cutoff)
+    booked_map = dict(booked_q.group_by(models.LeadMeeting.booked_by_user_id).all())
+    gone = offboarding.left_ids(db, sdrs)
+
     # ── Assemble leaderboard from pre-fetched data ──────────────────────────
     leaderboard = []
     for sdr in sdrs:
         status_counts = sdr_status_counts.get(sdr.id, {})
         total_leads = sum(status_counts.values())
-        meetings_scheduled = sum(
+        meetings_in_stage_now = sum(
             status_counts.get(s, 0) for s in MEETING_REACHED
         )
+        meetings_scheduled = booked_map.get(sdr.id, 0)
+        if sdr.left_at is not None and not meetings_scheduled and not total_calls_map.get(sdr.id):
+            continue   # someone offboarded who did nothing in this window is not a rank (others are only marked Left)
         disqualified = status_counts.get("Disqualified", 0)
         active_leads = sum(
             status_counts.get(s, 0) for s in ACTIVE_STATUSES
         )
 
         total_calls = total_calls_map.get(sdr.id, 0)
-        conversion_rate = round((meetings_scheduled / total_leads * 100), 1) if total_leads > 0 else 0.0
+        conversion_rate = round((meetings_in_stage_now / total_leads * 100), 1) if total_leads > 0 else 0.0
 
         pod_name = None
         if sdr.pod_id and sdr.pod:
@@ -185,6 +216,8 @@ def get_leaderboard(
             "calls_today":        calls_today_map.get(sdr.id, 0),
             "total_calls":        total_calls,
             "meetings_scheduled": meetings_scheduled,
+            "meetings_in_stage_now": meetings_in_stage_now,
+            "left":               sdr.id in gone,
             "disqualified":       disqualified,
             "active_leads":       active_leads,
             "total_leads":        total_leads,
@@ -216,7 +249,7 @@ def get_ae_leaderboard(
     Pod Admins see only their pod's AEs unless global_view=True.
     Mirrors the SDR leaderboard but scoped to role='AE' only.
     """
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)  # RCA 2026-08-31, see SDR leaderboard above
     cutoff = None
     if range and range > 0:
         cutoff = datetime.now(timezone.utc) - timedelta(days=range)
@@ -240,7 +273,7 @@ def get_ae_leaderboard(
     dc_today_q = (
         db.query(models.DialerCall.user_id, func.count(models.DialerCall.id).label("cnt"))
         .filter(models.DialerCall.user_id.in_(ae_ids), models.DialerCall.direction == "outbound",
-                models.dialer_call_event_time() >= today_start)
+                models.DialerCall.started_at >= today_start)  # RCA 2026-08-31, see SDR leaderboard above
         .group_by(models.DialerCall.user_id)
     )
     cl_today_q = (
@@ -260,7 +293,7 @@ def get_ae_leaderboard(
         .filter(models.DialerCall.user_id.in_(ae_ids), models.DialerCall.direction == "outbound")
     )
     if cutoff:
-        dc_total_q = dc_total_q.filter(models.dialer_call_event_time() >= cutoff)
+        dc_total_q = dc_total_q.filter(models.DialerCall.started_at >= cutoff)
     dc_total_q = dc_total_q.group_by(models.DialerCall.user_id)
 
     cl_total_q = (
@@ -295,6 +328,8 @@ def get_ae_leaderboard(
         ae_status_counts.setdefault(user_id, {})[status] = cnt
 
     # ── Assemble AE leaderboard ───────────────────────────────────────────────
+    from services import offboarding
+    gone = offboarding.left_ids(db, aes)
     leaderboard = []
     for ae in aes:
         status_counts = ae_status_counts.get(ae.id, {})
@@ -317,6 +352,7 @@ def get_ae_leaderboard(
             "calls_today":        calls_today_map.get(ae.id, 0),
             "total_calls":        total_calls,
             "meetings_scheduled": meetings_scheduled,
+            "left":               ae.id in gone,
             "disqualified":       disqualified,
             "active_leads":       active_leads,
             "total_leads":        total_leads,

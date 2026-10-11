@@ -16,8 +16,28 @@ const PER_PAGE = 20;
 const _normCompany = (c) => (c || '').replace(/[ ​‌‍﻿]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
 
 // Navigation state — updated every loadPage(), read by lead_detail via getNavLeads()
+const NAV_STORAGE_KEY = 'leads_nav_state';
 let _navLeads = [];  // [{id, name, phone}] — current visible page in display order
-export function getNavLeads() { return _navLeads; }
+
+export function getNavLeads() {
+    // RCA 2026-08-20: _navLeads is a bare in-memory variable with no
+    // persistence — a hard reload, a direct link into lead-detail, or
+    // opening a lead before the async full-list fetch below resolves all
+    // left it empty, and the Prev/Next pager silently disappeared (no error,
+    // lead_detail.js just no-ops when navLeads.length < 2). Fall back to the
+    // last-known list for this tab instead of going empty.
+    if (_navLeads.length) return _navLeads;
+    try {
+        const saved = JSON.parse(sessionStorage.getItem(NAV_STORAGE_KEY) || '[]');
+        if (Array.isArray(saved)) _navLeads = saved;
+    } catch { /* corrupt/unavailable storage — stay empty, pager just won't show */ }
+    return _navLeads;
+}
+
+function _setNavLeads(leads) {
+    _navLeads = leads;
+    try { sessionStorage.setItem(NAV_STORAGE_KEY, JSON.stringify(_navLeads)); } catch { /* storage full/unavailable — in-memory still works this tab */ }
+}
 
 function _toNavLeads(leads) {
     return leads.map(l => ({ id: l.id, name: [l.first_name, l.last_name].filter(Boolean).join(' ') || l.company || '—', phone: l.phone || l.phone_secondary || '' }));
@@ -26,7 +46,19 @@ function _toNavLeads(leads) {
 // Lets the React Leads Hub (which never runs this file's loadPage()) populate
 // the same nav state so Prev/Next on the Lead Detail page still works when a
 // lead is opened from there — see app.js's onOpenLead for the leads-react-root path.
-export function setNavLeadsFromRaw(leads) { _navLeads = _toNavLeads(leads || []); }
+export function setNavLeadsFromRaw(leads) { _setNavLeads(_toNavLeads(leads || [])); }
+
+// ── Session-frozen list cache ────────────────────────────────────────────────
+// RCA 2026-08-20 (product decision): SDRs work sequentially through a
+// research-ordered list. Re-querying + re-sorting on every "Back to Leads"
+// (priority_score shifts as calls get logged) reshuffled their working order
+// mid-session ("wastes a lot of search time... completely ruins the flow" —
+// Himanshu). Module-level (not sessionStorage) so it survives SPA
+// navigation within this tab but is cleared by an actual page reload —
+// that's the "manual refresh" escape hatch. Keyed off the raw filter state,
+// so any explicit filter/search/page change is a cache miss and fetches fresh.
+const _tablePageCache = new Map();
+const _navListCache = new Map();
 
 // ── Leads table (paginated) ──────────────────────────────────────────────────
 export async function renderLeads(container, _unused, openCallModal, navigateToDetail) {
@@ -173,6 +205,14 @@ export async function renderLeads(container, _unused, openCallModal, navigateToD
 
     async function loadPage() {
         const tbody = document.getElementById('leads-tbody');
+        // RCA 2026-08-18 (prod, unhandled rejection): the debounced search
+        // timer (400ms, below) and the pod/global-view toggles all call
+        // loadPage() fire-and-forget. If the user has already navigated away
+        // from this view by the time the timer fires, #leads-tbody no longer
+        // exists and .innerHTML on null throws — with no caller awaiting this,
+        // that becomes an unhandled promise rejection. Bail out silently;
+        // there's nothing left on screen to update.
+        if (!tbody) return;
         tbody.innerHTML = Array(8).fill('').map(() => `<tr><td colspan="8" style="padding:10px 12px;border-bottom:1px solid var(--border-color,#e5e7eb);"><div style="display:flex;gap:16px;"><div style="background:var(--skeleton-bg,#e5e7eb);border-radius:6px;width:120px;height:14px;animation:skeletonPulse 1.4s ease-in-out infinite;"></div><div style="background:var(--skeleton-bg,#e5e7eb);border-radius:6px;width:160px;height:14px;animation:skeletonPulse 1.4s ease-in-out infinite;"></div><div style="background:var(--skeleton-bg,#e5e7eb);border-radius:6px;width:100px;height:14px;animation:skeletonPulse 1.4s ease-in-out infinite;"></div><div style="background:var(--skeleton-bg,#e5e7eb);border-radius:6px;flex:1;height:14px;animation:skeletonPulse 1.4s ease-in-out infinite;"></div></div></td></tr>`).join('');
 
         // Maker-side "pending disqualify" badge — only SDR/AE submit requests,
@@ -186,47 +226,72 @@ export async function renderLeads(container, _unused, openCallModal, navigateToD
         }
 
         try {
-            const result = await api.fetchLeads({
-                page: currentPage,
-                per_page: PER_PAGE,
-                search: searchQuery,
-                status: statusFilter === 'Lead Unassigned' ? 'Lead Assigned' : statusFilter,
-                source: sourceFilter,
-                company: companyFilter,
-                date_from: dateFrom,
-                date_to: dateTo,
-                outcome: outcomeFilter,
-                assigned_to: sdrFilter,
-                global_view: globalView,
+            // Raw (pre-server-mapping) filter signature — the cache key for
+            // both maps below. Built from the raw statusFilter (not the
+            // 'Lead Unassigned' -> 'Lead Assigned' server substitution) so
+            // that virtual filter doesn't collide in the cache with a real
+            // 'Lead Assigned' filter — they'd otherwise share a server key.
+            const _filterKey = JSON.stringify({
+                searchQuery, statusFilter, sourceFilter, companyFilter,
+                dateFrom, dateTo, outcomeFilter, sdrFilter, globalView,
             });
+            const _tableKey = `${_filterKey}:page=${currentPage}`;
+
+            let result = _tablePageCache.get(_tableKey);
+            if (!result) {
+                result = await api.fetchLeads({
+                    page: currentPage,
+                    per_page: PER_PAGE,
+                    search: searchQuery,
+                    status: statusFilter === 'Lead Unassigned' ? 'Lead Assigned' : statusFilter,
+                    source: sourceFilter,
+                    company: companyFilter,
+                    date_from: dateFrom,
+                    date_to: dateTo,
+                    outcome: outcomeFilter,
+                    assigned_to: sdrFilter,
+                    global_view: globalView,
+                });
+                _tablePageCache.set(_tableKey, result);
+            }
+
+            // Same teardown race as above, but for navigation that happens
+            // while this fetch was in flight rather than before it started.
+            if (!tbody.isConnected) return;
 
             let leads = result.data || [];
             let total = result.total || 0;
             // Expose for Prev/Next navigation in lead detail (default to paginated list initially)
-            _navLeads = _toNavLeads(leads);
-            
-            // Asynchronously fetch all matching leads (non-paginated) to populate _navLeads fully
-            api.fetchLeads({
-                page: 1,
-                search: searchQuery,
-                status: statusFilter === 'Lead Unassigned' ? 'Lead Assigned' : statusFilter,
-                source: sourceFilter,
-                company: companyFilter,
-                date_from: dateFrom,
-                date_to: dateTo,
-                outcome: outcomeFilter,
-                assigned_to: sdrFilter,
-                ids_only: true,
-                global_view: globalView,
-            }).then(navResult => {
-                let navLeads = navResult.data || [];
-                if (statusFilter === 'Lead Unassigned') {
-                    navLeads = navLeads.filter(l => !l.assigned_to || l.assigned_to.length === 0);
-                }
-                _navLeads = _toNavLeads(navLeads);
-            }).catch(err => {
-                console.error('[Navigation] Failed to load all matched leads:', err);
-            });
+            _setNavLeads(_toNavLeads(leads));
+
+            const cachedNav = _navListCache.get(_filterKey);
+            if (cachedNav) {
+                _setNavLeads(_toNavLeads(cachedNav));
+            } else {
+                // Asynchronously fetch all matching leads (non-paginated) to populate _navLeads fully
+                api.fetchLeads({
+                    page: 1,
+                    search: searchQuery,
+                    status: statusFilter === 'Lead Unassigned' ? 'Lead Assigned' : statusFilter,
+                    source: sourceFilter,
+                    company: companyFilter,
+                    date_from: dateFrom,
+                    date_to: dateTo,
+                    outcome: outcomeFilter,
+                    assigned_to: sdrFilter,
+                    ids_only: true,
+                    global_view: globalView,
+                }).then(navResult => {
+                    let navLeads = navResult.data || [];
+                    if (statusFilter === 'Lead Unassigned') {
+                        navLeads = navLeads.filter(l => !l.assigned_to || l.assigned_to.length === 0);
+                    }
+                    _navListCache.set(_filterKey, navLeads);
+                    _setNavLeads(_toNavLeads(navLeads));
+                }).catch(err => {
+                    console.error('[Navigation] Failed to load all matched leads:', err);
+                });
+            }
 
             let pages = result.pages || 1;
 
@@ -375,7 +440,12 @@ export async function renderLeads(container, _unused, openCallModal, navigateToD
         });
     }
     document.getElementById('leads-beta-btn')?.addEventListener('click', () => {
-        localStorage.removeItem('leadsBeta');
+        // RCA 2026-08-20: this cleared the old pre-v11.5.4 'leadsBeta' key,
+        // but app.js's loadView('leads') gate checks 'leadsHub' === 'on' —
+        // clicking the button reloaded the page without ever setting the
+        // flag app.js actually reads, so it silently stayed on the classic
+        // list every time.
+        localStorage.setItem('leadsHub', 'on');
         location.reload();
     });
     document.getElementById('date-from-filter').addEventListener('change', (e) => {
@@ -573,6 +643,10 @@ function _bindRowClicks(container, navigateToDetail, openCallModal, leads = [], 
             btn.textContent = '...';
             try {
                 await reprioritizeLead(leadId, 100);
+                // Explicit user action to reorder — bypass the session-frozen
+                // list cache (above) or this button would appear to do nothing.
+                _tablePageCache.clear();
+                _navListCache.clear();
                 if (reloadFn) await reloadFn();
             } catch (err) {
                 btn.disabled = false;

@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 # Valid action types and their expected metadata fields
 ACTION_TYPES = {
     "LOGIN":                 ["ip_address", "user_agent"],
+    "IMPERSONATE":           ["target_user_id", "target_email"],
     "VIEW_LEAD":             ["lead_name"],
     "CREATE_LEAD":           ["lead_name"],
     "UPDATE_LEAD_STATUS":    ["lead_name", "from_status", "to_status"],
@@ -30,6 +31,24 @@ ACTION_TYPES = {
     "JOURNEY_RESUMED":       ["journey_name"],
     "JOURNEY_ENROLLMENT_RETRIED": ["journey_id", "enrollment_id"],
     "JOURNEY_ENROLLMENT_SKIPPED": ["journey_id", "enrollment_id"],
+    "JOURNEY_ENROLLMENT_FORCED":  ["journey_id", "lead_id"],
+    "JOURNEY_ENROLLMENT_REMOVED": ["journey_id", "lead_id"],
+    "GDPR_LEAD_JOURNEY_DATA_PURGED": ["lead_id"],
+    "NO_SHOW":               ["lead_name"],
+    "NO_SHOW_NOTIFICATION":  ["lead_name"],
+    "METRIC_DEFINITION_PUBLISHED": [],
+    # Claude connector (routes/mcp_routes.py) — shown in Control Center → Monitoring → Claude connector
+    "EXPORT_ACCESS_CHANGED":       ["target_user_id", "target_email", "export_enabled"],
+    "DATA_EXPORT":                 ["path"],      # a CSV / Excel download (auth.check_export_access)
+    # Salesforce field mapping (Control Center -> Integrations)
+    "SF_MAPPING_ADDED":            ["lead_field", "sf_field"],
+    "SF_MAPPING_CHANGED":          ["lead_field", "sf_field", "enabled"],
+    "SF_MAPPING_REMOVED":          ["lead_field", "sf_field"],
+    "PERSONAL_API_KEY_CREATED":    ["name"],
+    "PERSONAL_API_KEY_REVOKED":    ["name"],
+    "CLAUDE_CONNECTOR_AUTHORIZED": ["client"],
+    "CLAUDE_CONNECTOR_READ":       ["tool", "arguments"],
+    "CLAUDE_CONNECTOR_WRITE":      ["tool", "arguments"],
 }
 
 

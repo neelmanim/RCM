@@ -239,6 +239,88 @@ class TestGetPendingTasks:
         ids = [t["id"] for t in resp.json()]
         assert task.id not in ids
 
+
+class TestGetMyTasks:
+    """GET /api/my/tasks — the full task-list page, distinct from
+    /my/tasks/pending's narrower "due right now" notification feed."""
+
+    def test_default_status_excludes_done_tasks(self, client_as_sdr, db):
+        lead = create_test_lead(db, email="mytasks1@t.com")
+        open_task = models.Task(lead_id=lead.id, user_id="sdr-user-id", title="Open", done="false")
+        done_task = models.Task(lead_id=lead.id, user_id="sdr-user-id", title="Done", done="true")
+        db.add_all([open_task, done_task])
+        db.commit()
+
+        resp = client_as_sdr.get("/api/my/tasks")
+        assert resp.status_code == 200
+        titles = {t["title"] for t in resp.json()}
+        assert titles == {"Open"}
+
+    def test_status_done_returns_only_completed(self, client_as_sdr, db):
+        lead = create_test_lead(db, email="mytasks2@t.com")
+        db.add_all([
+            models.Task(lead_id=lead.id, user_id="sdr-user-id", title="Open", done="false"),
+            models.Task(lead_id=lead.id, user_id="sdr-user-id", title="Done", done="true"),
+        ])
+        db.commit()
+
+        resp = client_as_sdr.get("/api/my/tasks", params={"status": "done"})
+        titles = {t["title"] for t in resp.json()}
+        assert titles == {"Done"}
+
+    def test_status_all_returns_both(self, client_as_sdr, db):
+        lead = create_test_lead(db, email="mytasks3@t.com")
+        db.add_all([
+            models.Task(lead_id=lead.id, user_id="sdr-user-id", title="Open", done="false"),
+            models.Task(lead_id=lead.id, user_id="sdr-user-id", title="Done", done="true"),
+        ])
+        db.commit()
+
+        resp = client_as_sdr.get("/api/my/tasks", params={"status": "all"})
+        titles = {t["title"] for t in resp.json()}
+        assert titles == {"Open", "Done"}
+
+    def test_invalid_status_is_rejected(self, client_as_sdr, db):
+        resp = client_as_sdr.get("/api/my/tasks", params={"status": "bogus"})
+        assert resp.status_code == 400
+
+    def test_scoped_to_current_user_only(self, client_as_sdr, db):
+        lead = create_test_lead(db, email="mytasks4@t.com")
+        other = create_test_user(db, email="other-owner@test.com", role="AE", id="other-user-id")
+        db.add_all([
+            models.Task(lead_id=lead.id, user_id="sdr-user-id", title="Mine"),
+            models.Task(lead_id=lead.id, user_id=other.id, title="Someone else's"),
+        ])
+        db.commit()
+
+        resp = client_as_sdr.get("/api/my/tasks")
+        titles = {t["title"] for t in resp.json()}
+        assert titles == {"Mine"}
+
+    def test_no_due_time_tasks_sort_after_due_ones(self, client_as_sdr, db):
+        lead = create_test_lead(db, email="mytasks5@t.com")
+        soon = datetime.now(timezone.utc) + timedelta(hours=1)
+        db.add_all([
+            models.Task(lead_id=lead.id, user_id="sdr-user-id", title="No date set"),
+            models.Task(lead_id=lead.id, user_id="sdr-user-id", title="Due soon", due_time=soon),
+        ])
+        db.commit()
+
+        resp = client_as_sdr.get("/api/my/tasks")
+        titles = [t["title"] for t in resp.json()]
+        assert titles == ["Due soon", "No date set"]
+
+    def test_includes_lead_context(self, client_as_sdr, db):
+        lead = create_test_lead(db, email="mytasks6@t.com", first_name="Priya", last_name="Shah", company="Acme")
+        db.add(models.Task(lead_id=lead.id, user_id="sdr-user-id", title="Call Priya"))
+        db.commit()
+
+        resp = client_as_sdr.get("/api/my/tasks")
+        row = resp.json()[0]
+        assert row["lead_name"] == "Priya Shah"
+        assert row["lead_company"] == "Acme"
+        assert row["lead_id"] == lead.id
+
     def test_dismissed_task_excluded(self, db):
         from conftest import _build_test_app, _make_user_payload
         from fastapi.testclient import TestClient
@@ -622,3 +704,92 @@ class TestPendingTasksDBTimeout:
         resp = tc.get("/api/my/tasks/pending")
         assert resp.status_code == 200
         assert isinstance(resp.json(), list)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# Reply notifications — get_pending_replies / dismiss_reply
+# ════════════════════════════════════════════════════════════════════════════════
+
+def _client_for(db, user):
+    from conftest import _build_test_app, _make_user_payload
+    from fastapi.testclient import TestClient
+    from database import get_db
+    from auth import get_current_user
+
+    payload = _make_user_payload(user.role, user.id, user.email, user.name)
+    app = _build_test_app()
+    app.dependency_overrides[get_db] = lambda: (yield db)
+    app.dependency_overrides[get_current_user] = lambda: payload
+    return TestClient(app)
+
+
+def _inbound_activity(db, lead_id, subject="Re: hello", is_auto_reply=False):
+    activity = models.LeadEmailActivity(
+        lead_id=lead_id, direction="inbound", subject=subject,
+        from_email="prospect@example.com", is_auto_reply=is_auto_reply,
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(activity)
+    return activity
+
+
+class TestPendingReplies:
+
+    def test_returns_unread_reply_on_assigned_lead(self, db):
+        user = create_test_user(db, email="replies_sdr@t.com", role="SDR", google_id="replies-1")
+        lead = create_test_lead(db, email="reply_lead@t.com")
+        db.execute(models.lead_assignments.insert().values(user_id=user.id, lead_id=lead.id))
+        db.commit()
+        activity = _inbound_activity(db, lead.id)
+
+        resp = _client_for(db, user).get("/api/my/replies/pending")
+        assert resp.status_code == 200
+        ids = [r["id"] for r in resp.json()]
+        assert activity.id in ids
+
+    def test_excludes_unassigned_lead(self, db):
+        user = create_test_user(db, email="replies_sdr2@t.com", role="SDR", google_id="replies-2")
+        lead = create_test_lead(db, email="unassigned_reply@t.com")
+        _inbound_activity(db, lead.id)
+
+        resp = _client_for(db, user).get("/api/my/replies/pending")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_excludes_outbound_and_auto_reply(self, db):
+        user = create_test_user(db, email="replies_sdr3@t.com", role="SDR", google_id="replies-3")
+        lead = create_test_lead(db, email="mixed_reply@t.com")
+        db.execute(models.lead_assignments.insert().values(user_id=user.id, lead_id=lead.id))
+        db.commit()
+        outbound = models.LeadEmailActivity(lead_id=lead.id, direction="outbound", subject="hi")
+        auto = _inbound_activity(db, lead.id, subject="Out of office", is_auto_reply=True)
+        db.add(outbound)
+        db.commit()
+
+        resp = _client_for(db, user).get("/api/my/replies/pending")
+        ids = [r["id"] for r in resp.json()]
+        assert outbound.id not in ids
+        assert auto.id not in ids
+
+    def test_dismiss_marks_read_and_removes_from_list(self, db):
+        user = create_test_user(db, email="replies_sdr4@t.com", role="SDR", google_id="replies-4")
+        lead = create_test_lead(db, email="dismiss_reply@t.com")
+        db.execute(models.lead_assignments.insert().values(user_id=user.id, lead_id=lead.id))
+        db.commit()
+        activity = _inbound_activity(db, lead.id)
+        client = _client_for(db, user)
+
+        resp = client.patch(f"/api/my/replies/{activity.id}/dismiss")
+        assert resp.status_code == 200
+
+        resp = client.get("/api/my/replies/pending")
+        assert activity.id not in [r["id"] for r in resp.json()]
+
+    def test_dismiss_unowned_reply_404s(self, db):
+        user = create_test_user(db, email="replies_sdr5@t.com", role="SDR", google_id="replies-5")
+        other_lead = create_test_lead(db, email="other_reply@t.com")
+        activity = _inbound_activity(db, other_lead.id)
+
+        resp = _client_for(db, user).patch(f"/api/my/replies/{activity.id}/dismiss")
+        assert resp.status_code == 404

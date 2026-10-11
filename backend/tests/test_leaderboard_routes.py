@@ -2,7 +2,7 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from conftest import create_test_user, create_test_lead, create_test_call
+from conftest import create_test_user, create_test_lead, create_test_call, create_test_booking
 
 
 class TestLeaderboard:
@@ -16,6 +16,7 @@ class TestLeaderboard:
         sdr1.assigned_leads.append(lead1)
         create_test_call(db, lead1.id, sdr1.id, "Call Completed", "Great call")
         create_test_call(db, lead1.id, sdr1.id, "Left Voicemail")
+        create_test_booking(db, lead1, sdr1.id)
         db.commit()
 
         # sdr2: 0 meetings, 1 call

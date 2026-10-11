@@ -3,8 +3,10 @@ import { X } from 'lucide-react';
 import { DisqualifyService } from '../../../services/api';
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from '../../../components/ui/Table';
 import { Button } from '../../../components/ui/Button';
+import { Checkbox } from '../../../components/ui/Checkbox';
+import { EmptyState } from '../../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../../components/ui/Modal';
-import { SortableTableHeader } from './SortableTableHeader';
+import { SortableTableHeader } from '../../../components/ui/SortableTableHeader';
 
 const SORTABLE = {
   company: (r) => (r.company || '').toLowerCase(),
@@ -126,12 +128,10 @@ export function DisqualifyRequestsPanel({ onToast }) {
         <TableHead>
           <TableRow>
             <TableHeader className="w-8">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={requests.length > 0 && selected.size === requests.length}
                 onChange={(e) => selectAll(e.target.checked)}
                 aria-label="Select all requests"
-                className="w-4 h-4 rounded border-slate-300 accent-blue-600 focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:ring-offset-0"
               />
             </TableHeader>
             <SortableTableHeader label="Company" sortKey="company" sort={sort} onSort={handleSort} />
@@ -144,18 +144,16 @@ export function DisqualifyRequestsPanel({ onToast }) {
         </TableHead>
         <TableBody>
           {!error && sorted.length === 0 && (
-            <TableRow><TableCell colSpan={7} className="text-center italic text-slate-400 py-10">No pending requests.</TableCell></TableRow>
+            <TableRow><TableCell colSpan={7}><EmptyState title="No pending requests." /></TableCell></TableRow>
           )}
           {sorted.map((req) => (
             <React.Fragment key={req.id}>
               <TableRow>
                 <TableCell>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={selected.has(req.id)}
                     onChange={() => toggleSelect(req.id)}
                     aria-label={`Select ${req.company}`}
-                    className="w-4 h-4 rounded border-slate-300 accent-blue-600 focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:ring-offset-0"
                   />
                 </TableCell>
                 <TableCell className="font-bold">{req.company}</TableCell>

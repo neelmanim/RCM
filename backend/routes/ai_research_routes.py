@@ -6,7 +6,7 @@ pre-call brief. Key changes from v1:
 
   • Single Groq call (not 2) — halves latency
   • Persona mapping: title → buyer persona → tailored pitch angle
-  • Product-aware: brief is specific to RCM (WebRTC calling/CRM stack)
+  • Product-aware: brief is specific to Alternate Messenger (WebRTC calling/CRM stack)
   • 6-field output: company_pulse, why_they_need_us, opening_line,
                     likely_objection, persona_signal, heat_score
   • EC-7 guard: JSON extracted from prose/markdown wrapping
@@ -31,8 +31,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 import models
-from database import get_db
+from database import get_ai_db
 from auth import get_current_user
+from routes.lead_helpers import authorize_lead
+from services.smart_analytics import _resolve_groq_model
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +204,7 @@ def _map_persona(title: str) -> str:
 # ── Prompt builder ────────────────────────────────────────────────────────────
 
 def _build_prompt_v2(lead: models.Lead, custom_prompt: str = None) -> str:
-    """Build a single, persona-aware, product-specific prompt for RCM.
+    """Build a single, persona-aware, product-specific prompt for Alternate Messenger.
 
     Produces all 6 Pre-Call Intelligence Card fields in one Groq call.
     If a custom_prompt override is set by the admin (via Settings → AI Settings),
@@ -243,7 +245,7 @@ def _build_prompt_v2(lead: models.Lead, custom_prompt: str = None) -> str:
         return f"Lead Information:\n{lead_context}\n\n{custom_prompt}"
 
     # ── Default v2 prompt ──
-    return f"""You are a pre-call intelligence engine for an SDR team that sells RCM — a WebRTC-powered calling and CRM platform that helps B2B sales teams manage leads, dial faster, and track every call outcome.
+    return f"""You are a pre-call intelligence engine for an SDR team that sells Alternate Messenger — a WebRTC-powered calling and CRM platform that helps B2B sales teams manage leads, dial faster, and track every call outcome.
 
 Our target buyers are: Sales Managers, VP Sales, COOs, Founders, and Ops heads at companies with 10–500 employees who run outbound SDR teams. They care about: calls per day, connect rate, lead tracking, and SDR efficiency.
 
@@ -266,7 +268,7 @@ Return ONLY a valid JSON object with these exact 6 keys. No markdown, no explana
 
 {{
   "company_pulse": "One sentence: what this company does + their scale/growth signal. Be specific. Avoid generic phrases like 'leading provider'.",
-  "why_they_need_us": "Two sentences: (1) the specific operational pain this persona likely has, (2) how RCM solves it for them specifically. Reference their industry and role.",
+  "why_they_need_us": "Two sentences: (1) the specific operational pain this persona likely has, (2) how Alternate Messenger solves it for them specifically. Reference their industry and role.",
   "opening_line": "One ready-to-say sentence the SDR can use verbatim to open the call. Must reference something specific (company, role, or industry). Must end with a question. Max 280 characters.",
   "likely_objection": "The single most likely objection from this persona + a one-sentence handle. Format: 'Objection → Handle'",
   "persona_signal": "One sentence: their buying authority level + one urgency or relevance signal.",
@@ -325,7 +327,9 @@ def _extract_json_from_prose(content: str) -> dict:
 
     # Try direct parse first
     try:
-        return json.loads(content)
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            return parsed
     except json.JSONDecodeError:
         pass
 
@@ -334,11 +338,17 @@ def _extract_json_from_prose(content: str) -> dict:
     end   = content.rfind("}")
     if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(content[start:end + 1])
+            parsed = json.loads(content[start:end + 1])
+            if isinstance(parsed, dict):
+                return parsed
         except json.JSONDecodeError:
             pass
 
-    raise ValueError(f"Could not extract JSON from response: {content[:200]}")
+    # RCA 2026-08-20: json.loads() happily parses a bare scalar ("3.14",
+    # "null", "true") as valid JSON -- a model that returns just a number
+    # used to reach _sanitize_research_v2() as a float and crash with
+    # AttributeError instead of the clean 502 callers already handle.
+    raise ValueError(f"Could not extract JSON object from response: {content[:200]}")
 
 
 # ── Sanitizer v2 ──────────────────────────────────────────────────────────────
@@ -388,9 +398,16 @@ def _get_llm_config(db: Session) -> dict:
     try:
         settings = _get_or_create_sync_settings(db)
         api_key       = (getattr(settings, "llm_api_key",     None) or "").strip() or os.getenv("GROQ_API_KEY", "")
-        model         = getattr(settings, "llm_model",        None) or "gemma2-9b-it"
         provider      = getattr(settings, "llm_provider",     None) or "groq"
         research_prompt = getattr(settings, "research_prompt", None)
+        # RCA 2026-08-20: this used to trust settings.llm_model blindly. Groq
+        # deprecated llama-3.3-70b-versatile and every lead-detail view started
+        # 502ing on ai-research since nothing here ever revalidated the stored
+        # model id. _resolve_groq_model (already used by smart_analytics for
+        # the same reason) checks Groq's live /models list, self-heals to a
+        # model that actually exists, and persists it back to the same
+        # settings row -- so this fixes itself the next time Groq retires one.
+        model = _resolve_groq_model(api_key, db) if api_key else "gemma2-9b-it"
     except Exception:
         api_key       = os.getenv("GROQ_API_KEY", "")
         model         = "gemma2-9b-it"
@@ -401,7 +418,7 @@ def _get_llm_config(db: Session) -> dict:
 
 # ── Single Groq call (with server-side rate limiting + 429 retry) ─────────────
 
-async def _call_groq_single(prompt: str, api_key: str, model: str) -> dict:
+async def _call_groq_single(prompt: str, api_key: str, model: str, db: Session = None) -> dict:
     """Single Groq API call. Serialised through a server-side lock so concurrent
     requests are queued and spaced at least _GROQ_MIN_INTERVAL_S apart.
 
@@ -425,6 +442,7 @@ async def _call_groq_single(prompt: str, api_key: str, model: str) -> dict:
     global _groq_last_call_time
 
     MAX_RETRIES = 3
+    excluded_models = set()
     for attempt in range(MAX_RETRIES):
         # ── Acquire lock and enforce minimum interval ──────────────────────────
         async with _groq_lock:
@@ -471,14 +489,49 @@ async def _call_groq_single(prompt: str, api_key: str, model: str) -> dict:
                 raise HTTPException(status_code=429, detail="AI rate limit reached. Please wait a moment and try again.")
 
         if resp.status_code != 200:
-            logger.error(f"Groq API error: {resp.status_code} — {resp.text}")
+            err_text = resp.text
+            # RCA 2026-08-20: mirrors smart_analytics.py's existing self-heal
+            # for this exact failure. Groq's /models listing can still show a
+            # model that's already been pulled from inference (confirmed
+            # live: llama-3.3-70b-versatile, then llama-3.1-8b-instant, then
+            # llama3-8b-8192 all appeared "available" but each failed on the
+            # real completion call in turn) -- resolving a working model once
+            # isn't enough, and neither is a single one-shot retry: a bad
+            # pick used to permanently block any further auto-discovery this
+            # request via a `model_retried` flag, even though attempts were
+            # still left in this same loop. Accumulate every excluded model
+            # instead, and keep discovering for as long as attempts remain.
+            if db is not None and attempt < MAX_RETRIES - 1 and resp.status_code in (400, 404) and any(
+                marker in err_text.lower() for marker in ("decommissioned", "does not exist", "model_not_found")
+            ):
+                logger.warning(f"Groq model '{model}' unavailable ({err_text[:150]}), auto-discovering…")
+                excluded_models.add(model)
+                new_model = _resolve_groq_model(api_key, db, force_refresh=True, exclude=frozenset(excluded_models))
+                if new_model and new_model not in excluded_models:
+                    logger.info(f"Retrying ai-research with auto-discovered model '{new_model}'")
+                    model = new_model
+                    continue
+            logger.error(f"Groq API error: {resp.status_code} — {err_text}")
             raise HTTPException(status_code=502, detail=f"AI service error: {resp.status_code}")
 
         content = resp.json()["choices"][0]["message"]["content"]
         try:
             return _extract_json_from_prose(content)  # EC-7
         except (ValueError, KeyError) as e:
-            logger.error(f"Failed to parse Groq response: {str(e)[:200]}")
+            logger.error(f"Failed to parse Groq response from model '{model}': {str(e)[:200]}")
+            # A model can return unparseable content on a 200 (truncated by
+            # max_tokens, ignored the "return only JSON" instruction, a
+            # reasoning preamble with no closing brace) just as easily as it
+            # can 404 — treat it the same way: exclude this model and let
+            # auto-discovery try another while attempts remain, instead of
+            # giving up on the very first bad model this request happens to draw.
+            if db is not None and attempt < MAX_RETRIES - 1:
+                excluded_models.add(model)
+                new_model = _resolve_groq_model(api_key, db, force_refresh=True, exclude=frozenset(excluded_models))
+                if new_model and new_model not in excluded_models:
+                    logger.info(f"Retrying ai-research with auto-discovered model '{new_model}' after unparseable response")
+                    model = new_model
+                    continue
             raise HTTPException(status_code=502, detail="AI returned an unexpected format. Please try again.")
 
     # Should never reach here, but satisfy type checker
@@ -586,19 +639,20 @@ async def ai_research_lead(
     lead_id: str,
     force_refresh: bool = Query(False, description="Skip cache and regenerate fresh research"),
     user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_ai_db),
 ):
     """Generate AI-powered Pre-Call Intelligence Card for a lead.
 
     v2 changes:
     - Single Groq call per lead (not 2)
-    - Persona-aware, RCM-specific prompt
+    - Persona-aware, Alternate Messenger-specific prompt
     - 6-field output + legacy fields backfilled for backward compat
     - EC-16: old v1 cache entries without heat/opening → treated as miss
     """
     lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(user, lead)  # research is derived data — view access suffices
 
     company_key = _normalise_company_key(lead.company or "")
     llm_config  = _get_llm_config(db)
@@ -680,7 +734,7 @@ async def ai_research_lead(
 
     # ── Cache MISS: call Groq ─────────────────────────────────────────────────
     prompt  = _build_prompt_v2(lead, custom_prompt=llm_config.get("research_prompt"))
-    raw     = await _call_groq_single(prompt, llm_config["api_key"], llm_config["model"])
+    raw     = await _call_groq_single(prompt, llm_config["api_key"], llm_config["model"], db)
     result  = _sanitize_research_v2(raw)
 
     # ── Persist research to lead ──────────────────────────────────────────────
@@ -707,7 +761,7 @@ async def ai_research_lead(
 async def draft_meeting_agenda(
     lead_id: str,
     user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_ai_db),
 ):
     """Drafts a client-safe meeting agenda for the "Meeting Booked" modal —
     a one-off draft per booking, not cached like the company research card.
@@ -716,10 +770,11 @@ async def draft_meeting_agenda(
     lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(user, lead)  # research is derived data — view access suffices
 
     llm_config = _get_llm_config(db)
     prompt = _build_agenda_prompt(lead)
-    raw = await _call_groq_single(prompt, llm_config["api_key"], llm_config["model"])
+    raw = await _call_groq_single(prompt, llm_config["api_key"], llm_config["model"], db)
     return {"agenda": raw.get("agenda", "")}
 
 

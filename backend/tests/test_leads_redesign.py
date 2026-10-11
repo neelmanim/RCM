@@ -45,6 +45,57 @@ class TestMultiStatusFilter:
         assert statuses2 == {"Disqualified"}
 
 
+class TestPowerDialerCallScript:
+    """GET /api/leads carries the two call-script fields the Power Dialer
+    card reads: talking_points (per-lead override) and active_call_script
+    (cadence default, from the lead's open Task — see call_channel.py)."""
+
+    def test_talking_points_included_when_set(self, client, db):
+        lead = create_test_lead(db, email="a@t.com", status="Calling")
+        lead.talking_points = "Lead with the renewal discount."
+        db.commit()
+
+        resp = client.get("/api/leads")
+        row = next(l for l in resp.json()["data"] if l["id"] == lead.id)
+        assert row["talking_points"] == "Lead with the renewal discount."
+
+    def test_talking_points_none_when_unset(self, client, db):
+        lead = create_test_lead(db, email="b@t.com", status="Calling")
+        resp = client.get("/api/leads")
+        row = next(l for l in resp.json()["data"] if l["id"] == lead.id)
+        assert row["talking_points"] is None
+
+    def test_active_call_script_from_most_recent_open_task(self, client, db):
+        # created_at is server_default=func.now(), 1-second resolution on
+        # SQLite — set both explicitly rather than relying on real-time gaps.
+        from datetime import datetime, timezone, timedelta
+        lead = create_test_lead(db, email="c@t.com", status="Calling")
+        now = datetime.now(timezone.utc)
+        db.add(models.Task(id="t-old", lead_id=lead.id, title="[J1] Call", description="Old script", created_at=now - timedelta(hours=1)))
+        db.add(models.Task(id="t-new", lead_id=lead.id, title="[J2] Call", description="New script", created_at=now))
+        db.commit()
+
+        resp = client.get("/api/leads")
+        row = next(l for l in resp.json()["data"] if l["id"] == lead.id)
+        assert row["active_call_script"]["script"] == "New script"
+
+    def test_done_tasks_are_not_used_as_the_active_script(self, client, db):
+        lead = create_test_lead(db, email="d@t.com", status="Calling")
+        db.add(models.Task(id="t-done", lead_id=lead.id, title="[J1] Call", description="Stale script", done="true"))
+        db.commit()
+
+        resp = client.get("/api/leads")
+        row = next(l for l in resp.json()["data"] if l["id"] == lead.id)
+        assert row["active_call_script"] is None
+
+    def test_patch_leads_accepts_talking_points(self, client, db):
+        lead = create_test_lead(db, email="e@t.com", status="Calling")
+        resp = client.patch(f"/api/leads/{lead.id}", json={"talking_points": "Ask about budget."})
+        assert resp.status_code == 200, resp.text
+        db.refresh(lead)
+        assert lead.talking_points == "Ask about budget."
+
+
 class TestTags:
 
     def test_create_tag_and_list(self, client, db):

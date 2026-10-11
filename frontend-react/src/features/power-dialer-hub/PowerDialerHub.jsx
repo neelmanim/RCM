@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RefreshCw, PhoneOff, Search } from 'lucide-react';
+import { RefreshCw, PhoneOff } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
+import { Select } from '../../components/ui/Select';
+import { SearchInput } from '../../components/ui/SearchInput';
+import { Checkbox } from '../../components/ui/Checkbox';
 import { Skeleton, SkeletonCard, SkeletonCallRow } from '../../components/ui/Skeleton';
 import { usePowerDialerQueue } from './usePowerDialerQueue';
 import { CurrentCallCard } from './components/CurrentCallCard';
@@ -9,9 +12,14 @@ import { TodayStatsPanel } from './components/TodayStatsPanel';
 import { SkipReasonsPanel } from './components/SkipReasonsPanel';
 import { GuidedTour } from './GuidedTour';
 import { CALLABLE_STATUSES } from '../leads-hub/components/PhoneCell';
+import { SalesJourneyService, CallListsService } from '../../services/api';
 
 const STATUS_LABELS = { 'Lead Assigned': 'New', Research: 'Research', Calling: 'Calling' };
 const ADMIN_ROLES = ['Super Admin', 'Admin', 'Pod Admin'];
+const SEQUENCE_OPTIONS = [
+  { value: 'priority', label: 'Priority' },
+  { value: 'account', label: 'Account (group by company)' },
+];
 
 // Mirrors CurrentCallCard's shape + a few queue rows below it — same
 // SkeletonCard/SkeletonCallRow primitives every other hub's loading state
@@ -47,11 +55,50 @@ export function PowerDialerHub({ onLeadClick, userRole }) {
     queue, currentIndex, currentLead, isDone, totalAvailable,
     sessionStatus, skipReasons, callNextEnabled,
     hideCalled, setHideCalled, statusFilter, setStatusFilter, search, setSearch,
+    sequenceMode, setSequenceMode, journeyId, setJourneyId,
+    callListId, setCallListId,
     loading, error,
-    callNext, skip, reorderUpcoming, callBack, refresh,
+    callNext, skip, reorderUpcoming, callBack, refresh: refreshQueue,
   } = usePowerDialerQueue();
   const remaining = queue.length - currentIndex;
   const moreWaiting = totalAvailable - queue.length;
+
+  // "Load from Cadence" — GET /journeys is Pod Admin+ only today, so this
+  // stays admin-gated rather than opening a new endpoint just for SDRs.
+  const canLoadFromCadence = ['Super Admin', 'Admin', 'Pod Admin'].includes(userRole);
+  const [journeys, setJourneys] = useState([]);
+  useEffect(() => {
+    if (!canLoadFromCadence) return;
+    SalesJourneyService.list().then(setJourneys).catch(() => setJourneys([]));
+  }, [canLoadFromCadence]);
+
+  // Call Lists — unlike "Load from Cadence" above, available to every role
+  // (no role gate on GET /call-lists): the actual gap this feature closes.
+  const [callLists, setCallLists] = useState(null); // null = not yet loaded
+  const [callListsNotice, setCallListsNotice] = useState('');
+  const refreshCallLists = () =>
+    CallListsService.list().then(res => setCallLists(res.call_lists || [])).catch(() => setCallLists([]));
+  useEffect(() => { refreshCallLists(); }, []);
+  // A list selected earlier this session may have since been deleted by
+  // someone else — fall back to "All leads" instead of silently dialing an
+  // empty queue with a stale filter still shown as selected. callLists is
+  // re-fetched on every manual Refresh (see `refresh` below), so this check
+  // actually has fresh data to catch a mid-session deletion against, not
+  // just the one snapshot from mount. `callLists === null` (not yet loaded)
+  // must NOT count as "deleted" — only a loaded-but-missing list does.
+  useEffect(() => {
+    if (!callListId || callLists === null) return;
+    if (!callLists.some(cl => cl.id === callListId)) {
+      setCallListId('');
+      setCallListsNotice('That Call List no longer exists — showing all leads.');
+    }
+  }, [callListId, callLists, setCallListId]);
+  const refresh = () => { refreshQueue(); refreshCallLists(); };
+  useEffect(() => {
+    if (!callListsNotice) return;
+    const t = setTimeout(() => setCallListsNotice(''), 4500);
+    return () => clearTimeout(t);
+  }, [callListsNotice]);
 
   // Today's real total (server-side, from GET /api/my/today-calls via
   // TodayStatsPanel) — deliberately NOT the session-local calledThisSession
@@ -121,29 +168,57 @@ export function PowerDialerHub({ onLeadClick, userRole }) {
       </div>
 
       <div className="flex items-center gap-4 mb-5 flex-wrap">
-        <div className="flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg w-56 bg-white focus-within:ring-2 focus-within:ring-blue-200">
-          <Search size={14} className="text-slate-400 flex-shrink-0" />
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search name, company, phone…"
-            className="text-sm outline-none border-none flex-1 min-w-0 bg-transparent"
-          />
-        </div>
+        <SearchInput
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search name, company, phone…"
+          className="w-56"
+        />
         <div className="flex items-center gap-3">
           {CALLABLE_STATUSES.map(s => (
-            <label key={s} className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer">
-              <input type="checkbox" checked={statusFilter.includes(s)} onChange={() => toggleStatus(s)} />
-              {STATUS_LABELS[s] || s}
-            </label>
+            <Checkbox key={s} checked={statusFilter.includes(s)} onChange={() => toggleStatus(s)} label={STATUS_LABELS[s] || s} />
           ))}
         </div>
-        <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer">
-          <input type="checkbox" checked={hideCalled} onChange={(e) => setHideCalled(e.target.checked)} />
-          Hide already-called
+        <Checkbox checked={hideCalled} onChange={(e) => setHideCalled(e.target.checked)} label="Hide already-called" />
+        <label className="flex items-center gap-1.5 text-sm text-slate-600">
+          Sequence:
+          <Select
+            value={sequenceMode}
+            onChange={setSequenceMode}
+            options={SEQUENCE_OPTIONS}
+            placeholder="Priority"
+          />
         </label>
+        {canLoadFromCadence && journeys.length > 0 && (
+          <label className="flex items-center gap-1.5 text-sm text-slate-600">
+            Cadence:
+            <Select
+              value={journeyId}
+              onChange={setJourneyId}
+              options={[{ value: '', label: 'All leads' }, ...journeys.map(j => ({ value: j.id, label: j.name }))]}
+              placeholder="All leads"
+              className="max-w-[220px]"
+            />
+          </label>
+        )}
+        {callLists?.length > 0 && (
+          <label className="flex items-center gap-1.5 text-sm text-slate-600">
+            Call List:
+            <Select
+              value={callListId}
+              onChange={setCallListId}
+              options={[{ value: '', label: 'All leads' }, ...callLists.map(cl => ({ value: cl.id, label: `${cl.name} (${cl.lead_count})` }))]}
+              placeholder="All leads"
+              className="max-w-[220px]"
+            />
+          </label>
+        )}
       </div>
+      {callListsNotice && (
+        <div className="fixed left-6 bottom-6 z-[60] max-w-[340px] bg-white border border-slate-200 shadow-xl rounded-xl px-4 py-3 text-xs text-slate-700">
+          {callListsNotice}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-5">
         {/* Only the very first load (nothing to show yet) gets the skeleton

@@ -80,8 +80,8 @@ def main():
     
     user_map = load_aircall_user_map()
     
-    # Load SDR map for RCM validation
-    with open(os.path.join(DATA_DIR, "rcm_users.json")) as f:
+    # Load SDR map for Alternate CRM validation
+    with open(os.path.join(DATA_DIR, "alternatecrm_users.json")) as f:
         ls_users = json.load(f)
     ls_emails = {u["email"].lower() for u in ls_users}
     
@@ -112,7 +112,7 @@ def main():
             last_caller_map[phone] = {
                 "last_caller_email": emails[0],
                 "last_caller_name": data.get("caller_names", [""])[0],
-                "last_caller_in_rcm": emails[0].lower() in ls_emails,
+                "last_caller_in_alternatecrm": emails[0].lower() in ls_emails,
                 "last_call_timestamp": data.get("last_call_date", ""),
                 "last_call_direction": "outbound",
             }
@@ -124,7 +124,7 @@ def main():
             last_caller_map[phone] = {
                 "last_caller_email": "",
                 "last_caller_name": "",
-                "last_caller_in_rcm": False,
+                "last_caller_in_alternatecrm": False,
                 "last_call_timestamp": "",
                 "last_call_direction": "",
             }
@@ -152,13 +152,13 @@ def main():
                 caller_email = caller_info.get("email", "")
                 caller_name = caller_info.get("name", "")
                 
-                # Check if caller is in RCM
-                in_rcm = caller_email.lower() in ls_emails if caller_email else False
+                # Check if caller is in Alternate CRM
+                in_alternatecrm = caller_email.lower() in ls_emails if caller_email else False
                 
                 last_caller_map[phone] = {
                     "last_caller_email": caller_email,
                     "last_caller_name": caller_name,
-                    "last_caller_in_rcm": in_rcm,
+                    "last_caller_in_alternatecrm": in_alternatecrm,
                     "last_call_timestamp": call.get("started_at", ""),
                     "last_call_direction": call.get("direction", ""),
                 }
@@ -166,7 +166,7 @@ def main():
                 last_caller_map[phone] = {
                     "last_caller_email": "",
                     "last_caller_name": "",
-                    "last_caller_in_rcm": False,
+                    "last_caller_in_alternatecrm": False,
                     "last_call_timestamp": "",
                     "last_call_direction": "",
                 }
@@ -206,7 +206,7 @@ def main():
         lc = last_caller_map.get(digits, {})
         record["last_caller_email"] = lc.get("last_caller_email", "")
         record["last_caller_name"] = lc.get("last_caller_name", "")
-        record["last_caller_in_rcm"] = lc.get("last_caller_in_rcm", False)
+        record["last_caller_in_alternatecrm"] = lc.get("last_caller_in_alternatecrm", False)
     
     # Write updated CSV
     if records:
@@ -217,14 +217,14 @@ def main():
     
     # Stats
     has_last_caller = sum(1 for v in last_caller_map.values() if v.get("last_caller_email"))
-    in_ls = sum(1 for v in last_caller_map.values() if v.get("last_caller_in_rcm"))
+    in_ls = sum(1 for v in last_caller_map.values() if v.get("last_caller_in_alternatecrm"))
     
     print("\n" + "=" * 60)
     print("PHASE 4b COMPLETE")
     print("=" * 60)
     print(f"  📞 Phones checked:           {len(matched_phones):,}")
     print(f"  ✅ With identified caller:    {has_last_caller:,}")
-    print(f"  👤 Last caller in RCM:  {in_ls:,}")
+    print(f"  👤 Last caller in Alternate CRM:  {in_ls:,}")
     print(f"\n  Next: Run phase5_import.py")
 
 

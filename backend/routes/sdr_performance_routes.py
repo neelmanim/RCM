@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import statistics
 
+import access_db
 import models
 from models import TERMINAL_STATUSES
 from database import get_db
@@ -58,8 +59,7 @@ def get_sdr_performance(
     if role in ("SDR", "AE") and user["sub"] != sdr_id:
         raise HTTPException(status_code=403, detail="You can only view your own performance.")
     if role == "Pod Admin":
-        admin_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
-        if admin_user and sdr.pod_id != admin_user.pod_id:
+        if sdr.pod_id != (access_db.pod_of(user)):
             raise HTTPException(status_code=403, detail="Pod Admins can only view users in their POD.")
 
     # Parse time filter
@@ -85,8 +85,19 @@ def get_sdr_performance(
         all_calls_query = all_calls_query.filter(models.CallLog.called_at <= period_end)
     calls_in_period = all_calls_query.all()
 
+    # Dialer calls that never got a manual call-log twin (the Dashboard counts both; this page counted only the former)
+    _dq = db.query(models.DialerCall).filter(
+        models.DialerCall.user_id == sdr_id, models.DialerCall.direction == "outbound",
+        ~models.DialerCall.id.in_(db.query(models.CallLog.dialer_call_id).filter(models.CallLog.dialer_call_id.isnot(None))),
+    )
+    if period_start:
+        _dq = _dq.filter(models.DialerCall.created_at >= period_start)
+    if period_end:
+        _dq = _dq.filter(models.DialerCall.created_at <= period_end)
+    dialer_only_calls = _dq.count()
+
     total_leads = len(leads_in_period)
-    total_calls = len(calls_in_period)
+    total_calls = len(calls_in_period) + dialer_only_calls
 
     # Status counts via SQL GROUP BY — avoids N list comprehensions over Python objects
     from sqlalchemy import func as _func, text as _text
@@ -102,6 +113,17 @@ def get_sdr_performance(
     for _status, _cnt in _status_rows:
         if _status in status_counts:
             status_counts[_status] = _cnt
+
+    # Right now, whatever the period: every live lead currently assigned to this person, by current status.
+    _now_rows = models.exclude_test_and_deleted_leads(
+        db.query(models.Lead.status, _func.count(models.Lead.id))
+        .join(models.lead_assignments, models.lead_assignments.c.lead_id == models.Lead.id)
+        .filter(models.lead_assignments.c.user_id == sdr_id)
+    ).group_by(models.Lead.status).all()
+    funnel_now = {s.value: 0 for s in models.Status}
+    for _status, _cnt in _now_rows:
+        if _status in funnel_now:
+            funnel_now[_status] = _cnt
 
     active_leads      = sum(status_counts.get(s, 0) for s in models.ACTIVE_STATUSES)
     leads_closed      = sum(status_counts.get(s, 0) for s in TERMINAL_STATUSES)
@@ -143,6 +165,8 @@ def get_sdr_performance(
         "period": period,
         "productivity": {
             "total_leads_assigned": total_leads,
+            # parked leads (No Phone / Pending Review) are left out, exactly as the Dashboard's "Assigned to me" does
+            "assigned_now": sum(n for s, n in funnel_now.items() if s not in models.PARKED_STATUSES),
             "active_leads": active_leads,
             "leads_closed": leads_closed,
             "calls_made": total_calls,
@@ -156,6 +180,9 @@ def get_sdr_performance(
             "avg_time_per_lead_hours": avg_time_per_lead,
             "median_time_per_lead_hours": median_time_per_lead,
         },
+        "funnel_now": {k: funnel_now.get(k, 0) for k in (
+            "Lead Assigned", "Research", "Calling", "Meeting Scheduled", "1st Discovery Meeting",
+            "Discovery Complete", "Demo Scheduled", "Demo Done", "Completed", "Disqualified")},
         "funnel": {
             "Lead Assigned": status_counts.get("Lead Assigned", 0),
             "Research": status_counts.get("Research", 0),

@@ -1,5 +1,5 @@
 """
-RCM API — main.py
+Alternate CRM API — main.py
 Slim app entry point: init, lifespan, middleware, and router registration.
 All route logic lives in the routes/ package.
 """
@@ -7,11 +7,12 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 import logging
+import threading
 
 env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
@@ -22,6 +23,21 @@ import models
 from database import engine, SessionLocal
 from migrations import run_schema_migrations
 from salesforce import get_sf_client, sync_leads_from_salesforce
+
+# RCA 2026-08-21: nothing in this codebase ever called logging.basicConfig
+# (or any other handler/level setup) for the app's own loggers. Every module
+# logs via logging.getLogger(__name__), which propagates to the root logger
+# with no handler and no level set — Python's default "last resort" fallback
+# only surfaces WARNING+ to stderr. Every logger.info(...) self-heal/diagnostic
+# line anywhere in the app (e.g. smart_analytics.py's Groq model-discovery
+# logging) was silently dropped in production, never written anywhere,
+# regardless of what actually ran. Confirmed live during a multi-hour
+# incident investigation where a specific info line never appeared no matter
+# how many times the code path it was in definitely executed.
+logging.basicConfig(
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +73,31 @@ def _log_memory(label: str):
     except Exception:
         pass
 
+_startup_lock = threading.Lock()
+
+
 def _run_startup_tasks():
     """
     Heavy startup work (schema init, SF sync, scheduled jobs).
     Runs in a daemon thread so uvicorn can bind the port immediately.
     If any step fails, subsequent steps still execute — all are non-fatal.
+
+    RCA 2026-08-26 (staging OOM): lifespan's startup phase was observed
+    firing this function twice within a single process (confirmed via Render
+    boot logs — every startup log line, including all 15 scheduler
+    registrations, appeared twice ~40-90ms apart). _schedule_recurring's
+    timers don't dedupe by name across independent calls, so two calls to
+    start_scheduled_jobs() silently create two permanently-running chains
+    per job forever — e.g. _email_sync_job synced 100 leads' worth of
+    full-mailbox Nylas data every 5 minutes instead of 50. Guarded here as a
+    one-shot latch (never released — this must run at most once per process
+    lifetime, unlike the acquire/release locks elsewhere in this file that
+    guard a repeatable operation) so a second invocation, however it's
+    triggered, is a safe no-op instead of re-registering every job.
     """
-    import threading
+    if not _startup_lock.acquire(blocking=False):
+        logger.warning("[Startup] _run_startup_tasks already ran/running in this process — skipping duplicate invocation")
+        return
     logger.info(f"[Startup] Background tasks starting on thread {threading.current_thread().name}")
     _log_memory("startup_begin")
 
@@ -87,7 +121,7 @@ def _run_startup_tasks():
             logger.info(f"[Startup] DB type: {db_type} | host: {safe_url}")
 
         # Run migrations FIRST — before any ORM query that SELECTs all columns.
-        # If migrations run after an ORM query, a missing column (e.g. rcm_email)
+        # If migrations run after an ORM query, a missing column (e.g. messenger_email)
         # will crash the sanity query and abort the whole try-block, preventing
         # the migration from ever executing. (RCA 2026-05-18)
         #
@@ -197,7 +231,7 @@ async def lifespan(app):
 
 # ── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="RCM API",
+    title="Alternate CRM API",
     description="SDR-focused lightweight CRM with POD teams and enriched lead management",
     version="2.0.0",
     lifespan=lifespan
@@ -221,11 +255,39 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(GZipMiddleware, minimum_size=500)  # Compress responses > 500 bytes (70-80% smaller JSON)
+
+
+from middleware_cache_headers import CacheHeaderMiddleware, SSE_EVENTS_PATH
+
+
+class _SSEAwareGZipMiddleware(GZipMiddleware):
+    """
+    RCA 2026-08-21 (LIVE, prod): the "instant" Aircall outcome-modal SSE path
+    (dialer_widget.js / app.js's _startAircallOutcomePolling) was still showing
+    the documented 10-20s poll-fallback delay after that fix shipped. Root
+    cause: Starlette's GZipMiddleware wraps every streamed chunk in a
+    *persistent* zlib compressor with no explicit flush (see
+    starlette/middleware/gzip.py's streaming branch) -- a single ~200-byte SSE
+    "data: {...}\\n\\n" event routinely produces zero compressed output bytes,
+    since deflate holds small writes in its internal window until enough data
+    accumulates. The event sits gzip-buffered and undelivered until the next
+    keepalive/event pushes the buffer over the threshold, or the connection
+    closes -- exactly the delay we measured. gzip provides no benefit for
+    frequent tiny SSE frames anyway, so skip it entirely for that one path,
+    same bypass CacheHeaderMiddleware already uses for the same route.
+    """
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and scope.get("path", "") == SSE_EVENTS_PATH:
+            return await self.app(scope, receive, send)
+        await super().__call__(scope, receive, send)
+
+
+app.add_middleware(_SSEAwareGZipMiddleware, minimum_size=500)  # Compress responses > 500 bytes (70-80% smaller JSON)
 
 # ── Cache-Control headers (SWR pattern for instant repeat page loads) ────────
-from middleware_cache_headers import CacheHeaderMiddleware
 app.add_middleware(CacheHeaderMiddleware)
+from middleware_view_as import ViewAsReadOnlyMiddleware
+app.add_middleware(ViewAsReadOnlyMiddleware)
 
 # ── Startup readiness gate — REMOVED ─────────────────────────────────────────
 # Previously gated API requests until schema migration completed. Removed
@@ -286,15 +348,23 @@ from routes.growth_intelligence_routes import router as growth_intelligence_rout
 from routes.admin_user_routes import router as admin_user_router
 from routes.admin_assignment_routes import router as admin_assignment_router
 from routes.disqualify_routes import router as disqualify_router
+from routes.reassign_routes import router as reassign_router
+from routes.my_day_routes import router as my_day_router
+from routes.export_routes import router as export_router
+from routes.saved_view_routes import router as saved_view_router
+from routes.data_quality_routes import router as data_quality_router
 from routes.admin_sync_routes import router as admin_sync_router
 from routes.admin_upload_routes import router as admin_upload_router
 from routes.analytics_ai_routes import router as analytics_ai_router
 from routes.analytics_digest_routes import router as analytics_digest_router
+from routes.analytics_funnel_routes import router as analytics_funnel_router
+from routes.audit_routes import router as audit_router
 from routes.activity_feed_routes import router as activity_feed_router
+from routes.activity_monitor_routes import router as activity_monitor_router
 from routes.sandbox_routes import router as sandbox_router
 from routes.error_log_routes import router as error_log_router
 from routes.monitoring_routes import router as monitoring_router
-from routes.sms_routes import router as sms_router  # V33: RCM Floating Widget
+from routes.sms_routes import router as sms_router  # V33: Alternate Messenger Floating Widget
 from routes.conversations_routes import router as conversations_router  # V34: Native Converse Desk
 from routes.integration_health_routes import router as integration_health_router  # V35: Dialer + Chat health diagnostics
 from routes.sse_routes import router as sse_router  # V36: SSE real-time call events
@@ -302,6 +372,15 @@ from routes.smart_analytics_routes import router as smart_analytics_router  # V4
 from routes.perf_routes import router as perf_router  # v8.9.9: Phase 4 performance monitoring
 from routes.tag_routes import router as tag_router  # Leads redesign: per-lead tags
 from routes.journey_routes import router as journey_router  # Sales Journey Phase 0
+from routes.report_routes import router as report_router  # v11.4.0: Automated Analytics Reports
+from routes.call_list_routes import router as call_list_router  # v11.5.15: Call Lists (Power Dialer)
+from routes.analytics_vnext_routes import router as analytics_vnext_router  # v11.7.0: Analytics Hub vNext (Phase 1)
+from routes.analytics_governance_routes import router as analytics_governance_router  # Analytics Transformation Phase 3: Metric Governance
+from routes.email_campaign_routes import router as email_campaign_router  # v12: Email Campaigns (Sales Tools)
+from routes.ae_pipeline_routes import router as ae_pipeline_router  # Phase 1: AE Pipeline
+from routes.csm_portal_routes import router as csm_portal_router  # Phase 2: CSM Portal Beta
+from routes.mcp_routes import router as mcp_router  # v13.4.0: Claude connector (MCP + OAuth)
+from routes.instantly_inbox_routes import router as instantly_inbox_router  # v13.8.0: Instantly replies inbox + report
 
 app.include_router(auth_router)
 app.include_router(growth_intelligence_router)  # Before lead_router to avoid /leads/{lead_id} shadowing
@@ -327,22 +406,39 @@ app.include_router(public_api_router)
 app.include_router(admin_user_router)
 app.include_router(admin_assignment_router)
 app.include_router(disqualify_router)
+app.include_router(reassign_router)
+app.include_router(my_day_router)
+app.include_router(export_router)
+app.include_router(saved_view_router)
+app.include_router(data_quality_router)
 app.include_router(admin_sync_router)
+app.include_router(email_campaign_router)  # v12: Email Campaigns (Sales Tools)
 app.include_router(admin_upload_router)
 app.include_router(analytics_ai_router)
 app.include_router(analytics_digest_router)
+app.include_router(analytics_funnel_router)
+app.include_router(audit_router)
 app.include_router(activity_feed_router)
+app.include_router(activity_monitor_router)  # Activity Monitor: Email + Message tabs
 app.include_router(sandbox_router)
 app.include_router(error_log_router)
 app.include_router(monitoring_router)
-app.include_router(sms_router)  # V33: RCM Floating Widget SMS
+app.include_router(sms_router)  # V33: Alternate Messenger Floating Widget SMS
 app.include_router(conversations_router)  # V34: Native Converse Desk conversations
 app.include_router(integration_health_router)  # V35: Integration health diagnostics
 app.include_router(sse_router)  # V36: SSE real-time call events
 app.include_router(smart_analytics_router)  # V41: Smart Analytics NL queries
+app.include_router(analytics_vnext_router)  # v11.7.0: Analytics Hub vNext (Phase 1)
+app.include_router(analytics_governance_router)  # Analytics Transformation Phase 3: Metric Governance
 app.include_router(perf_router)  # v8.9.9: Phase 4 performance monitoring
 app.include_router(tag_router)  # Leads redesign: per-lead tags
 app.include_router(journey_router)  # Sales Journey Phase 0
+app.include_router(report_router)  # v11.4.0: Automated Analytics Reports
+app.include_router(call_list_router)  # v11.5.15: Call Lists (Power Dialer)
+app.include_router(ae_pipeline_router)  # Phase 1: AE Pipeline
+app.include_router(csm_portal_router)  # Phase 2: CSM Portal Beta
+app.include_router(mcp_router)  # v13.4.0: Claude connector (MCP + OAuth)
+app.include_router(instantly_inbox_router)  # v13.8.0: Instantly replies inbox + report
 
 
 # ── Global unhandled exception handler ───────────────────────────────────────
@@ -390,7 +486,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 
-@app.get("/")
+from auth import public_endpoint as _public_endpoint
+
+@app.get("/", dependencies=[Depends(_public_endpoint)])
 def root():
     """Redirect root to the frontend application."""
     _fe_url = os.getenv("FRONTEND_URL", "").strip()
@@ -398,53 +496,9 @@ def root():
         return RedirectResponse(url=_fe_url)
     return RedirectResponse(url="/frontend/index.html")
 
-@app.get("/api/seed_demo_temp")
-def seed_demo_temp():
-    try:
-        from database import SessionLocal
-        from models import Lead
-        from faker import Faker
-        import random
-        
-        db = SessionLocal()
-        fake = Faker()
-        num_leads = 50
-        
-        # 1. Clean up existing demo data
-        deleted = db.query(Lead).filter(Lead.lead_source == 'demo_seed').delete()
-        
-        # 2. Generate new leads
-        lead_types = ['Insurance', 'Real Estate']
-        
-        leads_to_insert = []
-        for _ in range(num_leads):
-            lead_type = random.choice(lead_types)
-            lead = Lead(
-                first_name=fake.first_name(),
-                last_name=fake.last_name(),
-                email=fake.ascii_safe_email(),
-                phone=fake.phone_number()[:20],
-                company=fake.company(),
-                title=fake.job()[:50],
-                status="Lead Assigned",
-                lead_source="demo_seed",
-                is_test=True,
-                city=fake.city(),
-                state=fake.state(),
-                industry=lead_type,
-                employee_count=random.randint(10, 500),
-                annual_revenue=f"${random.randint(1, 100)}M",
-                research_company=f"Leading {lead_type} firm specializing in targeted growth.",
-                research_contact="Key decision maker.",
-                research_geo=fake.state(),
-                research_heat=random.choice(["hot", "warm", "cold"])
-            )
-            leads_to_insert.append(lead)
-            
-        db.add_all(leads_to_insert)
-        db.commit()
-        db.close()
-        return {"success": True, "message": f"Seeded {num_leads} leads! Deleted {deleted} old leads."}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
 
+# ── Deny by default (RCA 2026-09-29) ─────────────────────────────────────────
+# Must stay LAST: gates every route registered above that declares neither
+# auth nor public_endpoint/authenticates_itself.
+from auth import enforce_auth_by_default
+app.state.auth_gated_routes = enforce_auth_by_default(app)

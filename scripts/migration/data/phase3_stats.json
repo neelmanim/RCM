@@ -1,0 +1,8 @@
+{
+  "input_records": 8372,
+  "unique_records": 3039,
+  "total_duplicates": 5333,
+  "db_duplicates": 3928,
+  "cross_sheet_duplicates": 1405,
+  "existing_db_leads": 7015
+}

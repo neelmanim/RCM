@@ -3,15 +3,27 @@ import logging
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
+import ownership_history as oh
+import access_db
 import models
 from database import get_db
-from auth import require_admin
-from routes._admin_helpers import _get_active_lead_cap, _active_lead_count
+from auth import require_admin, require_pod_admin_or_above, require_export_access
+from routes._admin_helpers import LEAD_CSV_FIELDS
 
 router = APIRouter(prefix="/api/admin", tags=["Admin – Assignments"])
+
+# RCA 2026-09-03: both list endpoints below used to return every row up to a
+# hardcoded LIMIT 5000 on every Control Center Lead Assignments mount (and
+# again after every assign/unassign) — a real perf hit the audit flagged as
+# the likely cause of "every Control Center tab feels slow". Paginated the
+# same way GET /leads already is (lead_routes.py's page/per_page/{data,
+# total, pages} contract).
+_PER_PAGE_DEFAULT = 50
+_PER_PAGE_MAX = 200
 
 
 def _has_valid_phone(phone_val):
@@ -24,59 +36,182 @@ def _has_valid_phone(phone_val):
 
 # ── Lead Assignment ──────────────────────────────────────────────────────────
 
+def _pod_sql(admin, alias="l"):
+    """(sql, params) limiting a raw lead query to a Pod Admin's own pod; nothing for Super Admin/Admin.
+    A Pod Admin with no pod resolves to NO_POD, which matches no lead."""
+    if admin.get("role") != "Pod Admin":
+        return "", {}
+    return f" AND {alias}.pod_id = :_pod", {"_pod": access_db.pod_of(admin)}
+
+
 @router.get("/leads/unassigned")
-def get_unassigned_leads(db: Session = Depends(get_db), admin: dict = Depends(require_admin)):
+def get_unassigned_leads(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(_PER_PAGE_DEFAULT, ge=1, le=_PER_PAGE_MAX),
+    db: Session = Depends(get_db), admin: dict = Depends(require_admin),
+):
     from sqlalchemy import text
-    rows = db.execute(text("""
+    # v13.12.1: a Pod Admin only sees their own pod's leads (this was the whole org's names/emails/companies)
+    pod_sql, pod_args = _pod_sql(admin)
+    total = db.execute(text(f"""
+        SELECT COUNT(*) FROM leads l
+        LEFT JOIN lead_assignments la ON la.lead_id = l.id
+        WHERE la.lead_id IS NULL {pod_sql}
+    """), pod_args).scalar() or 0
+    rows = db.execute(text(f"""
         SELECT l.id, l.first_name, l.last_name, l.email, l.company, l.status,
                l.closed_reason, l.created_at, l.call_attempt_count
         FROM leads l
         LEFT JOIN lead_assignments la ON la.lead_id = l.id
-        WHERE la.lead_id IS NULL
+        WHERE la.lead_id IS NULL {pod_sql}
         ORDER BY l.created_at DESC
-        LIMIT 5000
-    """)).fetchall()
-    return [{
+        LIMIT :per_page OFFSET :offset
+    """), {"per_page": per_page, "offset": (page - 1) * per_page, **pod_args}).fetchall()
+    data = [{
         "id": r.id, "first_name": r.first_name, "last_name": r.last_name,
         "email": r.email, "company": r.company, "status": r.status,
         "closed_reason": r.closed_reason,
         "created_at": str(r.created_at) if r.created_at else None,
         "call_count": r.call_attempt_count or 0, "assigned_to": [],
     } for r in rows]
+    return {"data": data, "total": total, "page": page, "per_page": per_page,
+            "pages": max(1, (total + per_page - 1) // per_page)}
 
 
 @router.get("/leads/assigned")
-def get_assigned_leads(db: Session = Depends(get_db), admin: dict = Depends(require_admin)):
+def get_assigned_leads(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(_PER_PAGE_DEFAULT, ge=1, le=_PER_PAGE_MAX),
+    assigned_to: str = Query(None, description="Filter to leads assigned to this user_id"),
+    db: Session = Depends(get_db), admin: dict = Depends(require_admin),
+):
     from sqlalchemy import text
-    rows = db.execute(text("""
+    # Filtering to one assignee's leads still has to show every co-assignee
+    # in `assigned_to` (a lead can have several) — so the filter picks WHICH
+    # leads qualify via a subquery, rather than narrowing the outer join's
+    # rows (which would hide co-assignees from string_agg).
+    pod_sql, pod_args = _pod_sql(admin, alias="l2")
+    qualifying_ids = f"""
+        SELECT DISTINCT la2.lead_id FROM lead_assignments la2
+        INNER JOIN leads l2 ON l2.id = la2.lead_id
+        WHERE (:assigned_to IS NULL OR la2.user_id = :assigned_to) {pod_sql}
+    """
+    params = {"per_page": per_page, "offset": (page - 1) * per_page, "assigned_to": assigned_to, **pod_args}
+
+    total = db.execute(text(f"SELECT COUNT(*) FROM ({qualifying_ids}) q"), params).scalar() or 0
+
+    rows = db.execute(text(f"""
         SELECT l.id, l.first_name, l.last_name, l.email, l.company, l.status,
                l.closed_reason, l.created_at, l.call_attempt_count,
                string_agg(u.id || '::' || COALESCE(u.name,''), '||') AS users_agg
         FROM leads l
         INNER JOIN lead_assignments la ON la.lead_id = l.id
         INNER JOIN users u ON u.id = la.user_id
+        WHERE l.id IN ({qualifying_ids})
         GROUP BY l.id, l.first_name, l.last_name, l.email, l.company, l.status,
                  l.closed_reason, l.created_at, l.call_attempt_count
         ORDER BY l.created_at DESC
-        LIMIT 5000
-    """)).fetchall()
+        LIMIT :per_page OFFSET :offset
+    """), params).fetchall()
 
-    result = []
+    data = []
     for r in rows:
-        assigned_to = []
+        assigned_to_list = []
         if r.users_agg:
             for pair in r.users_agg.split("||"):
                 parts = pair.split("::", 1)
                 if len(parts) == 2:
-                    assigned_to.append({"id": parts[0], "name": parts[1]})
-        result.append({
+                    assigned_to_list.append({"id": parts[0], "name": parts[1]})
+        data.append({
             "id": r.id, "first_name": r.first_name, "last_name": r.last_name,
             "email": r.email, "company": r.company, "status": r.status,
             "closed_reason": r.closed_reason,
             "created_at": str(r.created_at) if r.created_at else None,
-            "call_count": r.call_attempt_count or 0, "assigned_to": assigned_to,
+            "call_count": r.call_attempt_count or 0, "assigned_to": assigned_to_list,
         })
-    return result
+    return {"data": data, "total": total, "page": page, "per_page": per_page,
+            "pages": max(1, (total + per_page - 1) // per_page)}
+
+
+@router.get("/leads/export", dependencies=[Depends(require_export_access)])
+def export_leads_by_sdr(
+    assigned_to: Optional[List[str]] = Query(None, description="Export leads assigned to these user_id(s) — one or more"),
+    upload_log_id: str = Query(None, description="Export leads from this upload batch"),
+    date_from: str = Query(None, description="Export leads created on/after this date (yyyy-mm-dd)"),
+    date_to: str = Query(None, description="Export leads created on/before this date (yyyy-mm-dd)"),
+    db: Session = Depends(get_db), admin: dict = Depends(require_admin),
+):
+    """Control Center → Data → 'Export Leads': full lead-field CSV, filterable
+    by SDR(s), upload batch, and/or a created_at date range (any combination —
+    at least one is required, to guard against an accidental unfiltered
+    full-table export now that SDR alone isn't mandatory)."""
+    import csv
+    import io
+    from datetime import datetime as dt
+    from fastapi.responses import StreamingResponse
+
+    if not (assigned_to or upload_log_id or date_from or date_to):
+        raise HTTPException(status_code=400, detail="Choose at least one filter (SDR, upload batch, or date range) before exporting.")
+
+    # RCA 2026-09-29: was db.query(Lead) — a Pod Admin could export every
+    # pod's leads. Same visibility as the Leads list (Pod Admin: own pod;
+    # no global_view for bulk export — user decision 2026-09-29).
+    from routes.lead_helpers import _build_lead_query
+    query = _build_lead_query(db, admin)
+    filename_parts = []
+
+    if assigned_to:
+        users = db.query(models.User).filter(models.User.id.in_(assigned_to)).all()
+        if not users:
+            raise HTTPException(status_code=404, detail="User not found")
+        query = query.join(models.lead_assignments, models.lead_assignments.c.lead_id == models.Lead.id) \
+            .filter(models.lead_assignments.c.user_id.in_(assigned_to)).distinct()
+        names = ["".join(c for c in (u.name or u.email) if c.isalnum() or c in " _-").strip() or u.id for u in users]
+        if len(names) > 2:
+            filename_parts.append(f"{names[0]}_{names[1]}_plus{len(names) - 2}more")
+        else:
+            filename_parts.append("_".join(names))
+
+    if upload_log_id:
+        query = query.filter(models.Lead.upload_log_id == upload_log_id)
+
+    if date_from:
+        try:
+            query = query.filter(models.Lead.created_at >= dt.fromisoformat(date_from))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_from — expected yyyy-mm-dd.")
+    if date_to:
+        try:
+            end_of_day = dt.fromisoformat(date_to).replace(hour=23, minute=59, second=59, microsecond=999999)
+            query = query.filter(models.Lead.created_at <= end_of_day)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_to — expected yyyy-mm-dd.")
+
+    export_fields = LEAD_CSV_FIELDS + ["status"]
+
+    def generate():
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(export_fields + ["created_at", "call_attempt_count"])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+
+        for lead in query.yield_per(500):
+            writer.writerow(
+                [getattr(lead, f) or "" for f in export_fields]
+                + [str(lead.created_at) if lead.created_at else "", lead.call_attempt_count or 0]
+            )
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+    filename = f"leads_{'_'.join(filename_parts) or 'export'}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        generate(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.post("/assignments/bulk-assign")
@@ -89,13 +224,12 @@ def bulk_assign(body: dict, db: Session = Depends(get_db), admin: dict = Depends
 
     # Pod Admin can only assign to SDRs/AEs in their pod
     if admin.get("role") == "Pod Admin":
-        admin_user = db.query(models.User).filter(models.User.id == admin["sub"]).first()
-        if admin_user and user.pod_id != admin_user.pod_id:
+        pod = access_db.pod_of(admin)          # resolved per request; a pod-less admin matches nobody
+        if user.pod_id != pod:
             raise HTTPException(status_code=403, detail="Pod Admin can only assign leads to users within their POD")
 
     assigned = []
     skipped_pod_lock = []
-    skipped_cap = []
     skipped_no_phone = []
     for lid in lead_ids:
         lead = db.query(models.Lead).filter(models.Lead.id == lid).first()
@@ -105,21 +239,18 @@ def bulk_assign(body: dict, db: Session = Depends(get_db), admin: dict = Depends
         if lead.status in models.PARKED_STATUSES or not _has_valid_phone(lead.phone):
             skipped_no_phone.append(lid)
             continue
-        # Pod-lock: if lead is already assigned to someone in a different pod, skip
-        if lead.assigned_users:
+        # Pod-lock: Pod Admins can't reassign a lead out of another pod's
+        # territory. Super Admin/Admin bypass this — RCA 2026-08-24: this
+        # check used to run for every caller, so it also silently blocked
+        # reassigning a lead away from a departed SDR whose stale pod_id
+        # differs from the target's (there's no "departed" concept on User;
+        # the lock can't tell that case apart from "active SDR, other pod").
+        if admin.get("role") == "Pod Admin" and lead.assigned_users:
             existing_pods = {u.pod_id for u in lead.assigned_users if u.pod_id}
             if existing_pods and user.pod_id not in existing_pods:
                 skipped_pod_lock.append(lid)
                 continue
-        # Lead cap: skip if SDR already at max active leads (per-pod cap)
-        cap = _get_active_lead_cap(db, user)
-        if cap == 0:  # pause mode
-            skipped_cap.append(lid)
-            continue
-        if _active_lead_count(user) >= cap:
-            skipped_cap.append(lid)
-            continue
-        if models.assign_lead(user, lead):
+        if models.assign_lead(user, lead, reason=oh.R_BULK, actor_id=admin["sub"]):
             # Set lead_started_at if not already set
             if not lead.lead_started_at:
                 from datetime import datetime, timezone
@@ -128,15 +259,20 @@ def bulk_assign(body: dict, db: Session = Depends(get_db), admin: dict = Depends
             # NOTE: AE cascade to Pod Admin removed (v10).
             # Pod Admins see AE leads via pod scoping in lead_helpers.py.
     db.commit()
-    cap_display = _get_active_lead_cap(db, user)
+    if assigned:
+        # RCA 2026-08-25: this route never busted the my_leads/leads_page caches
+        # cache.py's own invariant (see its TTL table comment) requires this on
+        # any route that assigns a lead — without it, the assignee's "My Leads"
+        # and the admin "All Leads" view can serve a stale pre-assignment
+        # snapshot for up to the cache's TTL after a successful reassignment.
+        from cache import invalidate
+        invalidate('my_leads'); invalidate('leads_count'); invalidate('leads_page')
     msg = f"{len(assigned)} leads assigned to {user.name}"
     if skipped_no_phone:
         msg += f". {len(skipped_no_phone)} skipped (no phone number)."
     if skipped_pod_lock:
         msg += f". {len(skipped_pod_lock)} skipped (assigned to another POD)."
-    if skipped_cap:
-        msg += f" {len(skipped_cap)} skipped (user at max {cap_display} active leads)."
-    return {"message": msg, "assigned": assigned, "pod_locked": skipped_pod_lock, "cap_reached": skipped_cap, "no_phone": skipped_no_phone}
+    return {"message": msg, "assigned": assigned, "pod_locked": skipped_pod_lock, "no_phone": skipped_no_phone}
 
 
 @router.post("/assignments/auto-assign-all")
@@ -150,21 +286,19 @@ def auto_assign_all(db: Session = Depends(get_db), admin: dict = Depends(require
         # Extra safety: skip leads with no callable phone even if status wasn't updated
         models.Lead.phone.isnot(None),
         models.Lead.phone != "",
-    ).all()
+    )
+    is_pod_admin = admin.get("role") == "Pod Admin"
+    pod = access_db.pod_of(admin)
+    if is_pod_admin:       # only their own pod's pool, and only to their own pod's reps
+        unassigned_leads = unassigned_leads.filter(models.Lead.pod_id == pod)
+    unassigned_leads = unassigned_leads.all()
     if not unassigned_leads:
         return {"message": "No unassigned leads found"}
 
-    # Pod Admin: only assign to their pod's SDRs/AEs
-    if admin.get("role") == "Pod Admin":
-        admin_user = db.query(models.User).filter(models.User.id == admin["sub"]).first()
-        sdrs = db.query(models.User).filter(
-            models.User.role.in_(["SDR", "AE"]),
-            models.User.pod_id == admin_user.pod_id
-        ).all() if admin_user else []
-    else:
-        sdrs = db.query(models.User).filter(models.User.role.in_(["SDR", "AE"])).all()
+    sdr_q = db.query(models.User).filter(models.User.role.in_(["SDR", "AE"]))
+    sdrs = (sdr_q.filter(models.User.pod_id == pod) if is_pod_admin else sdr_q).all()
 
-    if not sdrs:
+    if not sdrs and not is_pod_admin:      # (never fall back to "everyone" for a Pod Admin — that included other pods and admins)
         sdrs = db.query(models.User).all()
     if not sdrs:
         raise HTTPException(status_code=400, detail="No users found to assign leads to")
@@ -187,54 +321,27 @@ def auto_assign_all(db: Session = Depends(get_db), admin: dict = Depends(require
 
     count = 0
     skipped = 0
-    sdr_idx = 0
     sdr_count = len(sdrs)
-    full_sdrs = set()
 
-    for batch in assignment_batches:
-        if len(full_sdrs) == sdr_count:
-            skipped += len(batch)
-            continue
-
-        placed = False
-        for attempt in range(sdr_count):
-            sdr = sdrs[(sdr_idx + attempt) % sdr_count]
-            if sdr.id in full_sdrs:
-                continue
-            cap = _get_active_lead_cap(db, sdr)
-            if cap == 0:
-                full_sdrs.add(sdr.id)
-                continue
-            current = _active_lead_count(sdr)
-            if current >= cap:
-                full_sdrs.add(sdr.id)
-                continue
-
-            batch_assigned = 0
-            for lead in batch:
-                if cap > 0 and (current + batch_assigned) >= cap:
-                    break
-                if models.assign_lead(sdr, lead):
-                    if not lead.lead_started_at:
-                        from datetime import datetime, timezone
-                        lead.lead_started_at = datetime.now(timezone.utc)
-                    batch_assigned += 1
-                    # NOTE: AE cascade to Pod Admin removed (v10).
-                    # Pod Admins see AE leads via pod scoping in lead_helpers.py.
-
-            count += batch_assigned
-            skipped += len(batch) - batch_assigned
-            sdr_idx = (sdr_idx + attempt + 1) % sdr_count
-            placed = True
-            break
-
-        if not placed:
-            skipped += len(batch)
+    for i, batch in enumerate(assignment_batches):
+        sdr = sdrs[i % sdr_count]
+        batch_assigned = 0
+        for lead in batch:
+            if models.assign_lead(sdr, lead, reason=oh.R_AUTO, actor_id=admin["sub"]):
+                if not lead.lead_started_at:
+                    from datetime import datetime, timezone
+                    lead.lead_started_at = datetime.now(timezone.utc)
+                batch_assigned += 1
+                # NOTE: AE cascade to Pod Admin removed (v10).
+                # Pod Admins see AE leads via pod scoping in lead_helpers.py.
+        count += batch_assigned
+        skipped += len(batch) - batch_assigned
 
     db.commit()
+    if count:
+        from cache import invalidate
+        invalidate('my_leads'); invalidate('leads_count'); invalidate('leads_page')
     msg = f"Successfully auto-assigned {count} leads across {sdr_count} users"
-    if skipped:
-        msg += f". {skipped} leads skipped (all users at capacity)."
     return {"message": msg, "assigned_count": count, "skipped": skipped}
 
 
@@ -243,17 +350,19 @@ def unassign_lead(user_id: str, lead_id: str, db: Session = Depends(get_db), adm
     # Pod Admin can only unassign users in their pod
     if admin.get("role") == "Pod Admin":
         target_user = db.query(models.User).filter(models.User.id == user_id).first()
-        admin_user = db.query(models.User).filter(models.User.id == admin["sub"]).first()
-        if target_user and admin_user and target_user.pod_id != admin_user.pod_id:
+        if target_user and target_user.pod_id != (access_db.pod_of(admin)):
             raise HTTPException(status_code=403, detail="You can only unassign leads from users in your POD.")
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
     if lead and lead in user.assigned_leads:
+        oh.set_assignment_context(db, oh.R_UNASSIGN, admin["sub"])
         user.assigned_leads.remove(lead)
         # NOTE: AE cascade-unassign removed (v10). Pod Admins not in lead_assignments.
         db.commit()
+        from cache import invalidate
+        invalidate('my_leads'); invalidate('leads_count'); invalidate('leads_page')
     return {"ok": True}
 
 
@@ -264,6 +373,7 @@ def bulk_unassign(body: dict, db: Session = Depends(get_db), admin: dict = Depen
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
+    oh.set_assignment_context(db, oh.R_BULK_UNASSIGN, admin["sub"])
     count = 0
     for lid in lead_ids:
         lead = db.query(models.Lead).options(
@@ -274,8 +384,7 @@ def bulk_unassign(body: dict, db: Session = Depends(get_db), admin: dict = Depen
 
         # Pod Admin: can only unassign leads belonging to their pod's SDRs/AEs
         if admin.get("role") == "Pod Admin":
-            admin_user = db.query(models.User).filter(models.User.id == admin["sub"]).first()
-            pod_id = admin_user.pod_id if admin_user else None
+            pod_id = access_db.pod_of(admin)
             # Only remove users in this admin's pod
             to_remove = [u for u in lead.assigned_users if u.pod_id == pod_id]
             for u in to_remove:
@@ -289,29 +398,66 @@ def bulk_unassign(body: dict, db: Session = Depends(get_db), admin: dict = Depen
             count += 1
 
     db.commit()
+    if count:
+        from cache import invalidate
+        invalidate('my_leads'); invalidate('leads_count'); invalidate('leads_page')
     return {"message": f"{count} leads unassigned", "count": count}
 
 
 @router.post("/leads/bulk-delete")
-def bulk_delete_leads(body: dict, db: Session = Depends(get_db), admin: dict = Depends(require_admin)):
-    """Permanently delete multiple leads. Cascades to assignments, notes, calls, tasks, status logs."""
+def bulk_delete_leads(body: dict, db: Session = Depends(get_db), admin: dict = Depends(require_pod_admin_or_above)):
+    """Soft-delete multiple leads — sets Lead.deleted_at, never a real DELETE.
+
+    RCA 2026-08-17: this used to hard-delete the row and cascade manual
+    cleanup of LeadEmailActivity/EmailThread/DialerCall. Per explicit
+    product decision, lead deletion is always soft: the row and every
+    related call/note/email is kept, just excluded from listings, kanban,
+    dashboards, and analytics (see models.exclude_deleted_leads(), threaded
+    through routes/lead_helpers.py::_build_lead_query and
+    routes/analytics_routes.py). Role gate widened from Super Admin/Admin
+    only to require_pod_admin_or_above — the frontend's Delete Lead button
+    (lead_detail.js) already shows for Pod Admins too; the backend was
+    silently 403ing them."""
     lead_ids = body.get("lead_ids", [])
     if not lead_ids:
         raise HTTPException(status_code=400, detail="No lead IDs provided")
 
-    # Only Super Admin can bulk delete
-    if admin.get("role") not in ("Super Admin", "Admin"):
-        raise HTTPException(status_code=403, detail="Only Super Admins can delete leads")
+    # Pod Admin: only their pod's leads — unassigned, or assigned to one of
+    # their own pod's users. RCA 2026-08-26: this filter didn't exist at all
+    # — role check alone (require_pod_admin_or_above) let a Pod Admin delete
+    # ANY lead_id in the system, not just their own pod's. Mirrors
+    # bulk_unassign's exact scoping rule immediately above, and
+    # lead_helpers._can_modify_lead's "unassigned or my pod" rule everywhere
+    # else in the codebase — unauthorized IDs are silently skipped, not
+    # errored, same as bulk_unassign does for a mixed selection.
+    if admin.get("role") == "Pod Admin":
+        pod_id = access_db.pod_of(admin)
+        candidates = (
+            db.query(models.Lead)
+            .options(joinedload(models.Lead.assigned_users))
+            .filter(models.Lead.id.in_(lead_ids), models.Lead.deleted_at.is_(None))
+            .all()
+        )
+        lead_ids = [
+            l.id for l in candidates
+            if (any(u.pod_id == pod_id for u in l.assigned_users) if l.assigned_users else l.pod_id == pod_id)
+        ]
 
-    count = 0
-    for lid in lead_ids:
-        lead = db.query(models.Lead).filter(models.Lead.id == lid).first()
-        if lead:
-            # Manually delete child records that lack cascade relationships
-            db.query(models.LeadEmailActivity).filter(models.LeadEmailActivity.lead_id == lid).delete()
-            db.query(models.EmailThread).filter(models.EmailThread.lead_id == lid).delete()
-            db.query(models.DialerCall).filter(models.DialerCall.lead_id == lid).delete()
-            db.delete(lead)
-            count += 1
+    now = datetime.now(timezone.utc)
+    lead_ids = [row[0] for row in db.query(models.Lead.id).filter(
+        models.Lead.id.in_(lead_ids), models.Lead.deleted_at.is_(None)).all()] if lead_ids else []
+    count = (
+        db.query(models.Lead)
+        .filter(models.Lead.id.in_(lead_ids))
+        .update({"deleted_at": now}, synchronize_session=False)
+    ) if lead_ids else 0
+    # A deleted lead must stop receiving cadence sends, close any parked
+    # drafts, and leave Instantly — not keep running in the background.
+    from journey_engine.engine import exit_active_enrollments
+    for lead_id in lead_ids:
+        exit_active_enrollments(db, lead_id, "lead_deleted")
     db.commit()
-    return {"message": f"{count} leads permanently deleted", "count": count}
+    if count:
+        from cache import invalidate
+        invalidate('my_leads'); invalidate('leads_count'); invalidate('leads_page')
+    return {"message": f"{count} lead(s) deleted", "count": count}

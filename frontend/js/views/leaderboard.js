@@ -1,6 +1,6 @@
 // ── views/leaderboard.js — SDR/AE performance leaderboard ────────────────────
 import { fetchLeaderboard, fetchAELeaderboard } from '../api.js';
-import { showLoader } from '../utils.js';
+import { showLoader, icon } from '../utils.js';
 import { isSDR, isAdmin, currentUser } from '../auth.js';
 import { mp } from '../mp.js';
 
@@ -50,10 +50,10 @@ export async function renderLeaderboard(container) {
         <div id="lb-scope-toggle" style="display:flex;align-items:center;gap:0;border-radius:20px;overflow:hidden;border:1.5px solid #4f46e5;background:var(--surface-color);user-select:none;" role="group" aria-label="Leaderboard scope">
             <button id="lb-toggle-pod"
                 style="padding:5px 14px;font-size:0.78rem;font-weight:600;border:none;cursor:pointer;transition:all 0.15s;background:${!globalView ? '#4f46e5' : 'transparent'};color:${!globalView ? '#fff' : 'var(--text-muted)'};border-radius:0;"
-                title="Show only your pod's SDRs">🔒 My Pod</button>
+                title="Show only your pod's SDRs">${icon('lock', 13)}<span style="margin-left:5px;">My Pod</span></button>
             <button id="lb-toggle-global"
                 style="padding:5px 14px;font-size:0.78rem;font-weight:600;border:none;cursor:pointer;transition:all 0.15s;background:${globalView ? '#4f46e5' : 'transparent'};color:${globalView ? '#fff' : 'var(--text-muted)'};border-radius:0;"
-                title="Show all SDRs">🌐 Global</button>
+                title="Show all SDRs">${icon('globe', 13)}<span style="margin-left:5px;">Global</span></button>
         </div>` : '';
 
     container.innerHTML = `
@@ -61,7 +61,7 @@ export async function renderLeaderboard(container) {
             <!-- ── Header + Controls ─────────────────────────────────── -->
             <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;margin-bottom:28px;">
                 <div>
-                    <h1 style="margin:0;font-size:1.3rem;font-weight:700;color:#18181b;">🏆 Leaderboard</h1>
+                    <h1 style="margin:0;font-size:1.3rem;font-weight:700;color:#18181b;display:flex;align-items:center;gap:8px;">${icon('trophy', 20, '#4f46e5')}Leaderboard</h1>
                     <p style="color:#71717a;font-size:0.82rem;margin:4px 0 0;">${currentTab === 'ae' ? 'AE' : 'SDR'} performance · Ranked by meetings booked · <strong>${rangeLabel}</strong>${isPodAdmin && !globalView ? ' · <span style="color:#4f46e5;font-weight:600;">My Pod</span>' : ''}</p>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
@@ -82,7 +82,7 @@ export async function renderLeaderboard(container) {
             </div>
             ${data.length === 0 ? `
             <div style="padding:60px;text-align:center;color:var(--text-muted);">
-                <div style="font-size:2.5rem;margin-bottom:12px;">📊</div>
+                <div style="margin-bottom:12px;">${icon('chart-column', 40, 'var(--text-muted)')}</div>
                 <p style="font-size:0.95rem;">${isPodAdmin && !globalView ? `No ${currentTab === 'ae' ? 'AEs' : 'SDRs'} in your pod yet. Switch to Global to see all.` : `No ${currentTab === 'ae' ? 'AEs' : 'SDRs'} found. Add ${currentTab === 'ae' ? 'AEs' : 'SDRs'} to start tracking performance.`}</p>
             </div>` : `
 

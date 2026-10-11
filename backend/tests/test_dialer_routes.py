@@ -68,8 +68,9 @@ class TestDialerWebhook:
         )
         assert resp.status_code == 400
 
-    def test_rejects_invalid_webhook_token(self, db):
+    def test_rejects_invalid_webhook_token(self, db, monkeypatch):
         """If a webhook_token is configured, mismatched token should return 401."""
+        monkeypatch.setenv("SECURITY_WEBHOOK_MODE", "enforce")
         client = _make_dialer_app(db)
 
         with patch("routes.dialer_routes.dialer_service.get_dialer_config") as mock_config:
@@ -106,8 +107,9 @@ class TestDialerWebhook:
         assert resp.status_code == 200
         mock_handle.assert_called_once()
 
-    def test_processes_webhook_without_token_guard(self, db):
-        """Without a webhook_token configured, any payload should be accepted."""
+    def test_refuses_webhook_when_no_token_is_configured(self, db, monkeypatch):
+        """RCA 2026-09-29: no configured token used to mean "accept anything"."""
+        monkeypatch.setenv("SECURITY_WEBHOOK_MODE", "enforce")
         client = _make_dialer_app(db)
 
         with patch("routes.dialer_routes.dialer_service.get_dialer_config") as mock_config, \
@@ -117,18 +119,13 @@ class TestDialerWebhook:
                 "has_credentials": True,
                 "webhook_token": None,
             }
-            mock_handle.return_value = {"ok": True}
-
             resp = client.post(
                 "/api/webhooks/dialer",
                 json={"event": "call.answered", "call_id": "abc-123"},
             )
 
-        assert resp.status_code == 200
-        # NOTE: handle_webhook is now called in a FastAPI BackgroundTask (not in the
-        # request thread), so we cannot assert mock_handle.assert_called_once() here
-        # synchronously. The response contract is: always return {"ok": True} immediately.
-        assert resp.json().get("ok") is True
+        assert resp.status_code == 401
+        mock_handle.assert_not_called()
 
     def test_returns_200_even_on_handler_exception(self, db):
         """
@@ -161,14 +158,14 @@ class TestDialerWebhook:
         # Error handling happens in the background task (logged, not surfaced).
         assert data.get("ok") is True
 
-    def test_rcm_payload_routes_correctly_even_when_global_default_is_aircall(self, db):
+    def test_messenger_payload_routes_correctly_even_when_global_default_is_aircall(self, db):
         """
-        RCA 2026-07-10: Aircall and RCM are independent providers — a
-        RCM-shaped payload ({"call_id":..., "status":...}, no "event"/"data")
-        must route to the RCM handler even when the global `dialer_provider`
+        RCA 2026-07-10: Aircall and Alternate Messenger are independent providers — a
+        Alternate Messenger-shaped payload ({"call_id":..., "status":...}, no "event"/"data")
+        must route to the Alternate Messenger handler even when the global `dialer_provider`
         setting is "aircall" (per-user overrides mean both can be active at once).
         Previously this payload was silently handed to the Aircall parser and
-        dropped, so RCM calls never got status updates from webhooks.
+        dropped, so Alternate Messenger calls never got status updates from webhooks.
         """
         client = _make_dialer_app(db)
 
@@ -177,7 +174,7 @@ class TestDialerWebhook:
             mock_config.return_value = {
                 "provider": "aircall",  # global default — must NOT determine routing
                 "has_credentials": True,
-                "has_rcm_credentials": True,
+                "has_messenger_credentials": True,
                 "webhook_token": None,
             }
             mock_handle.return_value = {"ok": True}
@@ -188,18 +185,18 @@ class TestDialerWebhook:
             )
 
         assert resp.status_code == 200
-        assert mock_handle.call_args[0][1] == "rcm"
+        assert mock_handle.call_args[0][1] == "messenger"
 
-    def test_aircall_payload_routes_correctly_even_when_global_default_is_rcm(self, db):
+    def test_aircall_payload_routes_correctly_even_when_global_default_is_messenger(self, db):
         """Mirror of the above: Aircall's own shape must still route to aircall."""
         client = _make_dialer_app(db)
 
         with patch("routes.dialer_routes.dialer_service.get_dialer_config") as mock_config, \
              patch("routes.dialer_routes.dialer_service.handle_webhook") as mock_handle:
             mock_config.return_value = {
-                "provider": "rcm",  # global default flipped — must still not matter
+                "provider": "messenger",  # global default flipped — must still not matter
                 "has_credentials": True,
-                "has_rcm_credentials": True,
+                "has_messenger_credentials": True,
                 "webhook_token": None,
             }
             mock_handle.return_value = {"ok": True}
@@ -211,6 +208,42 @@ class TestDialerWebhook:
 
         assert resp.status_code == 200
         assert mock_handle.call_args[0][1] == "aircall"
+
+
+class TestDialerWebhookBackgroundProcessor:
+    """Tests for _process_dialer_webhook_bg — the SSE publish wiring fix.
+
+    RCA 2026-08-20: both Aircall and Alternate Messenger actually hit this generic
+    endpoint in production (confirmed live — zero traffic on the
+    provider-specific /webhooks/aircall or /webhooks/messenger endpoints
+    over a 7-day window), but the background processor never called
+    _publish_call_status(), so no dialer call ever reached the browser via
+    SSE — every SDR relied entirely on client-side polling.
+    """
+
+    @pytest.mark.asyncio
+    async def test_publishes_call_status_after_handling_webhook(self, db):
+        from routes import dialer_routes
+
+        fake_result = {"user_id": "test-user-id", "call_id": "call-abc", "status": "CALL_ENDED"}
+
+        with patch("routes.dialer_routes.dialer_service.handle_webhook", return_value=fake_result), \
+             patch("routes.dialer_routes._publish_call_status") as mock_publish:
+            await dialer_routes._process_dialer_webhook_bg("aircall", {"event": "call.ended"})
+
+        mock_publish.assert_awaited_once_with(fake_result)
+
+    @pytest.mark.asyncio
+    async def test_does_not_publish_if_handle_webhook_raises(self, db):
+        """A handler exception must not crash the background task (already
+        caught + logged) and must not call publish with no result."""
+        from routes import dialer_routes
+
+        with patch("routes.dialer_routes.dialer_service.handle_webhook", side_effect=RuntimeError("boom")), \
+             patch("routes.dialer_routes._publish_call_status") as mock_publish:
+            await dialer_routes._process_dialer_webhook_bg("aircall", {"event": "call.ended"})
+
+        mock_publish.assert_not_called()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -337,7 +370,7 @@ class TestStartCall:
         with patch("routes.dialer_routes.dialer_service.initiate_call") as mock_call:
             mock_call.return_value = {
                 "success": True,
-                "provider": "rcm",
+                "provider": "messenger",
                 "call_id": "cv-manual-123",
             }
             resp = client.post("/api/calls/start", json={
@@ -347,7 +380,7 @@ class TestStartCall:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["provider"] == "rcm"
+        assert data["provider"] == "messenger"
         # lead_id must be returned (either matched or created)
         assert "lead_id" in data and data["lead_id"]
         mock_call.assert_called_once()
@@ -379,7 +412,7 @@ class TestStartCall:
         client = TestClient(app)
 
         with patch("routes.dialer_routes.dialer_service.initiate_call") as mock_call:
-            mock_call.return_value = {"success": True, "provider": "rcm", "call_id": "cv-1"}
+            mock_call.return_value = {"success": True, "provider": "messenger", "call_id": "cv-1"}
             resp = client.post("/api/calls/start", json={"phone_number": "+919876500000"})
 
         assert resp.status_code == 200
@@ -429,7 +462,7 @@ class TestEligibilityGate:
     """Power Dialer prep: a do-not-contact/unsubscribed lead must never reach
     the provider, regardless of entry point. Exercises the real
     dialer_service.initiate_call() (not mocked) so the gate itself is tested,
-    only get_provider_for_user is mocked to avoid a real Aircall/RCM call."""
+    only get_provider_for_user is mocked to avoid a real Aircall/Alternate Messenger call."""
 
     def test_do_not_contact_lead_blocked_before_provider_called(self, db):
         client = _make_dialer_app(db)
@@ -488,6 +521,66 @@ class TestEligibilityGate:
         assert resp.status_code == 200
         provider_mock.initiate_call.assert_called_once()
 
+    def test_405_message_mentions_everywhere_drawer_when_enabled(self, db):
+        """RCA 2026-08-18: this message predates Aircall Everywhere and only
+        ever told the SDR to open the Desktop app — actively wrong guidance
+        once Everywhere is enabled org-wide."""
+        client = _make_dialer_app(db)
+        lead = create_test_lead(db, email="everywhere_405@t.com")
+        import models
+        settings = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
+        if not settings:
+            settings = models.SyncSettings(id=1)
+            db.add(settings)
+        settings.aircall_everywhere_enabled = True
+        db.commit()
+
+        provider_mock = MagicMock()
+        provider_mock.provider_name = "aircall"
+        provider_mock.initiate_call.return_value = MagicMock(
+            success=False, provider_call_id=None, error=(
+                "Test SDR could not receive the call. Please ensure their "
+                "Aircall Desktop app is open and status is set to Available, then try again."
+            ),
+            livekit_token=None, livekit_url=None, room_name=None, agent_join_via_phone=None,
+        )
+        with patch("routes.dialer_routes.dialer_service.get_provider_for_user", return_value=provider_mock):
+            resp = client.post("/api/calls/start", json={
+                "lead_id": lead.id,
+                "phone_number": "+919876543210",
+            })
+
+        assert "Aircall drawer in Alternate CRM" in resp.json()["detail"]
+
+    def test_405_message_unchanged_when_everywhere_disabled(self, db):
+        client = _make_dialer_app(db)
+        lead = create_test_lead(db, email="no_everywhere_405@t.com")
+        import models
+        settings = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
+        if not settings:
+            settings = models.SyncSettings(id=1)
+            db.add(settings)
+        settings.aircall_everywhere_enabled = False
+        db.commit()
+
+        provider_mock = MagicMock()
+        provider_mock.provider_name = "aircall"
+        original_error = (
+            "Test SDR could not receive the call. Please ensure their "
+            "Aircall Desktop app is open and status is set to Available, then try again."
+        )
+        provider_mock.initiate_call.return_value = MagicMock(
+            success=False, provider_call_id=None, error=original_error,
+            livekit_token=None, livekit_url=None, room_name=None, agent_join_via_phone=None,
+        )
+        with patch("routes.dialer_routes.dialer_service.get_provider_for_user", return_value=provider_mock):
+            resp = client.post("/api/calls/start", json={
+                "lead_id": lead.id,
+                "phone_number": "+919876543210",
+            })
+
+        assert resp.json()["detail"] == original_error
+
     def test_suppressed_skip_does_not_write_an_error_log(self, db):
         """A DNC skip is policy working as designed — must not fill Error Logs
         with noise proportional to Power Dialer usage."""
@@ -535,39 +628,39 @@ class TestNormalizePhone:
 class TestGetDialerConfig:
     """Unit tests for dialer_service.get_dialer_config — credential flags & from_number."""
 
-    def test_rcm_creds_only_needs_access_token(self, db):
-        """has_rcm_credentials should be True with api_key + user_id (HMAC auth)."""
+    def test_messenger_creds_only_needs_access_token(self, db):
+        """has_messenger_credentials should be True with api_key + user_id (HMAC auth)."""
         from conftest import create_sync_settings
         settings = create_sync_settings(db)
-        settings.dialer_provider = "rcm"
-        settings.rcm_api_key = "test-api-key"
-        settings.rcm_user_id = "300956"
+        settings.dialer_provider = "messenger"
+        settings.messenger_api_key = "test-api-key"
+        settings.messenger_user_id = "300956"
         db.commit()
 
         import dialer_service
         config = dialer_service.get_dialer_config(db)
-        assert config["has_rcm_credentials"] is True
-        assert config["provider"] == "rcm"
+        assert config["has_messenger_credentials"] is True
+        assert config["provider"] == "messenger"
 
-    def test_rcm_creds_false_without_api_key(self, db):
-        """has_rcm_credentials should be False when api_key is missing."""
+    def test_messenger_creds_false_without_api_key(self, db):
+        """has_messenger_credentials should be False when api_key is missing."""
         from conftest import create_sync_settings
         settings = create_sync_settings(db)
-        settings.dialer_provider = "rcm"
-        settings.rcm_api_key = None
-        settings.rcm_user_id = "300956"
+        settings.dialer_provider = "messenger"
+        settings.messenger_api_key = None
+        settings.messenger_user_id = "300956"
         db.commit()
 
         import dialer_service
         config = dialer_service.get_dialer_config(db)
-        assert config["has_rcm_credentials"] is False
+        assert config["has_messenger_credentials"] is False
 
     def test_from_number_returned_in_config(self, db):
         """get_dialer_config should return the saved from_number."""
         from conftest import create_sync_settings
         settings = create_sync_settings(db)
-        settings.dialer_provider = "rcm"
-        settings.rcm_from_number = "+14155551234"
+        settings.dialer_provider = "messenger"
+        settings.messenger_from_number = "+14155551234"
         db.commit()
 
         import dialer_service
@@ -578,8 +671,8 @@ class TestGetDialerConfig:
         """from_number should default to empty string when not set."""
         from conftest import create_sync_settings
         settings = create_sync_settings(db)
-        settings.dialer_provider = "rcm"
-        settings.rcm_from_number = None
+        settings.dialer_provider = "messenger"
+        settings.messenger_from_number = None
         db.commit()
 
         import dialer_service
@@ -593,7 +686,7 @@ class TestGetDialerConfig:
 
         import dialer_service
         dialer_service.save_dialer_config(db, {
-            "provider": "rcm",
+            "provider": "messenger",
             "from_number": "+919876543210",
         })
         config = dialer_service.get_dialer_config(db)
@@ -603,16 +696,46 @@ class TestGetDialerConfig:
         """Sending from_number as empty string should clear it (store as None)."""
         from conftest import create_sync_settings
         settings = create_sync_settings(db)
-        settings.rcm_from_number = "+14155551234"
+        settings.messenger_from_number = "+14155551234"
         db.commit()
 
         import dialer_service
         dialer_service.save_dialer_config(db, {
-            "provider": "rcm",
+            "provider": "messenger",
             "from_number": "",
         })
         config = dialer_service.get_dialer_config(db)
         assert config["from_number"] == ""  # empty string return (stored as None, returned as "")
+
+    def test_aircall_sync_enabled_defaults_true(self, db):
+        """v11.5.3: default must be True — existing nightly sync behavior
+        unchanged until an admin explicitly opts out."""
+        from conftest import create_sync_settings
+        create_sync_settings(db)
+
+        import dialer_service
+        config = dialer_service.get_dialer_config(db)
+        assert config["aircall_sync_enabled"] is True
+
+    def test_save_dialer_config_disables_aircall_sync(self, db):
+        from conftest import create_sync_settings
+        create_sync_settings(db)
+
+        import dialer_service
+        dialer_service.save_dialer_config(db, {"aircall_sync_enabled": False})
+        config = dialer_service.get_dialer_config(db)
+        assert config["aircall_sync_enabled"] is False
+
+    def test_save_dialer_config_reenables_aircall_sync(self, db):
+        from conftest import create_sync_settings
+        settings = create_sync_settings(db)
+        settings.aircall_sync_enabled = False
+        db.commit()
+
+        import dialer_service
+        dialer_service.save_dialer_config(db, {"aircall_sync_enabled": True})
+        config = dialer_service.get_dialer_config(db)
+        assert config["aircall_sync_enabled"] is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -621,7 +744,7 @@ class TestGetDialerConfig:
 
 class TestCallMode:
     """
-    v6.2.0: RCMWidget passes call_mode='bridge' or 'browser' when the
+    v6.2.0: MessengerWidget passes call_mode='bridge' or 'browser' when the
     SDR picks how the call should be connected. Verify the param flows through.
     """
 
@@ -632,7 +755,7 @@ class TestCallMode:
 
         with patch("routes.dialer_routes.dialer_service.initiate_call") as mock_call:
             mock_call.return_value = {
-                "success": True, "provider": "rcm",
+                "success": True, "provider": "messenger",
                 "call_id": "cv-bridge-001", "call_mode": "bridge",
             }
             resp = client.post("/api/calls/start", json={
@@ -642,7 +765,7 @@ class TestCallMode:
             })
 
         assert resp.status_code == 200
-        assert resp.json()["provider"] == "rcm"
+        assert resp.json()["provider"] == "messenger"
         mock_call.assert_called_once()
 
     def test_call_mode_browser_accepted(self, db):
@@ -652,7 +775,7 @@ class TestCallMode:
 
         with patch("routes.dialer_routes.dialer_service.initiate_call") as mock_call:
             mock_call.return_value = {
-                "success": True, "provider": "rcm",
+                "success": True, "provider": "messenger",
                 "call_id": "cv-browser-001", "call_mode": "browser",
             }
             resp = client.post("/api/calls/start", json={
@@ -671,7 +794,7 @@ class TestCallMode:
 
         with patch("routes.dialer_routes.dialer_service.initiate_call") as mock_call:
             mock_call.return_value = {
-                "success": True, "provider": "rcm", "call_id": "cv-default-001",
+                "success": True, "provider": "messenger", "call_id": "cv-default-001",
             }
             resp = client.post("/api/calls/start", json={
                 "lead_id": lead.id, "phone_number": "+919876543210",
@@ -750,11 +873,11 @@ class TestWebhookPendingMatchUserScoping:
         assert pending_b.provider_call_id == "ac-webhook-999"
         assert pending_a.provider_call_id == ""
 
-    def test_webhook_matches_the_correct_users_pending_row_rcm(self, db):
+    def test_webhook_matches_the_correct_users_pending_row_messenger(self, db):
         """
-        Same fix, same handle_webhook() — RCM's own webhook also sets
-        user_email (rcm_provider.py:735), so the user_id scope applies
-        to it too, not just Aircall. RCM's initiate_call() normally
+        Same fix, same handle_webhook() — Alternate Messenger's own webhook also sets
+        user_email (messaging_provider.py:735), so the user_id scope applies
+        to it too, not just Aircall. Alternate Messenger's initiate_call() normally
         returns its call_id synchronously, so its real calls rarely land in
         this fallback branch — but the branch is shared code, so it needs the
         same proof of correctness Aircall got, not just an assumption.
@@ -769,12 +892,12 @@ class TestWebhookPendingMatchUserScoping:
         shared_phone = "+919876500000"
 
         pending_a = models.DialerCall(
-            lead_id=None, user_id=user_a.id, provider="rcm", provider_call_id="",
+            lead_id=None, user_id=user_a.id, provider="messenger", provider_call_id="",
             phone_number=shared_phone, status="CALL_STARTED", direction="outbound",
             started_at=datetime.now(timezone.utc),
         )
         pending_b = models.DialerCall(
-            lead_id=None, user_id=user_b.id, provider="rcm", provider_call_id="",
+            lead_id=None, user_id=user_b.id, provider="messenger", provider_call_id="",
             phone_number=shared_phone, status="CALL_STARTED", direction="outbound",
             started_at=datetime.now(timezone.utc),
         )
@@ -785,17 +908,17 @@ class TestWebhookPendingMatchUserScoping:
         from dialer_provider import NormalizedCallEvent, CallEventType
         event = NormalizedCallEvent(
             event_type=CallEventType.CALL_ANSWERED,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-webhook-999",
             phone_number=shared_phone,
             user_email="agent.b@t.com",  # this webhook belongs to agent B
         )
         provider_mock = MagicMock()
-        provider_mock.provider_name = "rcm"
+        provider_mock.provider_name = "messenger"
         provider_mock.handle_webhook.return_value = event
 
         with patch("dialer_service._instantiate_provider", return_value=provider_mock):
-            result = dialer_service.handle_webhook(db, "rcm", {})
+            result = dialer_service.handle_webhook(db, "messenger", {})
 
         assert result["ok"] is True
         db.refresh(pending_a)
@@ -808,10 +931,10 @@ class TestWebhookLeadAutoCreation:
     """
     Aircall's live webhook previously left lead_id=None on any call to a
     number that didn't already match a lead — even when the calling SDR was
-    a known RCM user. _find_or_create_lead_by_phone (mirroring the
+    a known Alternate CRM user. _find_or_create_lead_by_phone (mirroring the
     Klenty nightly sync's own create-on-miss logic) now auto-creates and
     assigns a lead in that case, per policy: tracking is mandatory for any
-    call made by a user who exists in RCM, whether or not the dialed
+    call made by a user who exists in Alternate CRM, whether or not the dialed
     lead already exists.
     """
 
@@ -852,8 +975,8 @@ class TestWebhookLeadAutoCreation:
         assert sdr in lead.assigned_users
 
     def test_does_not_create_lead_when_sdr_is_unknown(self, db):
-        """A call from a user who isn't in RCM at all — no lead should
-        be created; tracking is mandatory only for RCM users."""
+        """A call from a user who isn't in Alternate CRM at all — no lead should
+        be created; tracking is mandatory only for Alternate CRM users."""
         import dialer_service
         import models
         phone = "+919876522222"
@@ -861,7 +984,7 @@ class TestWebhookLeadAutoCreation:
         provider_mock = MagicMock()
         provider_mock.provider_name = "aircall"
         provider_mock.handle_webhook.return_value = self._webhook_event(
-            phone, "not-a-rcm-user@t.com", provider_call_id="ac-autolead-2"
+            phone, "not-a-alternatecrm-user@t.com", provider_call_id="ac-autolead-2"
         )
 
         with patch("dialer_service._instantiate_provider", return_value=provider_mock):
@@ -900,7 +1023,7 @@ class TestWebhookLeadAutoCreation:
 
 class TestWebhookProviderDisposition:
     """
-    provider_disposition is the only connect signal Aircall/RCM calls
+    provider_disposition is the only connect signal Aircall/Alternate Messenger calls
     get when no SDR ever manually logs an outcome — previously only Klenty's
     sync populated it, so those calls always read as 0% connected regardless
     of whether the callee actually answered. The webhook now writes
@@ -964,7 +1087,7 @@ class TestWebhookProviderDisposition:
 
 class TestAdHocDial:
     """
-    RCMWidget.openForManualDial() lets SDRs dial without navigating to
+    MessengerWidget.openForManualDial() lets SDRs dial without navigating to
     a lead first. The API must handle missing lead_id gracefully.
     """
 
@@ -974,7 +1097,7 @@ class TestAdHocDial:
 
         with patch("routes.dialer_routes.dialer_service.initiate_call") as mock_call:
             mock_call.return_value = {
-                "success": True, "provider": "rcm",
+                "success": True, "provider": "messenger",
                 "call_id": "cv-adhoc-bridge", "call_mode": "bridge",
             }
             resp = client.post("/api/calls/start", json={
@@ -984,7 +1107,7 @@ class TestAdHocDial:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["provider"] == "rcm"
+        assert data["provider"] == "messenger"
         assert data.get("lead_id"), "Anonymous lead must be created and returned"
         mock_call.assert_called_once()
 
@@ -994,7 +1117,7 @@ class TestAdHocDial:
 
         with patch("routes.dialer_routes.dialer_service.initiate_call") as mock_call:
             mock_call.return_value = {
-                "success": True, "provider": "rcm",
+                "success": True, "provider": "messenger",
                 "call_id": "cv-adhoc-browser", "call_mode": "browser",
             }
             resp = client.post("/api/calls/start", json={
@@ -1013,105 +1136,58 @@ class TestAdHocDial:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# v6.1.0 — SF Email Sanitization (production bug fix)
+# v6.2.0 — Alternate Messenger Per-SDR Config & Widget Init
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestEmailSanitization:
+class TestMessengerPerSDRConfig:
     """
-    Production bug: SF rejected emails with spaces (e.g. 'user @domain. com').
-    sanitize_email() strips all whitespace before the SF write-back.
-    """
-
-    def _get_fn(self):
-        """Import sanitize_email from wherever it lives."""
-        for mod in ("routes.dialer_routes", "routes.sf_routes", "routes.call_routes"):
-            try:
-                import importlib
-                m = importlib.import_module(mod)
-                return getattr(m, "sanitize_email", None)
-            except ImportError:
-                continue
-        return None
-
-    def test_strips_internal_spaces(self):
-        fn = self._get_fn()
-        if fn is None:
-            pytest.skip("sanitize_email not importable")
-        assert fn("shubhankar.m @irishealthservices. com") == \
-               "shubhankar.m@irishealthservices.com"
-
-    def test_strips_leading_trailing_spaces(self):
-        fn = self._get_fn()
-        if fn is None:
-            pytest.skip("sanitize_email not importable")
-        assert fn("  user@domain.com  ") == "user@domain.com"
-
-    def test_none_returns_none(self):
-        fn = self._get_fn()
-        if fn is None:
-            pytest.skip("sanitize_email not importable")
-        assert fn(None) is None
-
-    def test_empty_string_returned_as_is(self):
-        fn = self._get_fn()
-        if fn is None:
-            pytest.skip("sanitize_email not importable")
-        assert fn("") == ""
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# v6.2.0 — RCM Per-SDR Config & Widget Init
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestRCMPerSdrConfig:
-    """
-    GET /api/dialer/status must return sender_id and from_number for RCM
-    SDRs so RCMWidget.init() can set them without a second API call.
+    GET /api/dialer/status must return sender_id and from_number for Alternate Messenger
+    SDRs so MessengerWidget.init() can set them without a second API call.
     """
 
-    def test_status_includes_sender_id_for_rcm_user(self, db):
+    def test_status_includes_sender_id_for_messenger_user(self, db):
         client = _make_dialer_app(db)
 
         # Create a test user so the DB query in the route finds someone
         user = create_test_user(db, email="conv_sdr@t.com", role="SDR")
-        user.rcm_from_number = "+14155551234"
+        user.messenger_from_number = "+14155551234"
         db.commit()
 
         mock_settings = MagicMock()
-        mock_settings.rcm_sender_id = "cv-sender-42"
+        mock_settings.messenger_sender_id = "cv-sender-42"
 
         with patch("routes.dialer_routes.dialer_service.get_provider_for_user") as mock_prov, \
              patch("routes.dialer_routes.dialer_service._get_settings", return_value=mock_settings):
             provider_mock = MagicMock()
-            provider_mock.provider_name = "rcm"
+            provider_mock.provider_name = "messenger"
             mock_prov.return_value = provider_mock
             resp = client.get("/api/dialer/status")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["active"] is True
-        assert data["provider"] == "rcm"
+        assert data["provider"] == "messenger"
         assert data.get("sender_id") == "cv-sender-42"
 
-    def test_status_returns_from_number_for_rcm(self, db):
+    def test_status_returns_from_number_for_messenger(self, db):
         """from_number is required for PSTN bridge calls."""
         client = _make_dialer_app(db)
 
         # The route reads from_number via user["sub"] = SUPER_ADMIN["sub"] = "test-user-id"
-        # So we must set rcm_from_number on that exact DB user.
+        # So we must set messenger_from_number on that exact DB user.
         import models as _m
         admin_user = db.query(_m.User).filter(_m.User.id == "test-user-id").first()
         if admin_user:
-            admin_user.rcm_from_number = "+14155551234"
+            admin_user.messenger_from_number = "+14155551234"
             db.commit()
 
         mock_settings = MagicMock()
-        mock_settings.rcm_sender_id = "cv-sender-42"
+        mock_settings.messenger_sender_id = "cv-sender-42"
 
         with patch("routes.dialer_routes.dialer_service.get_provider_for_user") as mock_prov, \
              patch("routes.dialer_routes.dialer_service._get_settings", return_value=mock_settings):
             provider_mock = MagicMock()
-            provider_mock.provider_name = "rcm"
+            provider_mock.provider_name = "messenger"
             mock_prov.return_value = provider_mock
             resp = client.get("/api/dialer/status")
 
@@ -1120,7 +1196,7 @@ class TestRCMPerSdrConfig:
         assert "from_number" in data
 
     def test_aircall_status_has_no_sender_id(self, db):
-        """Aircall status should not include a RCM sender_id."""
+        """Aircall status should not include a Alternate Messenger sender_id."""
         client = _make_dialer_app(db)
 
         with patch("routes.dialer_routes.dialer_service.get_provider_for_user") as mock_prov, \
@@ -1139,26 +1215,26 @@ class TestRCMPerSdrConfig:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# v6.4.7 — RCM Declined Call: ended_at Guard + Ringing Timeout
+# v6.4.7 — Alternate Messenger Declined Call: ended_at Guard + Ringing Timeout
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestCallStatusGuards:
     """
     v6.4.7: Two backend guards to prevent the dialer UI from freezing on
-    'Ringing...' when a RCM call is declined:
+    'Ringing...' when a Alternate Messenger call is declined:
 
     Guard 1 — ended_at override:
         If ended_at is already set on the DialerCall (written by the
-        disconnect endpoint or a RCM webhook) but effective_status
-        is still CALL_STARTED (RCM REST API returning stale 'ringing'),
+        disconnect endpoint or a Alternate Messenger webhook) but effective_status
+        is still CALL_STARTED (Alternate Messenger REST API returning stale 'ringing'),
         the status endpoint must return CALL_ENDED immediately.
 
     Guard 2 — Ringing timeout:
-        If a RCM call has been in CALL_STARTED for >50 seconds with
+        If a Alternate Messenger call has been in CALL_STARTED for >50 seconds with
         no ended_at, it should be auto-ended (declined/no-answer scenario).
     """
 
-    def _make_rcm_call(self, db, status="CALL_STARTED",
+    def _make_messenger_call(self, db, status="CALL_STARTED",
                                started_at=None, ended_at=None, outcome=None):
         """Create a DialerCall row for testing."""
         import models
@@ -1166,7 +1242,7 @@ class TestCallStatusGuards:
         user_id = "test-user-id"  # matches SUPER_ADMIN in conftest
         call = models.DialerCall(
             user_id=user_id,
-            provider="rcm",
+            provider="messenger",
             phone_number="+919876543210",
             status=status,
             direction="outbound",
@@ -1183,7 +1259,7 @@ class TestCallStatusGuards:
 
     def test_guard1_ended_at_set_returns_call_ended(self, db):
         """
-        Guard 1: If ended_at is set on the DB record but the RCM
+        Guard 1: If ended_at is set on the DB record but the Alternate Messenger
         REST API is still returning 'ringing', the status endpoint must
         return CALL_ENDED (not CALL_STARTED).
 
@@ -1192,18 +1268,18 @@ class TestCallStatusGuards:
         from datetime import datetime, timezone, timedelta
 
         client = _make_dialer_app(db)
-        call = self._make_rcm_call(
+        call = self._make_messenger_call(
             db,
             status="CALL_STARTED",
             started_at=datetime.now(timezone.utc) - timedelta(seconds=35),
             ended_at=datetime.now(timezone.utc),   # ended_at already set
         )
 
-        # Provider API still returns stale 'ringing' — simulates RCM lag
+        # Provider API still returns stale 'ringing' — simulates Alternate Messenger lag
         mock_provider = MagicMock()
-        mock_provider.provider_name = "rcm"
+        mock_provider.provider_name = "messenger"
         mock_provider.get_call_status = MagicMock(return_value={
-            "status": "ringing",   # stale — RCM API hasn't caught up
+            "status": "ringing",   # stale — Alternate Messenger API hasn't caught up
             "raw": {"status": "ringing"},
         })
 
@@ -1227,7 +1303,7 @@ class TestCallStatusGuards:
         from datetime import datetime, timezone, timedelta
 
         client = _make_dialer_app(db)
-        call = self._make_rcm_call(
+        call = self._make_messenger_call(
             db,
             status="CALL_STARTED",
             started_at=datetime.now(timezone.utc) - timedelta(seconds=10),
@@ -1235,7 +1311,7 @@ class TestCallStatusGuards:
         )
 
         mock_provider = MagicMock()
-        mock_provider.provider_name = "rcm"
+        mock_provider.provider_name = "messenger"
         mock_provider.get_call_status = MagicMock(return_value={
             "status": "ringing",
             "raw": {"status": "ringing"},
@@ -1260,7 +1336,7 @@ class TestCallStatusGuards:
         from datetime import datetime, timezone
 
         client = _make_dialer_app(db)
-        call = self._make_rcm_call(
+        call = self._make_messenger_call(
             db,
             status="CALL_ENDED",
             ended_at=datetime.now(timezone.utc),
@@ -1268,7 +1344,7 @@ class TestCallStatusGuards:
         )
 
         mock_provider = MagicMock()
-        mock_provider.provider_name = "rcm"
+        mock_provider.provider_name = "messenger"
 
         with patch("routes.dialer_routes.dialer_service.get_active_provider",
                    return_value=mock_provider):
@@ -1281,24 +1357,24 @@ class TestCallStatusGuards:
 
     def test_guard2_auto_ends_stuck_ringing_call(self, db):
         """
-        Guard 2: A RCM call stuck in CALL_STARTED for >50s with no
+        Guard 2: A Alternate Messenger call stuck in CALL_STARTED for >50s with no
         ended_at must be auto-ended. Simulates a declined call where the
-        RCM webhook never arrives.
+        Alternate Messenger webhook never arrives.
         """
         from datetime import datetime, timezone, timedelta
         import models
 
         client = _make_dialer_app(db)
-        call = self._make_rcm_call(
+        call = self._make_messenger_call(
             db,
             status="CALL_STARTED",
             started_at=datetime.now(timezone.utc) - timedelta(seconds=55),  # >50s
             ended_at=None,
         )
 
-        # RCM API still returns ringing (webhook hasn't fired)
+        # Alternate Messenger API still returns ringing (webhook hasn't fired)
         mock_provider = MagicMock()
-        mock_provider.provider_name = "rcm"
+        mock_provider.provider_name = "messenger"
         mock_provider.get_call_status = MagicMock(return_value={
             "status": "ringing",
             "raw": {"status": "ringing"},
@@ -1327,7 +1403,7 @@ class TestCallStatusGuards:
         from datetime import datetime, timezone, timedelta
 
         client = _make_dialer_app(db)
-        call = self._make_rcm_call(
+        call = self._make_messenger_call(
             db,
             status="CALL_STARTED",
             started_at=datetime.now(timezone.utc) - timedelta(seconds=30),  # only 30s
@@ -1335,7 +1411,7 @@ class TestCallStatusGuards:
         )
 
         mock_provider = MagicMock()
-        mock_provider.provider_name = "rcm"
+        mock_provider.provider_name = "messenger"
         mock_provider.get_call_status = MagicMock(return_value={
             "status": "ringing",
             "raw": {"status": "ringing"},
@@ -1352,9 +1428,9 @@ class TestCallStatusGuards:
             f"Guard 2 should not fire at 30s, got {data['status']}"
         )
 
-    def test_guard2_only_applies_to_rcm(self, db):
+    def test_guard2_only_applies_to_messenger(self, db):
         """
-        Guard 2 must NOT auto-end non-RCM (Aircall) calls that are
+        Guard 2 must NOT auto-end non-Alternate Messenger (Aircall) calls that are
         stuck in CALL_STARTED — different providers have different behaviour.
         """
         from datetime import datetime, timezone, timedelta
@@ -1393,11 +1469,105 @@ class TestCallStatusGuards:
         # should not have fired (check DB record)
         db.refresh(call)
         # The DB record's ended_at should NOT be set by Guard 2
-        # (Guard 2 only applies to RCM)
+        # (Guard 2 only applies to Alternate Messenger)
         # If provider returned 'ringing', the status stays CALL_STARTED
-        assert call.ended_at is None or call.provider != "rcm", (
-            "Guard 2 must not fire for non-RCM providers"
+        assert call.ended_at is None or call.provider != "messenger", (
+            "Guard 2 must not fire for non-Alternate Messenger providers"
         )
+
+    # ── Phone-match fallback when no provider_call_id was ever recorded ───────
+
+    def test_aircall_status_poll_heals_via_phone_match_when_id_never_recorded(self, db):
+        """RCA 2026-09-03: this is the poll that drives the frontend's
+        outcome-modal (app.js's _startAircallOutcomePolling calls this every
+        10s). Before this fix, a bridge-mode Aircall call whose
+        provider_call_id stayed empty (and whose webhook never arrived)
+        could never progress past CALL_STARTED here — the SDR would be
+        stuck until the 10-minute client-side timeout forced the modal open
+        anyway. Falls back to the same phone+recency lookup used by the
+        pre-dial self-heal guard."""
+        from datetime import datetime, timezone, timedelta
+        import models
+
+        client = _make_dialer_app(db)
+        owner = db.query(models.User).filter(models.User.id == "test-user-id").first()
+        if not owner:
+            owner = models.User(id="test-user-id", email="admin@test.com", role="Super Admin")
+            db.add(owner)
+            db.commit()
+        call = models.DialerCall(
+            user_id="test-user-id",
+            provider="aircall",
+            provider_call_id="",
+            phone_number="1-800-263-3394",
+            status="CALL_STARTED",
+            direction="outbound",
+            started_at=datetime.now(timezone.utc) - timedelta(seconds=90),
+        )
+        db.add(call)
+        db.commit()
+        db.refresh(call)
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "aircall"
+        mock_provider.find_recent_call_by_phone = MagicMock(
+            return_value={"id": "ac-poll-backfilled", "ended": True, "duration": 17}
+        )
+
+        with patch("routes.dialer_routes.dialer_service.get_provider_for_user",
+                   return_value=mock_provider):
+            resp = client.get(f"/api/calls/{call.id}/status")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "CALL_ENDED"
+        mock_provider.find_recent_call_by_phone.assert_called_once()
+        # Scoped to the call's owner: Aircall's call log is company-wide, so an
+        # unscoped lookup can match a teammate's call to the same number.
+        assert "admin@test.com" in mock_provider.find_recent_call_by_phone.call_args.args
+        db.refresh(call)
+        assert call.status == "CALL_ENDED"
+        assert call.provider_call_id == "ac-poll-backfilled"
+        assert call.duration == 17
+
+    def test_aircall_status_poll_stays_started_when_phone_match_reports_still_active(self, db):
+        from datetime import datetime, timezone, timedelta
+        import models
+
+        client = _make_dialer_app(db)
+        owner = db.query(models.User).filter(models.User.id == "test-user-id").first()
+        if not owner:
+            owner = models.User(id="test-user-id", email="admin@test.com", role="Super Admin")
+            db.add(owner)
+            db.commit()
+        call = models.DialerCall(
+            user_id="test-user-id",
+            provider="aircall",
+            provider_call_id="",
+            phone_number="1-800-263-3394",
+            status="CALL_STARTED",
+            direction="outbound",
+            started_at=datetime.now(timezone.utc) - timedelta(seconds=20),
+        )
+        db.add(call)
+        db.commit()
+        db.refresh(call)
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "aircall"
+        mock_provider.find_recent_call_by_phone = MagicMock(
+            return_value={"id": "ac-poll-active", "ended": False, "duration": None}
+        )
+
+        with patch("routes.dialer_routes.dialer_service.get_provider_for_user",
+                   return_value=mock_provider):
+            resp = client.get(f"/api/calls/{call.id}/status")
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "CALL_STARTED"
+        db.refresh(call)
+        assert call.status == "CALL_STARTED"
+        assert call.provider_call_id == ""
 
     # ── Combined scenario: real E2E declined call ─────────────────────────────
 
@@ -1409,7 +1579,7 @@ class TestCallStatusGuards:
         1. Call created (CALL_STARTED, no ended_at)
         2. User declines on their phone
         3. Disconnect endpoint sets ended_at (call.ended_at = now)
-        4. Status poll runs — RCM still returns 'ringing'
+        4. Status poll runs — Alternate Messenger still returns 'ringing'
         5. Guard 1 sees ended_at → returns CALL_ENDED immediately ✅
         """
         from datetime import datetime, timezone, timedelta
@@ -1418,7 +1588,7 @@ class TestCallStatusGuards:
         client = _make_dialer_app(db)
 
         # Step 1: call starts
-        call = self._make_rcm_call(
+        call = self._make_messenger_call(
             db,
             status="CALL_STARTED",
             started_at=datetime.now(timezone.utc) - timedelta(seconds=37),
@@ -1429,11 +1599,11 @@ class TestCallStatusGuards:
         call.ended_at = datetime.now(timezone.utc)
         db.commit()
 
-        # Step 4: status poll with stale RCM response
+        # Step 4: status poll with stale Alternate Messenger response
         mock_provider = MagicMock()
-        mock_provider.provider_name = "rcm"
+        mock_provider.provider_name = "messenger"
         mock_provider.get_call_status = MagicMock(return_value={
-            "status": "ringing",  # RCM still reports ringing
+            "status": "ringing",  # Alternate Messenger still reports ringing
             "raw": {"status": "ringing"},
         })
 
@@ -1444,7 +1614,7 @@ class TestCallStatusGuards:
         # Step 5: Guard 1 catches it
         assert resp.status_code == 200
         assert resp.json()["status"] == "CALL_ENDED", (
-            "Declined call (ended_at set, RCM still ringing) "
+            "Declined call (ended_at set, Alternate Messenger still ringing) "
             "must return CALL_ENDED via Guard 1"
         )
         assert resp.json()["ended_at"] is not None
@@ -1531,6 +1701,25 @@ class TestDialerToggle:
             assert resp.status_code == 200
             assert resp.json()["dialer_enabled"] is False
 
+    def test_everywhere_login_stamps_timestamp(self, db):
+        """RCA 2026-08-18: the org-wide flag can't tell us who actually adopted
+        Everywhere — this endpoint is the only server-side adoption signal."""
+        client = _make_dialer_app(db)
+        import models
+        user = db.query(models.User).filter(models.User.id == "test-user-id").first()
+        if not user:
+            user = models.User(id="test-user-id", email="admin@test.com", role="Super Admin")
+            db.add(user)
+        user.aircall_everywhere_last_login_at = None
+        db.commit()
+
+        resp = client.post("/api/dialer/everywhere-login")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+        db.refresh(user)
+        assert user.aircall_everywhere_last_login_at is not None
+
     def test_toggle_dialer_non_existent_user_returns_404(self, db):
         client = _make_dialer_app(db)
         import models
@@ -1585,7 +1774,7 @@ class TestAutoMoveOnDial:
         for attr in ("livekit_token", "livekit_url", "room_name", "agent_join_via_phone"):
             setattr(mock_result, attr, None)
         provider = MagicMock()
-        provider.provider_name = "rcm"
+        provider.provider_name = "messenger"
         provider.initiate_call = MagicMock(return_value=mock_result)
         provider.from_number = ""
         return provider, mock_result
@@ -1759,15 +1948,11 @@ class TestCallStartSeverityLogging:
             f"Expected severity='warning' for 405/unavailable error, got '{call_kwargs['severity']}'"
         )
 
-    def test_aircall_dnd_status_logs_as_warning(self, db):
-        """DND availability message must log severity='warning'."""
-        mock_log = self._make_failing_call(
-            db,
-            "Priya Sharma is currently marked as 'do_not_disturb' in Aircall and cannot "
-            "receive a new outbound call. Ask them to set their status to Available."
-        )
-        call_kwargs = mock_log.call_args[1]
-        assert call_kwargs["severity"] == "warning"
+    # (removed) test_aircall_dnd_status_logs_as_warning — asserted the severity
+    # downgrade for the "is currently marked as 'do_not_disturb'" message, which
+    # no longer exists anywhere: the availability pre-check that produced it was
+    # dead code Aircall could never trigger (RCA 2026-09-03) and was deleted
+    # along with the matching phrase in dialer_routes' severity list.
 
     def test_aircall_no_number_assigned_logs_as_warning(self, db):
         """'not assigned to any phone number' must log severity='warning'."""
@@ -1775,6 +1960,18 @@ class TestCallStartSeverityLogging:
             db,
             "Aircall user 'Rahul Mehta' is not assigned to any phone number. "
             "In Aircall Dashboard → Numbers → select a number → add this user."
+        )
+        call_kwargs = mock_log.call_args[1]
+        assert call_kwargs["severity"] == "warning"
+
+    def test_active_call_in_progress_logs_as_warning(self, db):
+        """RCA 2026-09-07: 'You already have an active call in progress' is the
+        same operational category as the two phrases above and must also log
+        severity='warning', not 'critical'."""
+        mock_log = self._make_failing_call(
+            db,
+            "You already have an active call in progress. "
+            "Please hang up the current call before starting a new one."
         )
         call_kwargs = mock_log.call_args[1]
         assert call_kwargs["severity"] == "warning"
@@ -1806,19 +2003,19 @@ class TestCallStartSeverityLogging:
 
 class TestWebhookIdempotency:
     """
-    Gap 1: RCM retries webhook delivery if our endpoint is slow (>5s).
+    Gap 1: Alternate Messenger retries webhook delivery if our endpoint is slow (>5s).
     A second CALL_ENDED for the same call must not overwrite ended_at or duration.
 
     Pre-condition: ended_at and status=CALL_ENDED already set by first webhook.
     Post-condition: second identical webhook leaves ended_at and duration unchanged.
     """
 
-    def _make_rcm_settings(self, db):
+    def _make_messenger_settings(self, db):
         from conftest import create_sync_settings
         s = create_sync_settings(db)
-        s.dialer_provider = "rcm"
-        s.rcm_api_key = "test-key"
-        s.rcm_user_id = "300956"
+        s.dialer_provider = "messenger"
+        s.messenger_api_key = "test-key"
+        s.messenger_user_id = "300956"
         db.commit()
         return s
 
@@ -1831,14 +2028,14 @@ class TestWebhookIdempotency:
         import models, dialer_service
         from unittest.mock import patch, MagicMock
 
-        self._make_rcm_settings(db)
+        self._make_messenger_settings(db)
         lead = create_test_lead(db, email="idempotent@test.com")
         first_ended_at = datetime(2026, 5, 29, 8, 0, 0, tzinfo=timezone.utc)
 
         # Call already ended (first webhook already processed)
         call = models.DialerCall(
             lead_id=lead.id,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-idem-001",
             phone_number="+919876543210",
             status="CALL_ENDED",
@@ -1850,15 +2047,15 @@ class TestWebhookIdempotency:
         db.add(call)
         db.commit()
 
-        # Second CALL_ENDED webhook (RCM retry, 5s later)
+        # Second CALL_ENDED webhook (Alternate Messenger retry, 5s later)
         second_ended_at = first_ended_at + timedelta(seconds=5)
         mock_provider = MagicMock()
-        mock_provider.provider_name = "rcm"
-        from rcm_provider import NormalizedCallEvent
+        mock_provider.provider_name = "messenger"
+        from messaging_provider import NormalizedCallEvent
         from dialer_service import CallEventType
         mock_event = NormalizedCallEvent(
             event_type=CallEventType.CALL_ENDED,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-idem-001",
             phone_number="+919876543210",
             ended_at=second_ended_at,
@@ -1867,7 +2064,7 @@ class TestWebhookIdempotency:
         mock_provider.handle_webhook.return_value = mock_event
 
         with patch("dialer_service._instantiate_provider", return_value=mock_provider):
-            dialer_service.handle_webhook(db, "rcm", {})
+            dialer_service.handle_webhook(db, "messenger", {})
 
         db.refresh(call)
         # SQLite strips tzinfo on round-trip — compare naive timestamps
@@ -1878,18 +2075,71 @@ class TestWebhookIdempotency:
             f"duration overwritten: expected 60, got {call.duration}"
         )
 
+    def test_duplicate_call_ended_does_not_double_count_times_called(self, db):
+        """RCA 2026-08-21 (live): a redelivered CALL_ENDED webhook (Alternate Messenger/
+        Aircall retry a real call.ended once) must not increment
+        lead.times_called a second time -- ended_at itself already had this
+        exact guard, but the times_called side-effect two lines below it
+        never did, so every retried delivery double-counted independent of
+        any SDR action."""
+        from datetime import datetime, timezone, timedelta
+        import models, dialer_service
+        from unittest.mock import patch, MagicMock
+
+        self._make_messenger_settings(db)
+        lead = create_test_lead(db, email="idempotent-times-called@test.com")
+        lead.times_called = 1  # first webhook already counted this call
+        db.commit()
+        first_ended_at = datetime(2026, 5, 29, 8, 0, 0, tzinfo=timezone.utc)
+
+        call = models.DialerCall(
+            lead_id=lead.id,
+            provider="messenger",
+            provider_call_id="cv-idem-times-called",
+            phone_number="+919876543210",
+            status="CALL_ENDED",
+            direction="outbound",
+            started_at=datetime(2026, 5, 29, 7, 59, 0, tzinfo=timezone.utc),
+            ended_at=first_ended_at,
+            duration=60,
+        )
+        db.add(call)
+        db.commit()
+
+        second_ended_at = first_ended_at + timedelta(seconds=5)
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "messenger"
+        from messaging_provider import NormalizedCallEvent
+        from dialer_service import CallEventType
+        mock_event = NormalizedCallEvent(
+            event_type=CallEventType.CALL_ENDED,
+            provider="messenger",
+            provider_call_id="cv-idem-times-called",
+            phone_number="+919876543210",
+            direction="outbound",
+            ended_at=second_ended_at,
+            duration=60,
+        )
+        mock_provider.handle_webhook.return_value = mock_event
+
+        with patch("dialer_service._instantiate_provider", return_value=mock_provider):
+            dialer_service.handle_webhook(db, "messenger", {})
+
+        db.refresh(lead)
+        assert lead.times_called == 1, f"times_called double-counted on retry: {lead.times_called}"
+
     def test_duplicate_call_ended_status_stays_call_ended(self, db):
         """Status must remain CALL_ENDED after duplicate webhook — not regress."""
         from datetime import datetime, timezone
         import models, dialer_service
         from unittest.mock import patch, MagicMock
 
-        self._make_rcm_settings(db)
+        self._make_messenger_settings(db)
         lead = create_test_lead(db, email="idempotent2@test.com")
 
         call = models.DialerCall(
             lead_id=lead.id,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-idem-002",
             phone_number="+919876543210",
             status="CALL_ENDED",
@@ -1901,19 +2151,19 @@ class TestWebhookIdempotency:
         db.commit()
 
         mock_provider = MagicMock()
-        mock_provider.provider_name = "rcm"
-        from rcm_provider import NormalizedCallEvent
+        mock_provider.provider_name = "messenger"
+        from messaging_provider import NormalizedCallEvent
         from dialer_service import CallEventType
         mock_event = NormalizedCallEvent(
             event_type=CallEventType.CALL_ENDED,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-idem-002",
             phone_number="+919876543210",
         )
         mock_provider.handle_webhook.return_value = mock_event
 
         with patch("dialer_service._instantiate_provider", return_value=mock_provider):
-            result = dialer_service.handle_webhook(db, "rcm", {})
+            result = dialer_service.handle_webhook(db, "messenger", {})
 
         db.refresh(call)
         assert call.status == "CALL_ENDED"
@@ -1921,7 +2171,7 @@ class TestWebhookIdempotency:
 
     def test_ec17_late_answered_webhook_cannot_reopen_ended_call(self, db):
         """
-        EC-17 regression: RCM sends a late 'call.answered' webhook ~50s
+        EC-17 regression: Alternate Messenger sends a late 'call.answered' webhook ~50s
         after the SDR clicked Disconnect. Without the terminal-state guard this
         overwrites CALL_ENDED → CALL_ANSWERED, recreating a ghost active call
         that blocks all future dials for up to 90 minutes.
@@ -1933,14 +2183,14 @@ class TestWebhookIdempotency:
         import models, dialer_service
         from unittest.mock import patch, MagicMock
 
-        self._make_rcm_settings(db)
+        self._make_messenger_settings(db)
         lead = create_test_lead(db, email="ec17@test.com")
         ended_at = datetime(2026, 6, 12, 7, 44, 22, tzinfo=timezone.utc)
 
         # Disconnect already ran — call is CALL_ENDED with ended_at set
         call = models.DialerCall(
             lead_id=lead.id,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-ec17-001",
             phone_number="+919876543210",
             status="CALL_ENDED",
@@ -1952,14 +2202,14 @@ class TestWebhookIdempotency:
         db.add(call)
         db.commit()
 
-        # Late RCM webhook: 'call.answered' arrives 50s after disconnect
+        # Late Alternate Messenger webhook: 'call.answered' arrives 50s after disconnect
         mock_provider = MagicMock()
-        mock_provider.provider_name = "rcm"
-        from rcm_provider import NormalizedCallEvent
+        mock_provider.provider_name = "messenger"
+        from messaging_provider import NormalizedCallEvent
         from dialer_service import CallEventType
         late_answered = NormalizedCallEvent(
             event_type=CallEventType.CALL_ANSWERED,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-ec17-001",
             phone_number="+919876543210",
             answered_at=ended_at + timedelta(seconds=50),  # arrived after disconnect
@@ -1967,7 +2217,7 @@ class TestWebhookIdempotency:
         mock_provider.handle_webhook.return_value = late_answered
 
         with patch("dialer_service._instantiate_provider", return_value=mock_provider):
-            dialer_service.handle_webhook(db, "rcm", {})
+            dialer_service.handle_webhook(db, "messenger", {})
 
         db.refresh(call)
         # EC-17: status must NOT have been downgraded
@@ -1981,7 +2231,7 @@ class TestWebhookIdempotency:
     def test_race_duplicate_insert_recovers_via_refetch(self, db):
         """
         RCA 2026-07-27: two near-simultaneous webhooks for a call placed
-        directly in Aircall (no matching RCM-initiated pending record)
+        directly in Aircall (no matching Alternate CRM-initiated pending record)
         can both miss the initial provider_call_id lookup and both try to
         INSERT a new DialerCall — the second one hits the
         idx_dialer_calls_dedup unique constraint. Before the fix, this
@@ -2067,7 +2317,7 @@ class TestWebhookIdempotency:
 
     def test_pending_match_tolerates_country_code_mismatch(self, db):
         """
-        RCA 2026-07-29: the RCM-initiated placeholder stores the
+        RCA 2026-07-29: the Alternate CRM-initiated placeholder stores the
         lead's phone as dialed ("(720) 974-7591", no country code), but
         Aircall's webhook reports the same call with a country code
         ("+1 720-974-7591"). A strict digit-equality match ("7209747591" !=
@@ -2091,7 +2341,7 @@ class TestWebhookIdempotency:
             phone_number="(720) 974-7591",
             status="CALL_STARTED",
             direction="outbound",
-            source="rcm",
+            source="alternatecrm",
         )
         db.add(placeholder)
         db.commit()
@@ -2140,7 +2390,7 @@ class TestConcurrentCallGuard:
         for attr in ("livekit_token", "livekit_url", "room_name", "agent_join_via_phone"):
             setattr(mock_result, attr, None)
         provider = MagicMock()
-        provider.provider_name = "rcm"
+        provider.provider_name = "messenger"
         provider.initiate_call = MagicMock(return_value=mock_result)
         provider.from_number = ""
         return provider, mock_result
@@ -2155,9 +2405,9 @@ class TestConcurrentCallGuard:
         from datetime import datetime, timezone
 
         s = create_sync_settings(db)
-        s.dialer_provider = "rcm"
-        s.rcm_api_key = "test-key"
-        s.rcm_user_id = "300956"
+        s.dialer_provider = "messenger"
+        s.messenger_api_key = "test-key"
+        s.messenger_user_id = "300956"
         db.commit()
 
         user = create_test_user(db, email="concurrent@test.com", role="SDR")
@@ -2169,7 +2419,7 @@ class TestConcurrentCallGuard:
         existing_call = models.DialerCall(
             lead_id=lead.id,
             user_id=user.id,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-existing-001",
             phone_number="+919876543210",
             status="CALL_STARTED",
@@ -2181,7 +2431,12 @@ class TestConcurrentCallGuard:
 
         provider, _ = self._make_provider_mock()
 
-        with patch.object(dialer_service, "get_provider_for_user", return_value=provider):
+        # RCA 2026-08-19: _get_active_call_for_user now does a live self-heal
+        # status check via get_provider_by_name before blocking — mock it to
+        # None (provider unavailable) so this test stays hermetic instead of
+        # making a real HTTP call to Alternate Messenger.
+        with patch.object(dialer_service, "get_provider_for_user", return_value=provider), \
+             patch.object(dialer_service, "get_provider_by_name", return_value=None):
             result = dialer_service.initiate_call(
                 db,
                 {"sub": user.id, "email": user.email, "role": "SDR"},
@@ -2198,6 +2453,246 @@ class TestConcurrentCallGuard:
         )
         provider.initiate_call.assert_not_called()
 
+    def test_initiate_call_creates_exactly_one_dialer_call_row(self, db):
+        """RCA 2026-09-04: the DialerCall row used to be created only *after*
+        provider.initiate_call() returned, leaving the whole external round-trip
+        inside the window where the concurrent-call guard sees no active call —
+        confirmed in prod as 38 same-lead dial pairs under 5s apart over 14 days.
+        The fix reserves the row *before* calling the provider and fills it in
+        after, rather than creating a second row — this pins that down."""
+        import models, dialer_service
+        from conftest import create_sync_settings
+
+        s = create_sync_settings(db)
+        s.dialer_provider = "aircall"
+        db.commit()
+
+        user = create_test_user(db, email="onerow@test.com", role="SDR")
+        user.dialer_enabled = True
+        lead = create_test_lead(db, email="onerow_lead@test.com")
+        db.commit()
+
+        provider, _ = self._make_provider_mock()
+        provider.provider_name = "aircall"
+
+        with patch.object(dialer_service, "get_provider_for_user", return_value=provider):
+            result = dialer_service.initiate_call(
+                db,
+                {"sub": user.id, "email": user.email, "role": "SDR"},
+                lead.id,
+                "+18008888888",
+                call_mode="bridge",
+            )
+
+        assert result["success"] is True
+        rows = db.query(models.DialerCall).filter(models.DialerCall.lead_id == lead.id).all()
+        assert len(rows) == 1, f"Expected exactly one DialerCall row, got {len(rows)}"
+        assert rows[0].id == result["call_id"]
+        assert rows[0].provider_call_id == "cv-concurrent-001"
+
+    def test_aircall_self_heal_unblocks_when_provider_reports_call_ended(self, db):
+        """RCA 2026-08-19: an Aircall call the SDR already hung up on, whose
+        CALL_ENDED webhook hasn't arrived yet, must not block the next dial —
+        Aircall's own live status (checked directly, since its status API is
+        documented reliable, unlike Alternate Messenger's) should self-heal it."""
+        import models, dialer_service
+        from conftest import create_sync_settings
+        from datetime import datetime, timezone
+
+        s = create_sync_settings(db)
+        s.dialer_provider = "aircall"
+        db.commit()
+
+        user = create_test_user(db, email="selfheal@test.com", role="SDR")
+        user.dialer_enabled = True
+        lead = create_test_lead(db, email="selfheal_lead@test.com")
+        db.commit()
+
+        stale_local_record = models.DialerCall(
+            lead_id=lead.id,
+            user_id=user.id,
+            provider="aircall",
+            provider_call_id="ac-selfheal-001",
+            phone_number="+919876543210",
+            status="CALL_ANSWERED",
+            direction="outbound",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(stale_local_record)
+        db.commit()
+
+        provider, _ = self._make_provider_mock()
+        aircall_provider = MagicMock()
+        aircall_provider.get_call_status = MagicMock(return_value={"status": "completed"})
+
+        with patch.object(dialer_service, "get_provider_for_user", return_value=provider), \
+             patch.object(dialer_service, "get_provider_by_name", return_value=aircall_provider):
+            result = dialer_service.initiate_call(
+                db,
+                {"sub": user.id, "email": user.email, "role": "SDR"},
+                lead.id,
+                "+918888888888",
+                call_mode="browser",
+            )
+
+        assert result["success"] is True, (
+            f"Self-heal should have unblocked the dial, got: {result.get('error')}"
+        )
+        aircall_provider.get_call_status.assert_called_once_with("ac-selfheal-001", fast=True)
+        db.refresh(stale_local_record)
+        assert stale_local_record.status == "CALL_ENDED"
+
+    def test_aircall_self_heal_by_phone_when_no_provider_call_id_was_ever_recorded(self, db):
+        """RCA 2026-09-03 (staging test session, real DB evidence): every
+        Aircall call placed that session had provider_call_id == "" — a
+        bridge-mode dial whose synchronous POST response never carried an id
+        (expected) and whose webhook never arrived to backfill it (a
+        separate, environment-specific gap). The old self-heal bailed out
+        the instant provider_call_id was falsy, leaving the SDR blocked for
+        the full EC-16 window. It must now fall back to a phone+recency
+        lookup instead of giving up."""
+        import models, dialer_service
+        from conftest import create_sync_settings
+        from datetime import datetime, timezone
+
+        s = create_sync_settings(db)
+        s.dialer_provider = "aircall"
+        db.commit()
+
+        user = create_test_user(db, email="selfheal2@test.com", role="SDR")
+        user.dialer_enabled = True
+        lead = create_test_lead(db, email="selfheal2_lead@test.com")
+        db.commit()
+
+        stuck_local_record = models.DialerCall(
+            lead_id=lead.id,
+            user_id=user.id,
+            provider="aircall",
+            provider_call_id="",
+            phone_number="1-800-263-3394",
+            status="CALL_STARTED",
+            direction="outbound",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(stuck_local_record)
+        db.commit()
+
+        provider, _ = self._make_provider_mock()
+        aircall_provider = MagicMock()
+        aircall_provider.find_recent_call_by_phone = MagicMock(
+            return_value={"id": "ac-backfilled-002", "ended": True, "duration": 42}
+        )
+        _expected_owner_email = user.email
+
+        with patch.object(dialer_service, "get_provider_for_user", return_value=provider), \
+             patch.object(dialer_service, "get_provider_by_name", return_value=aircall_provider):
+            result = dialer_service.initiate_call(
+                db,
+                {"sub": user.id, "email": user.email, "role": "SDR"},
+                lead.id,
+                "+918888888888",
+                call_mode="browser",
+            )
+
+        assert result["success"] is True, (
+            f"Phone-match self-heal should have unblocked the dial, got: {result.get('error')}"
+        )
+        aircall_provider.find_recent_call_by_phone.assert_called_once()
+        assert _expected_owner_email in aircall_provider.find_recent_call_by_phone.call_args.args
+        db.refresh(stuck_local_record)
+        assert stuck_local_record.status == "CALL_ENDED"
+        assert stuck_local_record.provider_call_id == "ac-backfilled-002"
+        assert stuck_local_record.duration == 42
+
+    def test_aircall_self_heal_by_phone_stays_blocked_when_aircall_reports_still_active(self, db):
+        """The phone-match fallback must not heal a call that's genuinely
+        still in progress — only an explicit ended=True unblocks the dial."""
+        import models, dialer_service
+        from conftest import create_sync_settings
+        from datetime import datetime, timezone
+
+        s = create_sync_settings(db)
+        s.dialer_provider = "aircall"
+        db.commit()
+
+        user = create_test_user(db, email="selfheal3@test.com", role="SDR")
+        user.dialer_enabled = True
+        lead = create_test_lead(db, email="selfheal3_lead@test.com")
+        db.commit()
+
+        stuck_local_record = models.DialerCall(
+            lead_id=lead.id,
+            user_id=user.id,
+            provider="aircall",
+            provider_call_id="",
+            phone_number="1-800-263-3394",
+            status="CALL_STARTED",
+            direction="outbound",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(stuck_local_record)
+        db.commit()
+
+        provider, _ = self._make_provider_mock()
+        aircall_provider = MagicMock()
+        aircall_provider.find_recent_call_by_phone = MagicMock(
+            return_value={"id": "ac-still-active-003", "ended": False, "duration": None}
+        )
+
+        with patch.object(dialer_service, "get_provider_for_user", return_value=provider), \
+             patch.object(dialer_service, "get_provider_by_name", return_value=aircall_provider):
+            result = dialer_service.initiate_call(
+                db,
+                {"sub": user.id, "email": user.email, "role": "SDR"},
+                lead.id,
+                "+918888888888",
+                call_mode="browser",
+            )
+
+        assert result["success"] is False
+        db.refresh(stuck_local_record)
+        assert stuck_local_record.status == "CALL_STARTED"
+        assert stuck_local_record.provider_call_id == ""
+
+    def test_self_heal_skipped_for_messenger_calls(self, db):
+        """RCA 2026-06-11: Alternate Messenger's /status endpoint returns 502s under
+        polling load and is deliberately not polled live anywhere else in this
+        codebase — the self-heal check must not reintroduce that, even though
+        it would otherwise be free to try since a blocking call exists."""
+        import models, dialer_service
+        from conftest import create_sync_settings
+        from datetime import datetime, timezone
+
+        s = create_sync_settings(db)
+        s.dialer_provider = "messenger"
+        s.messenger_api_key = "test-key"
+        s.messenger_user_id = "300956"
+        db.commit()
+
+        user = create_test_user(db, email="convselfheal@test.com", role="SDR")
+        user.dialer_enabled = True
+        lead = create_test_lead(db, email="convselfheal_lead@test.com")
+        db.commit()
+
+        active_call = models.DialerCall(
+            lead_id=lead.id,
+            user_id=user.id,
+            provider="messenger",
+            provider_call_id="cv-noselfheal-001",
+            phone_number="+919876543210",
+            status="CALL_STARTED",
+            direction="outbound",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(active_call)
+        db.commit()
+
+        with patch.object(dialer_service, "get_provider_by_name") as mock_get_provider:
+            healed = dialer_service._try_live_self_heal(db, active_call)
+
+        assert healed is False
+        mock_get_provider.assert_not_called()  # never even looks up a Alternate Messenger provider
+
     def test_call_allowed_when_previous_call_ended(self, db):
         """
         CALL_ENDED previous call must NOT block a new call.
@@ -2208,9 +2703,9 @@ class TestConcurrentCallGuard:
         from datetime import datetime, timezone
 
         s = create_sync_settings(db)
-        s.dialer_provider = "rcm"
-        s.rcm_api_key = "test-key"
-        s.rcm_user_id = "300956"
+        s.dialer_provider = "messenger"
+        s.messenger_api_key = "test-key"
+        s.messenger_user_id = "300956"
         db.commit()
 
         user = create_test_user(db, email="concurrent2@test.com", role="SDR")
@@ -2222,7 +2717,7 @@ class TestConcurrentCallGuard:
         ended_call = models.DialerCall(
             lead_id=lead.id,
             user_id=user.id,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-ended-001",
             phone_number="+919876543210",
             status="CALL_ENDED",
@@ -2278,17 +2773,17 @@ class TestEC16StaleCallGuard:
         for attr in ("livekit_token", "livekit_url", "room_name", "agent_join_via_phone"):
             setattr(mock_result, attr, None)
         provider = MagicMock()
-        provider.provider_name = "rcm"
+        provider.provider_name = "messenger"
         provider.initiate_call = MagicMock(return_value=mock_result)
         provider.from_number = ""
         return provider, mock_result
 
-    def _setup_rcm(self, db):
+    def _setup_messenger(self, db):
         from conftest import create_sync_settings
         s = create_sync_settings(db)
-        s.dialer_provider = "rcm"
-        s.rcm_api_key = "test-key"
-        s.rcm_user_id = "300956"
+        s.dialer_provider = "messenger"
+        s.messenger_api_key = "test-key"
+        s.messenger_user_id = "300956"
         db.commit()
         return s
 
@@ -2301,7 +2796,7 @@ class TestEC16StaleCallGuard:
         import models, dialer_service
         from datetime import datetime, timezone, timedelta
 
-        self._setup_rcm(db)
+        self._setup_messenger(db)
         user = create_test_user(db, email="ec16_stale@test.com", role="SDR")
         user.dialer_enabled = True
         lead = create_test_lead(db, email="ec16_stale_lead@test.com")
@@ -2311,7 +2806,7 @@ class TestEC16StaleCallGuard:
         zombie_call = models.DialerCall(
             lead_id=lead.id,
             user_id=user.id,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-zombie-001",
             phone_number="+919876543210",
             status="CALL_STARTED",
@@ -2355,7 +2850,7 @@ class TestEC16StaleCallGuard:
         import models, dialer_service
         from datetime import datetime, timezone, timedelta
 
-        self._setup_rcm(db)
+        self._setup_messenger(db)
         user = create_test_user(db, email="ec16_fresh@test.com", role="SDR")
         user.dialer_enabled = True
         lead = create_test_lead(db, email="ec16_fresh_lead@test.com")
@@ -2367,7 +2862,7 @@ class TestEC16StaleCallGuard:
         fresh_call = models.DialerCall(
             lead_id=lead.id,
             user_id=user.id,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-fresh-001",
             phone_number="+919876543210",
             status="CALL_STARTED",
@@ -2379,7 +2874,10 @@ class TestEC16StaleCallGuard:
 
         provider, _ = self._make_provider_mock()
 
-        with patch.object(dialer_service, "get_provider_for_user", return_value=provider):
+        # See TestConcurrentCallGuard's note above — mock the self-heal's
+        # provider lookup to None so this test stays hermetic.
+        with patch.object(dialer_service, "get_provider_for_user", return_value=provider), \
+             patch.object(dialer_service, "get_provider_by_name", return_value=None):
             result = dialer_service.initiate_call(
                 db,
                 {"sub": user.id, "email": user.email, "role": "SDR"},
@@ -2405,17 +2903,17 @@ class TestEC16StaleCallGuard:
 
     def test_ec16_3_nightly_sync_heals_zombie_call_started(self, db):
         """
-        EC16-3: Nightly RCM sync must update a zombie CALL_STARTED record
+        EC16-3: Nightly Alternate Messenger sync must update a zombie CALL_STARTED record
         to CALL_ENDED when provider history shows the call ended.
         Previously it was silently skipped (skipped_dup += 1).
         """
         import models, dialer_service
         from datetime import datetime, timezone, timedelta
         from unittest.mock import MagicMock, patch
-        from scheduled_jobs import _rcm_nightly_sync
+        from scheduled_jobs import _messenger_nightly_sync
 
-        # Ensure RCM provider is configured
-        self._setup_rcm(db)
+        # Ensure Alternate Messenger provider is configured
+        self._setup_messenger(db)
         lead = create_test_lead(db, email="ec16_sync@test.com")
         db.commit()
 
@@ -2423,7 +2921,7 @@ class TestEC16StaleCallGuard:
         zombie = models.DialerCall(
             lead_id=lead.id,
             user_id="test-user-id",
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-sync-zombie-001",
             phone_number="+919876543210",
             status="CALL_STARTED",
@@ -2438,7 +2936,7 @@ class TestEC16StaleCallGuard:
         from dialer_provider import NormalizedCallEvent, CallEventType
         ended_event = NormalizedCallEvent(
             event_type=CallEventType.CALL_ENDED,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-sync-zombie-001",
             phone_number="+919876543210",
             ended_at=datetime.now(timezone.utc) - timedelta(hours=2, minutes=55),
@@ -2454,7 +2952,7 @@ class TestEC16StaleCallGuard:
 
         with patch("dialer_service._get_settings"), \
              patch("dialer_service._instantiate_provider", return_value=mock_provider):
-            _rcm_nightly_sync()
+            _messenger_nightly_sync()
 
         # Re-open DB and verify healing
         from database import SessionLocal
@@ -2492,7 +2990,7 @@ class TestEC16StaleCallGuard:
         stale_call = models.DialerCall(
             lead_id=lead.id,
             user_id="test-user-id",
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-sweep-stale-001",
             phone_number="+919876543210",
             status="CALL_STARTED",
@@ -2503,7 +3001,7 @@ class TestEC16StaleCallGuard:
         fresh_call = models.DialerCall(
             lead_id=lead.id,
             user_id="test-user-id-2",
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-sweep-fresh-001",
             phone_number="+918888888888",
             status="CALL_STARTED",
@@ -2561,7 +3059,7 @@ class TestMyActiveCall:
         started = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
         dc = models.DialerCall(
             user_id=self.USER_ID,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-test-123",
             phone_number="+910000000001",
             status=status,
@@ -2658,7 +3156,7 @@ class TestForceEnd:
         import models
         dc = models.DialerCall(
             user_id=self.USER_ID,
-            provider="rcm",
+            provider="messenger",
             provider_call_id="cv-force-123",
             phone_number="+910000000099",
             status=status,
@@ -2681,6 +3179,13 @@ class TestForceEnd:
         app.include_router(dialer_router)
         app.dependency_overrides[get_db] = lambda: db
 
+        # A real token is now checked against the DB (auth.authenticate):
+        # the user must exist and still be on the allowed list.
+        import access_db, models
+        if not db.query(models.User).filter(models.User.id == self.USER_ID).first():
+            db.add(models.User(id=self.USER_ID, email="sdr@test.com", name="SDR", role="SDR"))
+            db.commit()
+        access_db.add_allowed_user(db, "sdr@test.com", "SDR", "SDR")
         token = create_jwt({"sub": self.USER_ID, "role": "SDR", "email": "sdr@test.com"})
         client = TestClient(app, headers={"Authorization": f"Bearer {token}"})
         return client
@@ -2713,7 +3218,7 @@ class TestForceEnd:
 
         with patch("routes.dialer_routes.dialer_service._instantiate_provider") as mock_prov:
             mock_provider = MagicMock()
-            mock_provider.disconnect_call.side_effect = Exception("RCM unavailable")
+            mock_provider.disconnect_call.side_effect = Exception("Alternate Messenger unavailable")
             mock_prov.return_value = mock_provider
 
             resp = client.post("/api/calls/force-end", json={"call_id": dc.id})
@@ -2790,3 +3295,744 @@ class TestKlentySyncTrigger:
             resp = client.post("/api/admin/dialer/sync-klenty", json={"lookback_days": 9999})
         assert resp.status_code == 200
         mock_sync.assert_called_once_with(lookback_days=MAX_SYNC_LOOKBACK_DAYS)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Instantly.ai Manual Sync Trigger + Campaign Analytics Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestInstantlySyncTrigger:
+    """Tests for POST /api/admin/instantly/sync."""
+
+    def test_super_admin_only(self, db):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from database import get_db
+        from auth import get_current_user
+        from routes.dialer_routes import router as dialer_router
+        from conftest import _make_user_payload
+
+        app = FastAPI()
+        app.include_router(dialer_router)
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: _make_user_payload("Pod Admin")
+        client = TestClient(app)
+
+        resp = client.post("/api/admin/instantly/sync")
+        assert resp.status_code == 403
+
+    def test_returns_not_ran_when_instantly_disabled(self, db):
+        """Instantly not enabled (default test DB state) → ran: False, no external call attempted."""
+        client = _make_dialer_app(db)
+        resp = client.post("/api/admin/instantly/sync")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ran"] is False
+
+    def test_error_reason_does_not_leak_raw_provider_error(self, db):
+        """_instantly_sync_job's own generic failure reason (not a raw
+        exception string, which could carry a raw third-party error body —
+        the one MUST-FIX from this feature's security review) must reach the
+        HTTP caller unchanged, i.e. the route doesn't need to sanitize it
+        again because the job already does."""
+        client = _make_dialer_app(db)
+        with patch("scheduled_jobs._instantly_sync_job") as mock_sync:
+            mock_sync.return_value = {"ran": False, "reason": "Instantly sync failed — see server logs for details"}
+            resp = client.post("/api/admin/instantly/sync")
+        assert resp.status_code == 200
+        assert resp.json()["reason"] == "Instantly sync failed — see server logs for details"
+
+
+class TestInstantlyCampaignAnalytics:
+    """Tests for GET /api/admin/instantly/analytics."""
+
+    def test_super_admin_only(self, db):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from database import get_db
+        from auth import get_current_user
+        from routes.dialer_routes import router as dialer_router
+        from conftest import _make_user_payload
+
+        app = FastAPI()
+        app.include_router(dialer_router)
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: _make_user_payload("Pod Admin")
+        client = TestClient(app)
+
+        resp = client.get("/api/admin/instantly/analytics")
+        assert resp.status_code == 403
+
+    def test_400_when_not_configured(self, db):
+        """Default test DB state has Instantly disabled — reject before any external call."""
+        client = _make_dialer_app(db)
+        resp = client.get("/api/admin/instantly/analytics")
+        assert resp.status_code == 400
+
+    def test_returns_live_data_and_caches_it(self, db):
+        import dialer_service
+        settings = dialer_service._get_settings(db)
+        settings.instantly_enabled = True
+        settings.instantly_api_key = "real-key"
+        db.commit()
+
+        client = _make_dialer_app(db)
+        with patch("instantly_provider.InstantlyProvider.get_campaign_step_analytics") as mock_fetch:
+            mock_fetch.return_value = [{"step": 1, "sent": 100, "opened": 40}]
+            resp1 = client.get("/api/admin/instantly/analytics?campaign_id=cache-test")
+            resp2 = client.get("/api/admin/instantly/analytics?campaign_id=cache-test")
+        assert resp1.status_code == 200
+        assert resp1.json() == [{"step": 1, "sent": 100, "opened": 40}]
+        assert resp2.json() == resp1.json()
+        mock_fetch.assert_called_once()  # second call served from cache
+
+    def test_plan_tier_error_returns_402(self, db):
+        import dialer_service
+        settings = dialer_service._get_settings(db)
+        settings.instantly_enabled = True
+        settings.instantly_api_key = "real-key"
+        db.commit()
+
+        from instantly_provider import InstantlyPlanTierError
+        client = _make_dialer_app(db)
+        with patch("instantly_provider.InstantlyProvider.get_campaign_step_analytics") as mock_fetch:
+            mock_fetch.side_effect = InstantlyPlanTierError("plan tier too low")
+            # Distinct campaign_id so this doesn't read the success-case
+            # response cached under the default "all" key by another test.
+            resp = client.get("/api/admin/instantly/analytics?campaign_id=plan-tier-test")
+        assert resp.status_code == 402
+
+    def test_provider_error_does_not_leak_raw_message(self, db):
+        """A raw exception from the HTTP layer must not reach the response body."""
+        import dialer_service
+        settings = dialer_service._get_settings(db)
+        settings.instantly_enabled = True
+        settings.instantly_api_key = "real-key"
+        db.commit()
+
+        client = _make_dialer_app(db)
+        with patch("instantly_provider.InstantlyProvider.get_campaign_step_analytics") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("Instantly API error 500: {'secret': 'leaked-internal-detail'}")
+            resp = client.get("/api/admin/instantly/analytics?campaign_id=provider-error-test")
+        assert resp.status_code == 502
+        assert "leaked-internal-detail" not in resp.text
+
+
+class TestEnabledInstantlyAccounts:
+    """GET /api/instantly/sending-accounts — the cadence step's "Send from"
+    picker: any cadence author, but only Super-Admin-enabled mailboxes."""
+
+    def _client_as(self, db, role):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from database import get_db
+        from auth import get_current_user
+        from routes.dialer_routes import router as dialer_router
+        from conftest import _make_user_payload
+        app = FastAPI()
+        app.include_router(dialer_router)
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: _make_user_payload(role)
+        return TestClient(app)
+
+    def _workspace(self, db, enabled):
+        import dialer_service
+        s = dialer_service._get_settings(db)
+        s.instantly_enabled, s.instantly_api_key, s.instantly_sending_accounts = True, "real-key", enabled
+        db.commit()
+        return {"items": [{"email": "a@one.com", "daily_limit": 30}, {"email": "b@two.io", "daily_limit": 40}],
+                "next_starting_after": None}
+
+    def test_a_rep_sees_only_the_enabled_mailboxes_with_their_domain(self, db):
+        page = self._workspace(db, '["b@two.io"]')
+        with patch("instantly_provider.InstantlyProvider._request", return_value=page):
+            resp = self._client_as(db, "SDR").get("/api/instantly/sending-accounts")
+        assert resp.status_code == 200
+        assert resp.json() == [{"email": "b@two.io", "domain": "two.io", "daily_limit": 40}]
+
+    def test_nothing_enabled_means_every_mailbox(self, db):
+        page = self._workspace(db, None)
+        with patch("instantly_provider.InstantlyProvider._request", return_value=page):
+            resp = self._client_as(db, "AE").get("/api/instantly/sending-accounts")
+        assert [a["email"] for a in resp.json()] == ["a@one.com", "b@two.io"]
+
+
+class TestInstantlyAccounts:
+    """Tests for GET /api/admin/instantly/accounts (sending-accounts picker, v13.3.0)."""
+
+    def test_super_admin_only(self, db):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from database import get_db
+        from auth import get_current_user
+        from routes.dialer_routes import router as dialer_router
+        from conftest import _make_user_payload
+
+        app = FastAPI()
+        app.include_router(dialer_router)
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: _make_user_payload("Pod Admin")
+        client = TestClient(app)
+
+        resp = client.get("/api/admin/instantly/accounts")
+        assert resp.status_code == 403
+
+    def test_400_when_not_configured(self, db):
+        client = _make_dialer_app(db)
+        resp = client.get("/api/admin/instantly/accounts")
+        assert resp.status_code == 400
+
+    def test_returns_email_and_daily_limit_paginated(self, db):
+        """Mirrors list_campaigns' starting_after pagination — only email +
+        daily_limit reach the response, not the full account payload."""
+        import dialer_service
+        settings = dialer_service._get_settings(db)
+        settings.instantly_enabled = True
+        settings.instantly_api_key = "real-key"
+        db.commit()
+
+        pages = [
+            {"items": [{"email": "a@pool.com", "daily_limit": 50, "is_managed_account": True}],
+             "next_starting_after": "cursor1"},
+            {"items": [{"email": "b@pool.com", "daily_limit": 50, "is_managed_account": True}],
+             "next_starting_after": None},
+        ]
+        client = _make_dialer_app(db)
+        with patch("instantly_provider.InstantlyProvider._request") as mock_request:
+            mock_request.side_effect = pages
+            resp = client.get("/api/admin/instantly/accounts")
+        assert resp.status_code == 200
+        assert resp.json() == [
+            {"email": "a@pool.com", "domain": "pool.com", "daily_limit": 50},
+            {"email": "b@pool.com", "domain": "pool.com", "daily_limit": 50},
+        ]
+        assert mock_request.call_count == 2
+
+    def test_provider_error_does_not_leak_raw_message(self, db):
+        import dialer_service
+        settings = dialer_service._get_settings(db)
+        settings.instantly_enabled = True
+        settings.instantly_api_key = "real-key"
+        db.commit()
+
+        client = _make_dialer_app(db)
+        with patch("instantly_provider.InstantlyProvider._request") as mock_request:
+            mock_request.side_effect = RuntimeError("Instantly API error 500: {'secret': 'leaked'}")
+            resp = client.get("/api/admin/instantly/accounts")
+        assert resp.status_code == 502
+        assert "leaked" not in resp.text
+
+
+class TestInstantlySendingAccountsConfig:
+    """Tests for instantly_sending_accounts read/write via GET/PATCH /dialer/config."""
+
+    def test_defaults_to_null(self, db):
+        client = _make_dialer_app(db)
+        resp = client.get("/api/dialer/config")
+        assert resp.status_code == 200
+        assert resp.json()["instantly_sending_accounts"] is None
+
+    def test_save_and_read_back(self, db):
+        client = _make_dialer_app(db)
+        resp = client.patch("/api/dialer/config", json={"instantly_sending_accounts": ["a@pool.com", "b@pool.com"]})
+        assert resp.status_code == 200
+
+        resp2 = client.get("/api/dialer/config")
+        assert resp2.json()["instantly_sending_accounts"] == ["a@pool.com", "b@pool.com"]
+
+    def test_empty_list_clears_to_null(self, db):
+        """Empty selection means 'all active accounts' (NULL), not an empty-list
+        JSON string that would mean 'send from nothing' — see plan default."""
+        client = _make_dialer_app(db)
+        client.patch("/api/dialer/config", json={"instantly_sending_accounts": ["a@pool.com"]})
+        resp = client.patch("/api/dialer/config", json={"instantly_sending_accounts": []})
+        assert resp.status_code == 200
+
+        resp2 = client.get("/api/dialer/config")
+        assert resp2.json()["instantly_sending_accounts"] is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Instantly.ai real-time webhook register/disable (v13.3.0 Phase 3, plan section 4/5)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestInstantlyWebhookRegister:
+    def _settings(self, db, api_key="test-key", webhook_secret=None, webhook_id=None):
+        import models
+        s = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
+        if not s:
+            s = models.SyncSettings(id=1)
+            db.add(s)
+        s.instantly_api_key = api_key
+        if webhook_secret:
+            s.instantly_webhook_secret = webhook_secret
+        s.instantly_webhook_id = webhook_id
+        db.commit()
+        return s
+
+    def test_super_admin_only(self, db):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from database import get_db
+        from auth import get_current_user
+        from routes.dialer_routes import router as dialer_router
+        from conftest import _make_user_payload
+
+        app = FastAPI()
+        app.include_router(dialer_router)
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: _make_user_payload("Pod Admin")
+        client = TestClient(app)
+
+        assert client.post("/api/admin/instantly/webhook/register").status_code == 403
+        assert client.post("/api/admin/instantly/webhook/disable").status_code == 403
+
+    def test_requires_instantly_configured(self, db):
+        client = _make_dialer_app(db)
+        resp = client.post("/api/admin/instantly/webhook/register")
+        assert resp.status_code == 400
+
+    def test_register_generates_secret_and_stores_ids(self, db, monkeypatch):
+        import models
+        monkeypatch.setenv("BACKEND_URL", "https://crm.example.com")
+        self._settings(db)
+        client = _make_dialer_app(db)
+
+        provider = MagicMock()
+        provider.create_webhook.return_value = {"items": [{"id": "wh-1"}, {"id": "wh-2"}]}
+        with patch("instantly_provider.InstantlyProvider", return_value=provider):
+            resp = client.post("/api/admin/instantly/webhook/register")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is True
+        assert set(body["webhook_ids"]) == {"wh-1", "wh-2"}
+        assert "webhook_secret" in body  # one-time reveal, first generation
+
+        settings = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
+        assert settings.instantly_webhook_secret  # persisted
+        import json as _json
+        assert set(_json.loads(settings.instantly_webhook_id)) == {"wh-1", "wh-2"}
+
+        provider.create_webhook.assert_called_once()
+        _, kwargs = provider.create_webhook.call_args
+        assert kwargs["target_url"] == "https://crm.example.com/webhooks/instantly"
+
+    def test_register_does_not_return_secret_once_already_set(self, db, monkeypatch):
+        monkeypatch.setenv("BACKEND_URL", "https://crm.example.com")
+        self._settings(db, webhook_secret="already-set-secret")
+        client = _make_dialer_app(db)
+
+        provider = MagicMock()
+        provider.create_webhook.return_value = {"items": [{"id": "wh-1"}]}
+        with patch("instantly_provider.InstantlyProvider", return_value=provider):
+            resp = client.post("/api/admin/instantly/webhook/register")
+
+        assert resp.status_code == 200
+        assert "webhook_secret" not in resp.json()
+
+    def test_register_is_idempotent_when_already_registered(self, db, monkeypatch):
+        monkeypatch.setenv("BACKEND_URL", "https://crm.example.com")
+        import json as _json
+        self._settings(db, webhook_secret="sec", webhook_id=_json.dumps(["wh-1", "wh-2"]))
+        client = _make_dialer_app(db)
+
+        provider = MagicMock()
+        provider.list_webhooks.return_value = {"items": [{"id": "wh-1"}, {"id": "wh-2"}]}
+        with patch("instantly_provider.InstantlyProvider", return_value=provider):
+            resp = client.post("/api/admin/instantly/webhook/register")
+
+        assert resp.status_code == 200
+        assert resp.json()["already_registered"] is True
+        provider.create_webhook.assert_not_called()
+
+    def test_disable_deletes_every_registered_id_and_clears_stored_id(self, db):
+        import models
+        import json as _json
+        self._settings(db, webhook_secret="sec", webhook_id=_json.dumps(["wh-1", "wh-2"]))
+        client = _make_dialer_app(db)
+
+        provider = MagicMock()
+        with patch("instantly_provider.InstantlyProvider", return_value=provider):
+            resp = client.post("/api/admin/instantly/webhook/disable")
+
+        assert resp.status_code == 200
+        assert provider.delete_webhook.call_count == 2
+        settings = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
+        assert settings.instantly_webhook_id is None
+
+    def test_dialer_config_reflects_registered_and_disabled_state(self, db, monkeypatch):
+        """The admin UI's 'Real-time webhook' toggle reads instantly_webhook_id
+        off GET /dialer/config — register must make it show up there, disable
+        must clear it, with no separate route needed just to check state."""
+        monkeypatch.setenv("BACKEND_URL", "https://crm.example.com")
+        self._settings(db)
+        client = _make_dialer_app(db)
+
+        assert client.get("/api/dialer/config").json()["instantly_webhook_id"] is None
+
+        provider = MagicMock()
+        provider.create_webhook.return_value = {"items": [{"id": "wh-1"}]}
+        with patch("instantly_provider.InstantlyProvider", return_value=provider):
+            client.post("/api/admin/instantly/webhook/register")
+        assert client.get("/api/dialer/config").json()["instantly_webhook_id"] == ["wh-1"]
+
+        with patch("instantly_provider.InstantlyProvider", return_value=provider):
+            client.post("/api/admin/instantly/webhook/disable")
+        assert client.get("/api/dialer/config").json()["instantly_webhook_id"] is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Caller-ID (v11.3.0): handle_webhook() surfaces lead identity, and the
+# Aircall-specific webhook endpoint fans it out over SSE (previously the only
+# endpoint that fanned out NOTHING to SSE — Alternate Messenger's did, Aircall's didn't).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCallerIdLookup:
+
+    def _webhook_event(self, phone, user_email, provider_call_id="ac-callerid-1", direction="inbound"):
+        from dialer_provider import NormalizedCallEvent, CallEventType
+        return NormalizedCallEvent(
+            event_type=CallEventType.CALL_STARTED,
+            provider="aircall",
+            provider_call_id=provider_call_id,
+            phone_number=phone,
+            user_email=user_email,
+            direction=direction,
+        )
+
+    def test_handle_webhook_returns_identified_lead(self, db):
+        import dialer_service
+        sdr = create_test_user(db, email="callerid-sdr@t.com", role="SDR")
+        phone = "+919876544444"
+        lead = create_test_lead(db, email="identified@t.com", phone=phone,
+                                 first_name="Priya", last_name="Sharma", company="Acme Corp")
+        db.commit()
+
+        provider_mock = MagicMock()
+        provider_mock.provider_name = "aircall"
+        provider_mock.handle_webhook.return_value = self._webhook_event(phone, "callerid-sdr@t.com")
+
+        with patch("dialer_service._instantiate_provider", return_value=provider_mock):
+            result = dialer_service.handle_webhook(db, "aircall", {})
+
+        assert result["lead_name"] == "Priya Sharma"
+        assert result["lead_company"] == "Acme Corp"
+        assert result["direction"] == "inbound"
+
+    def test_handle_webhook_unmatched_number_returns_none_identity(self, db):
+        """No resolvable SDR — per policy, no lead is created (see
+        TestWebhookLeadAutoCreation), so identity fields are None, not an error."""
+        import dialer_service
+        provider_mock = MagicMock()
+        provider_mock.provider_name = "aircall"
+        provider_mock.handle_webhook.return_value = self._webhook_event(
+            "+919876555555", "not-a-alternatecrm-user@t.com", provider_call_id="ac-callerid-2"
+        )
+
+        with patch("dialer_service._instantiate_provider", return_value=provider_mock):
+            result = dialer_service.handle_webhook(db, "aircall", {})
+
+        assert result["lead_name"] is None
+        assert result["lead_company"] is None
+
+    def test_aircall_webhook_endpoint_publishes_sse_with_caller_id(self, db):
+        """RCA 2026-08-17: /webhooks/aircall never called sse_broker.publish at
+        all (only /webhooks/messenger did) — an Aircall call never reached
+        the browser in real time. Now publishes CALL_STATUS with the same
+        caller-ID fields handle_webhook returns."""
+        client = _make_dialer_app(db)
+        sdr = create_test_user(db, email="sse-sdr@t.com", role="SDR")
+
+        fake_result = {
+            "ok": True, "call_id": "dc-1", "user_id": sdr.id, "status": "CALL_STARTED",
+            "duration": None, "direction": "inbound",
+            "lead_name": "Priya Sharma", "lead_company": "Acme Corp",
+        }
+        with patch("routes.dialer_routes.dialer_service.handle_webhook", return_value=fake_result), \
+             patch("routes.dialer_routes.sse_broker.publish") as mock_publish:
+            resp = client.post("/api/webhooks/aircall", json={"event": "call.created", "data": {}})
+
+        assert resp.status_code == 200
+        mock_publish.assert_called_once()
+        published_user_id, published_payload = mock_publish.call_args[0]
+        assert published_user_id == sdr.id
+        assert published_payload["lead_name"] == "Priya Sharma"
+        assert published_payload["lead_company"] == "Acme Corp"
+        assert published_payload["direction"] == "inbound"
+
+    def test_aircall_webhook_endpoint_skips_publish_without_user(self, db):
+        """No resolvable user_id (e.g. call from an unknown SDR) — nothing to
+        publish to, and sse_broker.publish must not be called with None."""
+        client = _make_dialer_app(db)
+        fake_result = {"ok": True, "call_id": "dc-2", "user_id": None, "status": "CALL_STARTED"}
+        with patch("routes.dialer_routes.dialer_service.handle_webhook", return_value=fake_result), \
+             patch("routes.dialer_routes.sse_broker.publish") as mock_publish:
+            resp = client.post("/api/webhooks/aircall", json={"event": "call.created", "data": {}})
+
+        assert resp.status_code == 200
+        mock_publish.assert_not_called()
+
+
+class TestPhoneMatchThrottle:
+    """RCA 2026-09-03 (pre-prod review): the frontend polls GET
+    /calls/{id}/status every 10s for up to 10 minutes, and the phone-match
+    self-heal fired on EVERY poll for any Aircall call with an empty
+    provider_call_id — up to 60 extra Aircall GET /calls per call. In prod
+    762 of 7,122 Aircall calls (10.7%) are in that state and Aircall's ceiling
+    is 60 requests/min for the entire company, so unbounded this could throttle
+    dialling for all 23 SDRs — the very symptom the self-heal exists to fix.
+    Invisible on staging, where one caller never approaches the limit."""
+
+    def setup_method(self):
+        from routes.dialer_routes import _phone_match_last_attempt
+        _phone_match_last_attempt.clear()
+
+    def test_young_call_is_not_looked_up_at_all(self, db):
+        """The webhook wins this race almost always — a typical call is ~20s
+        end to end. Spending an Aircall request before giving it a chance is
+        pure waste, multiplied by every 10s poll."""
+        from routes.dialer_routes import _should_try_phone_match
+        assert _should_try_phone_match("call-young", 10) is False
+        assert _should_try_phone_match("call-young", 44) is False
+
+    def test_first_attempt_allowed_once_past_the_grace_period(self, db):
+        from routes.dialer_routes import _should_try_phone_match
+        assert _should_try_phone_match("call-old", 46) is True
+
+    def test_subsequent_polls_within_the_cooldown_are_suppressed(self, db):
+        """Six polls a minute must not become six Aircall requests a minute."""
+        from routes.dialer_routes import _should_try_phone_match
+        assert _should_try_phone_match("call-x", 60) is True
+        for _ in range(6):
+            assert _should_try_phone_match("call-x", 70) is False
+
+    def test_a_new_attempt_is_allowed_once_the_cooldown_elapses(self, db):
+        import routes.dialer_routes as dr
+        assert dr._should_try_phone_match("call-y", 60) is True
+        assert dr._should_try_phone_match("call-y", 70) is False
+        # Age the bookkeeping past the cooldown rather than sleeping.
+        dr._phone_match_last_attempt["call-y"] -= (dr._PHONE_MATCH_COOLDOWN_S + 1)
+        assert dr._should_try_phone_match("call-y", 130) is True
+
+    def test_calls_are_throttled_independently(self, db):
+        from routes.dialer_routes import _should_try_phone_match
+        assert _should_try_phone_match("call-a", 60) is True
+        assert _should_try_phone_match("call-b", 60) is True, "one call must not throttle another"
+
+    def test_bookkeeping_does_not_grow_without_bound(self, db):
+        import routes.dialer_routes as dr
+        for i in range(600):
+            dr._should_try_phone_match(f"stale-{i}", 60)
+        # Age everything, then one more call triggers the prune.
+        for k in list(dr._phone_match_last_attempt):
+            dr._phone_match_last_attempt[k] -= 1000
+        dr._should_try_phone_match("fresh", 60)
+        assert len(dr._phone_match_last_attempt) < 600, "old entries must be pruned"
+
+    def test_status_poll_does_not_hit_aircall_for_a_fresh_call(self, db):
+        """Route-level: a call only seconds old must not trigger a lookup."""
+        from datetime import datetime, timezone, timedelta
+        import models
+
+        client = _make_dialer_app(db)
+        owner = db.query(models.User).filter(models.User.id == "test-user-id").first()
+        if not owner:
+            owner = models.User(id="test-user-id", email="admin@test.com", role="Super Admin")
+            db.add(owner)
+            db.commit()
+        call = models.DialerCall(
+            user_id="test-user-id", provider="aircall", provider_call_id="",
+            phone_number="1-800-263-3394", status="CALL_STARTED", direction="outbound",
+            started_at=datetime.now(timezone.utc) - timedelta(seconds=5),
+        )
+        db.add(call)
+        db.commit()
+        db.refresh(call)
+
+        mock_provider = MagicMock()
+        mock_provider.provider_name = "aircall"
+        mock_provider.find_recent_call_by_phone = MagicMock(
+            return_value={"id": "should-not-be-used", "ended": True, "duration": 1}
+        )
+        with patch("routes.dialer_routes.dialer_service.get_provider_for_user",
+                   return_value=mock_provider):
+            resp = client.get(f"/api/calls/{call.id}/status")
+
+        assert resp.status_code == 200
+        mock_provider.find_recent_call_by_phone.assert_not_called()
+        assert resp.json()["status"] == "CALL_STARTED"
+
+
+class TestPhoneMatchIdCollision:
+    """RCA 2026-09-08 (live prod: 17 unhandled 500s on POST /api/calls/start
+    across 4 bursts, first on 2026-09-04 — all with the identical failing
+    UPDATE and the same idx_dialer_calls_dedup violation).
+
+    801 prod phone numbers are shared by more than one lead — usually the
+    same line stored once bare ("+1 845-770-1949") and once with an
+    extension ("(845) 770-1949 ext. 6807"). Aircall's call log is keyed on
+    the number, so find_recent_call_by_phone can only answer "the recent
+    call to this number by this SDR" — which may be the call already
+    recorded against the *other* lead's DialerCall row. Both phone-match
+    sites then wrote that id blind, tripping idx_dialer_calls_dedup.
+
+    The prod chain, reproduced below against the real index: the heal's
+    flush raises UniqueViolation → the `except` logged it without a
+    db.rollback() → the session stayed in a failed-flush state → the
+    request's next write (dialer_routes' log_error for the "already have an
+    active call" result) raised PendingRollbackError → GlobalHandler 500.
+    Meanwhile the stuck row never healed, so the SDR stayed blocked for the
+    full EC-16 window (6 minutes, measured on prod row 55e4bd01).
+    """
+
+    def _setup(self, db):
+        """Aircall settings + the real partial unique index. Verbatim from
+        migrations.py's index_creates — without it these tests would assert
+        against a DB that cannot produce the failure at all (the engine
+        fixture builds a fresh in-memory DB per test, so this is local)."""
+        from sqlalchemy import text
+        from conftest import create_sync_settings
+        s = create_sync_settings(db)
+        s.dialer_provider = "aircall"
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_dialer_calls_dedup "
+            "ON dialer_calls (provider, provider_call_id) "
+            "WHERE provider_call_id IS NOT NULL AND provider_call_id != ''"
+        ))
+        db.commit()
+
+    @staticmethod
+    def _aircall_mock(returns):
+        aircall = MagicMock()
+        aircall.find_recent_call_by_phone = MagicMock(return_value=returns)
+        return aircall
+
+    def test_heal_skips_an_id_another_row_already_owns_and_still_unblocks(self, db):
+        """The exact prod shape (rows 9bf08b51 / 4c65a098). Healing must not
+        write the contended id, must not fabricate that other call's
+        duration onto this row, and must still clear the SDR's blocked slot
+        — the whole point of the self-heal."""
+        import models, dialer_service
+        from datetime import datetime, timezone
+
+        self._setup(db)
+        user = create_test_user(db, email="collide@test.com", role="SDR")
+        user.dialer_enabled = True
+        ext_lead  = create_test_lead(db, email="collide_ext@test.com")
+        bare_lead = create_test_lead(db, email="collide_bare@test.com")
+        db.commit()
+
+        # The row the SDR is blocked behind: bridge dial, no id ever returned.
+        stuck = models.DialerCall(
+            lead_id=ext_lead.id, user_id=user.id, provider="aircall",
+            provider_call_id="", phone_number="(845) 770-1949 ext. 6807",
+            status="CALL_STARTED", direction="outbound",
+            started_at=datetime.now(timezone.utc),
+        )
+        # The same underlying number reached via a second lead — this row
+        # already owns the Aircall call the phone-match will return.
+        owner_row = models.DialerCall(
+            lead_id=bare_lead.id, user_id=user.id, provider="aircall",
+            provider_call_id="4124255981", phone_number="+1 845-770-1949",
+            status="CALL_ENDED", direction="outbound",
+            started_at=datetime.now(timezone.utc), duration=11,
+        )
+        db.add_all([stuck, owner_row])
+        db.commit()
+
+        _result = MagicMock(success=True, provider_call_id="ac-new-001", error=None)
+        for attr in ("livekit_token", "livekit_url", "room_name", "agent_join_via_phone"):
+            setattr(_result, attr, None)
+        provider = MagicMock()
+        provider.provider_name = "aircall"
+        provider.initiate_call = MagicMock(return_value=_result)
+        # id arrives as an int from Aircall's JSON — must still be compared
+        # against the String column as text, or the claim check misses.
+        aircall = self._aircall_mock({"id": 4124255981, "ended": True, "duration": 11})
+
+        with patch.object(dialer_service, "get_provider_for_user", return_value=provider), \
+             patch.object(dialer_service, "get_provider_by_name", return_value=aircall):
+            result = dialer_service.initiate_call(
+                db, {"sub": user.id, "email": user.email, "role": "SDR"},
+                ext_lead.id, "(845) 770-1949 ext. 6807", call_mode="browser",
+            )
+
+        assert result["success"] is True, (
+            f"SDR left blocked behind an un-healable row — the prod symptom. "
+            f"Got: {result.get('error')!r}"
+        )
+        db.refresh(stuck)
+        assert stuck.status == "CALL_ENDED"
+        assert stuck.provider_call_id == "", (
+            f"Wrote a provider_call_id another row already owns "
+            f"({stuck.provider_call_id!r}) — the UniqueViolation on "
+            f"idx_dialer_calls_dedup that took prod down."
+        )
+        assert stuck.duration is None, (
+            f"Copied the other call's duration ({stuck.duration}) onto a call "
+            f"we never actually identified — fabricated data."
+        )
+        db.refresh(owner_row)
+        assert owner_row.provider_call_id == "4124255981"
+        assert owner_row.duration == 11
+
+    def test_calls_start_returns_handled_422_not_an_unhandled_500(self, db):
+        """The reported symptom, end to end. Even when the heal genuinely
+        cannot record the id, the route must still reach its own log_error +
+        HTTPException — pre-fix the swallowed IntegrityError poisoned the
+        session and log_error raised PendingRollbackError instead."""
+        import models, dialer_service
+        from datetime import datetime, timezone
+        from conftest import SUPER_ADMIN
+
+        self._setup(db)
+        client = _make_dialer_app(db)
+        if not db.query(models.User).filter(models.User.id == SUPER_ADMIN["sub"]).first():
+            db.add(models.User(id=SUPER_ADMIN["sub"], email=SUPER_ADMIN["email"],
+                               role="Super Admin"))
+        ext_lead  = create_test_lead(db, email="e2e_ext@test.com")
+        bare_lead = create_test_lead(db, email="e2e_bare@test.com")
+        db.commit()
+
+        stuck = models.DialerCall(
+            lead_id=ext_lead.id, user_id=SUPER_ADMIN["sub"], provider="aircall",
+            provider_call_id="", phone_number="(408) 364-6799 ext. 6688",
+            status="CALL_STARTED", direction="outbound",
+            started_at=datetime.now(timezone.utc),
+        )
+        owner_row = models.DialerCall(
+            lead_id=bare_lead.id, user_id=SUPER_ADMIN["sub"], provider="aircall",
+            provider_call_id="4124296516", phone_number="+1 408-364-6799",
+            status="CALL_ENDED", direction="outbound",
+            started_at=datetime.now(timezone.utc), duration=93,
+        )
+        db.add_all([stuck, owner_row])
+        db.commit()
+
+        provider = MagicMock()
+        provider.provider_name = "aircall"
+        # Provider-side failure so the route takes its log_error path — the
+        # DB write that surfaced the poisoned session as a 500 in prod.
+        provider.initiate_call = MagicMock(return_value=MagicMock(
+            success=False, provider_call_id=None, error="Aircall unavailable",
+            livekit_token=None, livekit_url=None, room_name=None,
+            agent_join_via_phone=None,
+        ))
+        aircall = self._aircall_mock({"id": "4124296516", "ended": True, "duration": 93})
+
+        with patch.object(dialer_service, "get_provider_for_user", return_value=provider), \
+             patch.object(dialer_service, "get_provider_by_name", return_value=aircall):
+            resp = client.post("/api/calls/start", json={
+                "lead_id": ext_lead.id, "phone_number": "(408) 364-6799 ext. 6688",
+            })
+
+        assert resp.status_code == 422, (
+            f"Expected the handled 422, got {resp.status_code}. Pre-fix this "
+            f"request died inside log_error with PendingRollbackError — the "
+            f"opaque 500 prod actually served."
+        )
+        # The error log itself must have landed, on a session that survived.
+        assert db.query(models.ErrorLog).filter(
+            models.ErrorLog.endpoint == "/api/calls/start"
+        ).count() >= 1, "log_error never committed — the session was still poisoned."

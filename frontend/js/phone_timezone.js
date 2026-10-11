@@ -8,7 +8,8 @@
 // Approach: Parse the E.164 prefix (or a best-guess from 10-digit national numbers)
 // and map it to an IANA timezone. Uses Intl.DateTimeFormat for formatting — no deps.
 //
-// India-specific: Bare 10-digit numbers default to +91 (IST).
+// Bare 10-digit numbers: NANP-formatted ("(509) 901-9720") → US area-code
+// lookup; plain digits ("9876543210") → India (+91/IST). See getPhoneTimezone.
 
 // ── Country-code → IANA timezone map (top calling countries for B2B SDRs) ──
 const CC_TZ = {
@@ -84,19 +85,50 @@ const CC_TZ = {
     '30':   'Europe/Athens',
 };
 
+// Country name/ISO2 → calling-code aliases, for when the caller has real
+// signal (Lead.country) instead of just the phone string's own formatting.
+// RCA 2026-08-19: the formatting-only heuristic below (spaces/dashes/parens
+// = NANP) breaks the moment an Indian number is grouped as "98105 92904" —
+// a normal Indian display convention, not a US one. Punctuation was never a
+// reliable country signal; Lead.country is real data and should win first.
+const COUNTRY_ALIASES = {
+    india: '91', in: '91',
+    'united states': '1', 'united states of america': '1', usa: '1', us: '1',
+    canada: '1', ca: '1',
+    'united kingdom': '44', uk: '44', gb: '44',
+    australia: '61', au: '61',
+};
+
 /**
  * Attempt to determine IANA timezone from a phone number string.
  * @param {string} raw - Phone number (E.164 or bare national number)
+ * @param {string} [countryHint] - Known country for this number (e.g. Lead.country)
+ *   — trusted over any format-based guessing when it resolves to a known code.
  * @returns {{ tz: string, countryCode: string, label: string } | null}
  */
-export function getPhoneTimezone(raw) {
+export function getPhoneTimezone(raw, countryHint) {
     if (!raw || typeof raw !== 'string') return null;
+
+    if (countryHint && typeof countryHint === 'string') {
+        const cc = COUNTRY_ALIASES[countryHint.trim().toLowerCase()];
+        if (cc && CC_TZ[cc]) {
+            return { tz: CC_TZ[cc], countryCode: cc, label: _tzLabel(CC_TZ[cc]) };
+        }
+    }
 
     // Normalise: strip spaces, dashes, parens
     const digits = raw.replace(/[\s\-().]/g, '');
 
-    // Bare 10-digit Indian numbers (no + prefix): default to +91
+    // No country hint (or an unrecognized one) — fall back to guessing from
+    // formatting for bare 10-digit numbers. NANP-formatted ("(509) 901-9720")
+    // → US area-code lookup; plain digits ("9876543210") → India, on the
+    // (unreliable but best-available) assumption that an unformatted 10-digit
+    // number in this org's data is more often Indian. This branch is a last
+    // resort — pass countryHint from Lead.country wherever it's available.
     if (/^\d{10}$/.test(digits)) {
+        if (/[\s\-()]/.test(raw)) {
+            return _lookupNanp(digits);
+        }
         return { tz: 'Asia/Kolkata', countryCode: '91', label: 'India (IST)' };
     }
 
@@ -112,6 +144,13 @@ export function getPhoneTimezone(raw) {
     }
 
     return null;
+}
+
+/** NANP-formatted 10-digit number ("(509) 901-9720"): look up by area code, default Eastern. */
+function _lookupNanp(digits) {
+    const areaCode = '1' + digits.slice(0, 3);
+    const tz = CC_TZ[areaCode] || CC_TZ['1'];
+    return { tz, countryCode: '1', label: _tzLabel(tz) };
 }
 
 /** Format a timezone as a readable country+offset label. */
@@ -131,11 +170,11 @@ function _tzLabel(tz) {
  * Returns an HTML badge string showing the local time at the number's timezone.
  * Designed to be injected next to a phone number display.
  * @param {string} phoneNumber
- * @param {object} opts - { compact: bool }
+ * @param {string} [countryHint] - Known country for this number (e.g. Lead.country)
  * @returns {string} HTML string
  */
-export function renderPhoneLocalTime(phoneNumber, opts = {}) {
-    const info = getPhoneTimezone(phoneNumber);
+export function renderPhoneLocalTime(phoneNumber, countryHint) {
+    const info = getPhoneTimezone(phoneNumber, countryHint);
     if (!info) return '';
 
     const { tz, label } = info;

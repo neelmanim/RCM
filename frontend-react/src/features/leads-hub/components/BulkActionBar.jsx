@@ -1,12 +1,15 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { X, Workflow } from 'lucide-react';
-import { useClickOutside } from '../hooks/useClickOutside';
+import React, { useState, useMemo, useEffect } from 'react';
+import { X, Workflow, ListPlus, Send } from 'lucide-react';
 import { ConfirmDialog } from '../../../components/ui/Modal';
-import { SalesJourneyService } from '../../../services/api';
+import { Select } from '../../../components/ui/Select';
+import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/Popover';
+import { MenuSkeletonRows } from '../../../components/ui/Skeleton';
+import { CallListsService } from '../../../services/api';
+import { JourneyPicker, useEnrollInCadence } from '../../sales-journey/EnrollInCadence';
 
-/** Custom searchable SDR picker — a native <select> with 20+ names opens as
- * unstyled OS dropdown chrome that clashes with the dark bar around it.
- * Same visual language as FilterBar's upload search popover. */
+import { useCampaignComposeForm } from '../../sales-tools/campaignCompose';
+import { CampaignComposeFields } from '../../sales-tools/CampaignsSection';
+
 // Capacity fields (active_leads/max_active) already come back on every user
 // from GET /admin/users — classic's assign picker shows them and disables
 // at-cap SDRs; sorting most-available-first (rather than whatever order the
@@ -18,135 +21,175 @@ function withCapacity(s) {
   return { ...s, active, max, atCap: active >= max };
 }
 
+/** Assign-to picker — the searchable Select (20+ SDR names) with each
+ * option's capacity folded into its label and at-cap SDRs disabled rather
+ * than hidden, matching classic's assign picker (spreads load visibly
+ * instead of silently routing around a full SDR). */
 function AssigneePicker({ sdrs, value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const ref = useRef(null);
-  useClickOutside(ref, () => setOpen(false), open);
-
   const ranked = useMemo(
     () => [...sdrs].map(withCapacity).sort((a, b) => (a.active / a.max) - (b.active / b.max)),
     [sdrs]
   );
+  const options = ranked.map((s) => ({
+    value: s.id,
+    label: `${s.name} — ${s.active}/${s.max}${s.atCap ? ' FULL' : ''}`,
+    disabled: s.atCap,
+  }));
   const selectedName = ranked.find((s) => s.id === value)?.name;
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return q ? ranked.filter((s) => s.name.toLowerCase().includes(q)) : ranked;
-  }, [ranked, search]);
 
   return (
-    <div className="relative shrink-0" ref={ref}>
-      <button type="button" onClick={() => setOpen((o) => !o)}
-        className="bg-white/10 border border-white/20 rounded-lg px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap max-w-[160px] truncate text-white">
+    <Select value={value} onChange={onChange} options={options} ariaLabel="Assign to" searchable>
+      <span className="inline-flex bg-white/10 border border-white/20 rounded-lg px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap max-w-[160px] truncate text-white">
         {selectedName || 'Assign to…'}
-      </button>
-      {open && (
-        <div className="absolute z-50 bottom-full left-0 mb-1.5 w-[220px] max-h-[260px] overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg p-1.5 text-slate-700">
-          <input
-            type="text" placeholder="Search SDR…" value={search} autoFocus
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full mb-1 px-2.5 py-1.5 text-xs rounded-md border border-slate-200 bg-slate-50 focus:outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20"
-          />
-          {filtered.length === 0 && <div className="px-2.5 py-2 text-xs text-slate-400">No SDRs match.</div>}
-          {filtered.map((s) => (
-            <button key={s.id} type="button" disabled={s.atCap} onClick={() => { onChange(s.id); setOpen(false); setSearch(''); }}
-              className={`w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md text-xs ${s.atCap ? 'text-slate-300 cursor-not-allowed' : value === s.id ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-slate-50'}`}>
-              <span className="truncate">{s.name}</span>
-              <span className="shrink-0 font-mono">{s.active}/{s.max}{s.atCap ? ' — FULL' : ''}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+      </span>
+    </Select>
   );
 }
 
-// Enroll in Journey — mirrors AssigneePicker's dropdown shape, fetches the
-// journey list lazily on first open rather than on every BulkActionBar mount
-// (this bar renders/re-renders far more often than a user actually enrolls).
-function JourneyPicker({ onEnroll }) {
+// Add to Call List — no role gate (unlike JourneyPicker's canEnrollJourney):
+// SDR/AE/Admin can all create and populate a Call List. Fetches lazily on
+// first open, same idiom as JourneyPicker, plus an inline "+ New list" create.
+function CallListPicker({ onAdd }) {
   const [open, setOpen] = useState(false);
-  const [journeys, setJourneys] = useState(null); // null = not yet loaded
-  const ref = useRef(null);
-  useClickOutside(ref, () => setOpen(false), open);
+  const [lists, setLists] = useState(null); // null = not yet loaded
+  const [newName, setNewName] = useState('');
 
-  useEffect(() => {
-    if (open && journeys === null) {
-      SalesJourneyService.list()
-        .then((all) => setJourneys(all.filter((j) => j.status === 'active')))
-        .catch(() => setJourneys([]));
-    }
-  }, [open, journeys]);
+  const refresh = () => CallListsService.list().then((r) => setLists(r.call_lists || [])).catch(() => setLists([]));
+  useEffect(() => { if (open && lists === null) refresh(); }, [open, lists]);
+
+  const handleCreateAndAdd = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    const created = await CallListsService.create(name);
+    setNewName('');
+    setOpen(false);
+    onAdd(created);
+  };
 
   return (
-    <div className="relative shrink-0" ref={ref}>
-      <button type="button" onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap text-white">
-        <Workflow size={13} /> Enroll in Cadence
-      </button>
-      {open && (
-        <div className="absolute z-50 bottom-full left-0 mb-1.5 w-[220px] max-h-[260px] overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg p-1.5 text-slate-700">
-          {journeys === null && <div className="px-2.5 py-2 text-xs text-slate-400">Loading…</div>}
-          {journeys?.length === 0 && <div className="px-2.5 py-2 text-xs text-slate-400">No published cadences yet.</div>}
-          {journeys?.map((j) => (
-            <button key={j.id} type="button" onClick={() => { onEnroll(j); setOpen(false); }}
-              className="w-full text-left px-2.5 py-1.5 rounded-md text-xs hover:bg-slate-50 truncate">
-              {j.name}
-            </button>
-          ))}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap text-white shrink-0">
+          <ListPlus size={13} /> Add to Call List
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-[240px] max-h-[300px] overflow-y-auto p-1.5">
+        {lists === null && <MenuSkeletonRows />}
+        {lists?.length === 0 && <div className="px-2.5 py-2 text-xs text-slate-400">No Call Lists yet.</div>}
+        {lists?.map((cl) => (
+          <button key={cl.id} type="button" onClick={() => { setOpen(false); onAdd(cl); }}
+            className="w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md text-xs hover:bg-slate-50">
+            <span className="truncate">{cl.name}</span>
+            <span className="shrink-0 text-slate-400">{cl.lead_count}</span>
+          </button>
+        ))}
+        <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-slate-100">
+          <input
+            type="text" placeholder="New list name…" value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreateAndAdd(); }}
+            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs rounded-md border border-slate-200 bg-slate-50 focus:outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20"
+          />
+          <button type="button" onClick={handleCreateAndAdd} disabled={!newName.trim()}
+            className="shrink-0 px-2.5 py-1.5 text-xs font-bold rounded-md bg-blue-600 text-white disabled:opacity-40">
+            Create
+          </button>
         </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
-export function BulkActionBar({ list, onToast, canDelete, canEnrollJourney }) {
+// Send Email Campaign — no role gate, same reasoning as CallListPicker above
+// (an SDR emailing their own selected leads isn't privileged the way bulk
+// org-wide assignment or cadence enrollment is). Uses ConfirmDialog's own
+// message+children+footer shape rather than a bespoke modal, matching every
+// other bulk action's confirm step.
+function CampaignComposeButton({ selectedCount, selectedLeadIds, onToast }) {
+  const [open, setOpen] = useState(false);
+  const form = useCampaignComposeForm({
+    leadIds: selectedLeadIds, open,
+    notify: (msg) => onToast(msg), // this bar's onToast is single-arg — drop the (unused here) type
+    onSuccess: () => setOpen(false),
+  });
+  const close = () => { setOpen(false); form.reset(); };
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap text-white shrink-0">
+        <Send size={13} /> Send Email Campaign
+      </button>
+      <ConfirmDialog
+        open={open}
+        onClose={close}
+        title="Send Email Campaign"
+        message={`Compose one email to send to ${selectedCount} lead(s). Find results afterward in Sales Tools → Campaigns.`}
+        confirmLabel={form.confirmLabel}
+        onConfirm={form.handleSend}
+        loading={form.busy}
+      >
+        <CampaignComposeFields
+          templates={form.templates}
+          templateId={form.templateId}
+          onPickTemplate={form.handlePickTemplate}
+          campaignName={form.campaignName} setCampaignName={form.setCampaignName}
+          subject={form.subject} setSubject={form.setSubject}
+          body={form.body} setBody={form.setBody}
+          saveAsTemplate={form.saveAsTemplate} setSaveAsTemplate={form.setSaveAsTemplate}
+          templateName={form.templateName} setTemplateName={form.setTemplateName}
+          schedule={form.schedule} setSchedule={form.setSchedule}
+          includeSignature={form.includeSignature} setIncludeSignature={form.setIncludeSignature}
+        />
+      </ConfirmDialog>
+    </>
+  );
+}
+
+export function BulkActionBar({ list, onToast, canDelete, canEnrollJourney, canBulkAssign = true }) {
   const { selected, total, clearSelection, sdrs, bulkAssign, bulkUnassign, bulkDelete, selectAllMatching, selectingAllMatching } = list;
   const [assignee, setAssignee] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [enrollTarget, setEnrollTarget] = useState(null); // journey object pending confirmation
-  const [enrollBusy, setEnrollBusy] = useState(false);
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [unassignBusy, setUnassignBusy] = useState(false);
+
+  // Hooks before the early return below (React's rule of hooks).
+  const enroll = useEnrollInCadence({ leadIds: Array.from(selected), onToast: (message) => onToast(message) });
 
   if (selected.size === 0) return null;
 
-  const handleEnrollPick = (journey) => {
-    if (selected.size > 200) {
-      onToast('Enroll in Cadence supports up to 200 leads at a time — narrow your selection.');
-      return;
-    }
-    setEnrollTarget(journey);
-  };
-  const confirmEnroll = async () => {
-    setEnrollBusy(true);
-    try {
-      const result = await SalesJourneyService.enroll(enrollTarget.id, Array.from(selected));
-      onToast(`Enrolled ${result.enrolled}/${result.requested} lead(s) into "${enrollTarget.name}"` +
-        (result.skipped.length ? ` — ${result.skipped.length} skipped` : ''));
-      setEnrollTarget(null);
-    } catch (err) {
-      onToast('Failed to enroll leads — please try again.');
-    } finally {
-      setEnrollBusy(false);
-    }
-  };
-
   const handleAssign = async () => {
     if (!assignee) { onToast('Pick an SDR first.'); return; }
+    setAssignBusy(true);
     try {
       const result = await bulkAssign(assignee);
       onToast(result.message);
       setAssignee('');
     } catch (err) {
       onToast('Failed to assign leads — please try again.');
+    } finally {
+      setAssignBusy(false);
     }
   };
   const handleUnassign = async () => {
+    setUnassignBusy(true);
     try {
       const result = await bulkUnassign();
       onToast(result.message);
     } catch (err) {
       onToast('Failed to unassign leads — please try again.');
+    } finally {
+      setUnassignBusy(false);
+    }
+  };
+  const handleAddToCallList = async (callList) => {
+    try {
+      const result = await CallListsService.addLeads(callList.id, Array.from(selected));
+      onToast(`Added ${result.added} lead(s) to "${callList.name}"` +
+        (result.already_present ? ` — ${result.already_present} already in the list` : ''));
+    } catch (err) {
+      onToast('Failed to add leads to the Call List — please try again.');
     }
   };
   const confirmDelete = async () => {
@@ -172,13 +215,33 @@ export function BulkActionBar({ list, onToast, canDelete, canEnrollJourney }) {
           {selectingAllMatching ? 'Fetching matching lead IDs…' : `Select all ${total} matching leads`}
         </button>
       )}
-      <div className="w-px h-5 bg-white/20" />
-      <AssigneePicker sdrs={sdrs} value={assignee} onChange={setAssignee} />
-      <button type="button" onClick={handleAssign} className="bg-blue-600 rounded-lg px-3.5 py-1.5 font-bold whitespace-nowrap text-white">Assign</button>
-      <div className="w-px h-5 bg-white/20" />
-      <button type="button" onClick={handleUnassign} className="bg-white/10 border border-white/20 rounded-lg px-3.5 py-1.5 font-bold whitespace-nowrap text-white">Unassign</button>
+      {canBulkAssign && <div className="w-px h-5 bg-white/20" />}
+      {canBulkAssign && <AssigneePicker sdrs={sdrs} value={assignee} onChange={setAssignee} />}
+      {canBulkAssign && (
+        <button type="button" onClick={handleAssign} disabled={assignBusy}
+          className="bg-blue-600 rounded-lg px-3.5 py-1.5 font-bold whitespace-nowrap text-white disabled:opacity-60">
+          {assignBusy ? 'Assigning…' : 'Assign'}
+        </button>
+      )}
+      {canBulkAssign && <div className="w-px h-5 bg-white/20" />}
+      {canBulkAssign && (
+        <button type="button" onClick={handleUnassign} disabled={unassignBusy}
+          className="bg-white/10 border border-white/20 rounded-lg px-3.5 py-1.5 font-bold whitespace-nowrap text-white disabled:opacity-60">
+          {unassignBusy ? 'Unassigning…' : 'Unassign'}
+        </button>
+      )}
       {canEnrollJourney && <div className="w-px h-5 bg-white/20" />}
-      {canEnrollJourney && <JourneyPicker onEnroll={handleEnrollPick} />}
+      {canEnrollJourney && (
+        <JourneyPicker onEnroll={enroll.start} side="top">
+          <button type="button" className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap text-white shrink-0">
+            <Workflow size={13} /> Enroll in Cadence
+          </button>
+        </JourneyPicker>
+      )}
+      <div className="w-px h-5 bg-white/20" />
+      <CallListPicker onAdd={handleAddToCallList} />
+      <div className="w-px h-5 bg-white/20" />
+      <CampaignComposeButton selectedCount={selected.size} selectedLeadIds={Array.from(selected)} onToast={onToast} />
       {canDelete && (
         <button type="button" onClick={() => setDeleteConfirmOpen(true)} className="text-red-300 border border-red-400/40 rounded-lg px-3.5 py-1.5 font-bold whitespace-nowrap">Delete</button>
       )}
@@ -201,15 +264,7 @@ export function BulkActionBar({ list, onToast, canDelete, canEnrollJourney }) {
     />
     )}
 
-    <ConfirmDialog
-      open={!!enrollTarget}
-      onClose={() => setEnrollTarget(null)}
-      title="Enroll in Cadence"
-      message={enrollTarget ? `Enroll ${selected.size} lead(s) into "${enrollTarget.name}"?` : ''}
-      confirmLabel="Enroll"
-      onConfirm={confirmEnroll}
-      loading={enrollBusy}
-    />
+    {enroll.dialog}
     </>
   );
 }

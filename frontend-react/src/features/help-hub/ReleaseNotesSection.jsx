@@ -69,13 +69,21 @@ export const ReleaseNotesSection = ({ releases }) => (
         <div key={gi} className="mb-3">
           <div className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1.5 pl-1">v{group.family}</div>
           {group.entries.map((entry, i) => (
-            entry.kind === 'minor'
-              ? <MinorEntryLine key={i} entry={entry} />
-              : <FullEntry key={i} entry={entry} />
+            entry.items
+              ? <FullEntry key={i} entry={entry} />
+              : <MinorEntryLine key={i} entry={entry} />
           ))}
         </div>
       ) : (
-        group.entries.map((entry, i) => <FullEntry key={i} entry={entry} />)
+        // 2026-09-28: an ungrouped entry (no `family`) with no `items` used
+        // to hit FullEntry's `entry.items.map(...)` unguarded and crash the
+        // whole Help Hub for every user over one malformed JSON entry — the
+        // same items-or-summary check the grouped branch already had.
+        group.entries.map((entry, i) => (
+          entry.items
+            ? <FullEntry key={i} entry={entry} />
+            : <MinorEntryLine key={i} entry={entry} />
+        ))
       )
     ))}
   </div>

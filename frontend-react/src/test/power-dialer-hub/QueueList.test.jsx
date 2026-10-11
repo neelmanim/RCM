@@ -103,31 +103,31 @@ describe('QueueList pagination', () => {
 
   it('shows no pagination controls when the queue fits on one page', () => {
     render(<QueueList queue={queue} currentIndex={0} sessionStatus={new Map()} onReorderUpcoming={vi.fn()} />);
-    expect(screen.queryByText(/Page \d+ of \d+/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^\d+ \/ \d+$/)).not.toBeInTheDocument();
   });
 
   it('paginates a long queue and advances via Next/Prev', () => {
     render(<QueueList queue={bigQueue(20)} currentIndex={0} sessionStatus={new Map()} onReorderUpcoming={vi.fn()} />);
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
     expect(screen.getByText('Lead 0')).toBeInTheDocument();
     expect(screen.queryByText('Lead 15')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Next/ }));
-    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+    expect(screen.getByText('2 / 2')).toBeInTheDocument();
     expect(screen.getByText('Lead 15')).toBeInTheDocument();
     expect(screen.queryByText('Lead 0')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Next/ })).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: /Prev/ }));
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
   });
 
   it('jumps to the page containing the current lead as it advances', () => {
     const { rerender } = render(<QueueList queue={bigQueue(20)} currentIndex={0} sessionStatus={new Map()} onReorderUpcoming={vi.fn()} />);
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
 
     rerender(<QueueList queue={bigQueue(20)} currentIndex={16} sessionStatus={new Map()} onReorderUpcoming={vi.fn()} />);
-    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+    expect(screen.getByText('2 / 2')).toBeInTheDocument();
     expect(screen.getByText(/← Current/)).toBeInTheDocument();
   });
 });

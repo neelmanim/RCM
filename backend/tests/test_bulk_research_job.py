@@ -22,6 +22,15 @@ from database import get_db
 from auth import get_current_user, require_admin, require_super_admin
 
 
+@pytest.fixture(autouse=True)
+def _no_live_groq_model_lookup():
+    """The bulk-research endpoint now revalidates the configured model
+    against Groq's live /models endpoint before spawning the background job
+    (RCA 2026-08-20). Keep this file offline."""
+    with patch("routes.admin_routes._resolve_groq_model", return_value="llama-3.1-8b-instant"):
+        yield
+
+
 def _make_admin_app(db, user_override=None):
     from routes.admin_routes import router as admin_router
     app = FastAPI()

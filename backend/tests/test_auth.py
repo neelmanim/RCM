@@ -50,13 +50,48 @@ class TestGetCurrentUser:
             get_current_user(credentials=None)
         assert exc.value.status_code == 401
 
-    def test_valid_credentials(self):
+    @staticmethod
+    def _creds(claims):
         from unittest.mock import MagicMock
-        token = create_jwt({"sub": "u1", "email": "u@t.com", "role": "SDR"})
         creds = MagicMock()
-        creds.credentials = token
-        result = get_current_user(credentials=creds)
+        creds.credentials = create_jwt(claims)
+        return creds
+
+    @staticmethod
+    def _allowed_user(db, role="SDR", pod_id=None):
+        import access_db, models
+        access_db.forget_identity()
+        u = models.User(id="u1", email="u@t.com", name="U", role=role, pod_id=pod_id)
+        db.add(u); db.commit()
+        access_db.add_allowed_user(db, "u@t.com", "U", role)
+        return u
+
+    def test_valid_credentials(self, db):
+        self._allowed_user(db)
+        result = get_current_user(credentials=self._creds({"sub": "u1", "email": "u@t.com", "role": "SDR"}), db=db)
         assert result["sub"] == "u1"
+
+    def test_removed_user_is_refused_even_with_a_valid_token(self, db):
+        """RCA 2026-09-29: a JWT stayed valid after the user lost access."""
+        import access_db
+        self._allowed_user(db)
+        access_db.remove_allowed_user(db, "u@t.com")
+        with pytest.raises(HTTPException) as exc:
+            get_current_user(credentials=self._creds({"sub": "u1", "email": "u@t.com", "role": "SDR"}), db=db)
+        assert exc.value.status_code == 401
+
+    def test_role_and_pod_come_from_the_db_not_the_token(self, db):
+        """A demoted user's old token must not keep the old role."""
+        self._allowed_user(db, role="SDR", pod_id=None)
+        result = get_current_user(credentials=self._creds({"sub": "u1", "role": "Super Admin", "pod_id": "x"}), db=db)
+        assert (result["role"], result["pod_id"]) == ("SDR", None)
+
+    def test_monitor_mode_logs_but_lets_a_removed_user_through(self, db, monkeypatch):
+        monkeypatch.setenv("SECURITY_IDENTITY_MODE", "monitor")
+        import access_db
+        access_db.forget_identity()
+        result = get_current_user(credentials=self._creds({"sub": "ghost", "role": "SDR"}), db=db)
+        assert result["sub"] == "ghost"
 
 
 # ── Role guards ──────────────────────────────────────────────────────────────

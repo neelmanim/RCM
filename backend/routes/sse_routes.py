@@ -38,7 +38,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from auth import get_current_user, decode_jwt
+from auth import get_current_user, authenticate, authenticates_itself
 from database import get_db
 import sse_broker
 
@@ -51,6 +51,7 @@ KEEPALIVE_INTERVAL_S = 25  # seconds between SSE keepalive pings
 def _get_sse_user(
     request: Request,
     token: str = Query(default=None, description="JWT for EventSource (cannot send headers)"),
+    db: Session = Depends(get_db),
 ):
     """
     Auth dependency for the SSE endpoint.
@@ -64,17 +65,17 @@ def _get_sse_user(
     """
     # 1. Try query-string token first (EventSource path)
     if token:
-        return decode_jwt(token)
+        return authenticate(token, db)
     # 2. Fall back to Authorization: Bearer header
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
-        return decode_jwt(auth_header[7:])
+        return authenticate(auth_header[7:], db)
     from fastapi import HTTPException
     raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 async def _event_stream(
-    user_id: int,
+    user_id: str,
     request: Request,
 ) -> AsyncGenerator[str, None]:
     """
@@ -120,7 +121,7 @@ async def _event_stream(
         )
 
 
-@router.get("/api/calls/events")
+@router.get("/api/calls/events", dependencies=[Depends(authenticates_itself)])
 async def call_events_stream(
     request: Request,
     user: dict = Depends(_get_sse_user),
@@ -131,14 +132,19 @@ async def call_events_stream(
 
     Replaces the 2-second polling loop in dialer_widget.js.
     Events are published by:
-      - dialer_routes.py webhook handler (RCM push)
+      - dialer_routes.py webhook handler (Alternate Messenger push)
       - dialer_routes.py start_call (CALL_STARTED synthetic event)
       - dialer_routes.py disconnect_call (CALL_ENDED synthetic event)
 
     Authentication: JWT Bearer (same as all other API routes).
     The user_id from the JWT is used to route events to the correct stream.
     """
-    user_id = user["id"]
+    # RCA 2026-08-19: was user["id"] — decode_jwt() returns the raw JWT
+    # payload, whose user-id claim is "sub" (as used by every other route
+    # and by dialer_routes.py's sse_broker.publish(user["sub"], ...) on the
+    # publish side). "id" doesn't exist in the payload, so this 500'd on
+    # every single call — the endpoint has never actually worked.
+    user_id = user["sub"]
 
     return StreamingResponse(
         _event_stream(user_id, request),

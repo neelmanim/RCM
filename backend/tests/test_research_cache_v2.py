@@ -20,6 +20,14 @@ import models
 from conftest import create_test_lead, create_test_user, SUPER_ADMIN, create_sync_settings
 
 
+@pytest.fixture(autouse=True)
+def _no_live_groq_model_lookup():
+    """_get_llm_config revalidates the configured model against Groq's live
+    /models endpoint (RCA 2026-08-20). Keep this file offline."""
+    with patch("routes.ai_research_routes._resolve_groq_model", return_value="llama-3.1-8b-instant"):
+        yield
+
+
 def _make_cache_entry(db, company_key, heat=None, opening=None, days_old=0):
     """Create a CompanyResearch cache entry, optionally with v2 fields."""
     from sqlalchemy.exc import IntegrityError

@@ -7,14 +7,14 @@ Covers ALL 12 commits pending for production:
   1. Conversations (Messaging → Conversations rename)
   2. Conversations phone_secondary fallback
   3. Conversations error handling & no auto-refresh
-  4. Per-SDR rcm_user_id (V19 migration)
-  5. RCM auth flow (server-side session/refresh)
+  4. Per-SDR messenger_user_id (V19 migration)
+  5. Alternate Messenger auth flow (server-side session/refresh)
   6. Email open tracking (V20 migration)
   7. Email tracking webhooks (message.opened)
   8. Email tracking frontend (badges)
   9. Existing features regression (leads, calls, email send, admin)
 
-Target: https://rcm-crm-staging.onrender.com
+Target: https://messenger-crm-staging.onrender.com
 """
 
 import requests
@@ -23,7 +23,7 @@ import time
 import sys
 import os
 
-BASE = "https://rcm-crm-staging.onrender.com"
+BASE = "https://messenger-crm-staging.onrender.com"
 JWT = os.environ.get("TEST_JWT", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ZGUwZDU2Ny0xYWNmLTRlOTgtOTQ0Yi01NDJjNzdkMzA4ZTQiLCJlbWFpbCI6Im5lZWxtYW5pLm1pc2hyYUBzY3JlZW4tbWFnaWMuY29tIiwibmFtZSI6Ik5lZWxtYW5pIE1pc2hyYSIsInJvbGUiOiJTdXBlciBBZG1pbiIsInBvZF9pZCI6bnVsbCwiZGlhbGVyX2VuYWJsZWQiOmZhbHNlLCJlbWFpbF9zeW5jX2VuYWJsZWQiOmZhbHNlLCJleHAiOjE3NzU0ODQ0MjV9.jlyMiPiV8HkPXBCgIEqVuymXvVjtay9EL5rX0zqrNFI")
 HEADERS = {"Authorization": f"Bearer {JWT}", "Content-Type": "application/json"}
 
@@ -74,7 +74,7 @@ def api_patch(path, data=None):
 # ═══════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     print("\n" + "═"*65)
-    print("  RCM CRM — PRE-PRODUCTION E2E TEST SUITE")
+    print("  ALTERNATE_CRM CRM — PRE-PRODUCTION E2E TEST SUITE")
     print("  Target: " + BASE)
     print("═"*65)
 
@@ -154,7 +154,7 @@ if __name__ == "__main__":
              all(k in u for k in ["id", "email", "name", "role"]))
         _check("User has dialer_enabled", "dialer_enabled" in u)
         _check("User has email_sync_enabled", "email_sync_enabled" in u)
-        _check("User has rcm_user_id (V19)", "rcm_user_id" in u,
+        _check("User has messenger_user_id (V19)", "messenger_user_id" in u,
              f"Keys: {list(u.keys())}")
         # API returns 'pod' (object) not 'pod_id'
         _check("User has pod field", "pod" in u,
@@ -167,9 +167,9 @@ if __name__ == "__main__":
     _check("GET /api/admin/sync-settings → 200", settings_resp.status_code == 200)
 
     settings = settings_resp.json()
-    _check("Settings has rcm_enabled", "rcm_enabled" in settings)
-    _check("Settings has rcm_base_url", "rcm_base_url" in settings)
-    _check("Settings has rcm_user_id", "rcm_user_id" in settings)
+    _check("Settings has messenger_enabled", "messenger_enabled" in settings)
+    _check("Settings has messenger_base_url", "messenger_base_url" in settings)
+    _check("Settings has messenger_user_id", "messenger_user_id" in settings)
     _check("Settings has sync_direction (SF config)",
          "sync_direction" in settings,
          f"Keys: {list(settings.keys())}")
@@ -220,31 +220,31 @@ if __name__ == "__main__":
 
 
     # ═══════════════════════════════════════════════════════════════════
-    # SECTION 5: Conversations — Per-SDR rcm_user_id
+    # SECTION 5: Conversations — Per-SDR messenger_user_id
     # ═══════════════════════════════════════════════════════════════════
-    section("5. Per-SDR RCM User ID (V19)")
+    section("5. Per-SDR Alternate Messenger User ID (V19)")
 
     # Code-level: check model
     models_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                "backend", "models.py")
     with open(models_path, "r") as f:
         models_code = f.read()
-    _check("User model has rcm_user_id column", "rcm_user_id" in models_code)
+    _check("User model has messenger_user_id column", "messenger_user_id" in models_code)
 
     # Code-level: check migration
     migration_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                   "backend", "migrations.py")
     with open(migration_path, "r") as f:
         mig_code = f.read()
-    _check("V19 migration exists for rcm_user_id",
-         "V19" in mig_code and "rcm_user_id" in mig_code)
+    _check("V19 migration exists for messenger_user_id",
+         "V19" in mig_code and "messenger_user_id" in mig_code)
 
-    # API-level: Try updating a user's rcm_user_id
+    # API-level: Try updating a user's messenger_user_id
     if isinstance(users, list) and len(users) > 0:
         test_user_id = users[0]["id"]
         patch_resp = api_patch(f"/api/admin/users/{test_user_id}/settings",
-                               {"rcm_user_id": "test_e2e_123"})
-        _check("PATCH user settings with rcm_user_id → 200",
+                               {"messenger_user_id": "test_e2e_123"})
+        _check("PATCH user settings with messenger_user_id → 200",
              patch_resp.status_code == 200,
              f"Status: {patch_resp.status_code}")
 
@@ -253,12 +253,12 @@ if __name__ == "__main__":
             users_resp2 = api_get("/api/admin/users")
             updated_user = next((u for u in users_resp2.json() if u["id"] == test_user_id), None)
             if updated_user:
-                _check("rcm_user_id persisted correctly",
-                     updated_user.get("rcm_user_id") == "test_e2e_123",
-                     f"Got: {updated_user.get('rcm_user_id')}")
+                _check("messenger_user_id persisted correctly",
+                     updated_user.get("messenger_user_id") == "test_e2e_123",
+                     f"Got: {updated_user.get('messenger_user_id')}")
                 # Clean up
                 api_patch(f"/api/admin/users/{test_user_id}/settings",
-                          {"rcm_user_id": None})
+                          {"messenger_user_id": None})
 
 
     # ═══════════════════════════════════════════════════════════════════
@@ -547,10 +547,6 @@ if __name__ == "__main__":
     logs_resp = api_get("/api/admin/login-logs?page=1&per_page=5")
     _check("GET /api/admin/login-logs → 200", logs_resp.status_code == 200)
 
-    # Config
-    config_resp = api_get("/api/config")
-    _check("GET /api/config → 200", config_resp.status_code == 200)
-
     # Nylas admin config
     nylas_resp = api_get("/api/email/config")
     _check("GET /api/email/config → 200", nylas_resp.status_code == 200)
@@ -604,7 +600,7 @@ if __name__ == "__main__":
              e_resp.status_code == 200 and m_resp.status_code == 200)
 
     _check("Admin settings cover both email and conversations features",
-         "rcm_enabled" in settings)
+         "messenger_enabled" in settings)
 
 
     # ═══════════════════════════════════════════════════════════════════

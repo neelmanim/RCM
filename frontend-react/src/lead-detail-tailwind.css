@@ -1,0 +1,32 @@
+/*
+ * lead-detail-tailwind.css
+ *
+ * Tailwind entry point for the Lead Detail Hub IIFE bundle ONLY. Mirrors
+ * leads-tailwind.css exactly — omits @tailwind base to avoid leaking resets
+ * into the Vanilla JS shell, and reproduces just the border-reset half of
+ * Preflight, scoped to .leaddetailhub.
+ */
+.leaddetailhub, .leaddetailhub *, .leaddetailhub *::before, .leaddetailhub *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.leaddetailhub) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+/* No Preflight here, so form fields kept the browser default (monospace
+   textareas in the cadence approval editor). Same half-reset as buttons. */
+:where(.leaddetailhub) :is(input, textarea, select) {
+  font: inherit;
+  color: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

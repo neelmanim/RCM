@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Research Form Prototype — Alternate CRM</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+    font-family:'Inter',system-ui,sans-serif;
+    background:#f1f5f9;
+    color:#1e293b;
+    padding:24px;
+    min-height:100vh;
+}
+.container {
+    max-width:720px;
+    margin:0 auto;
+}
+
+/* ── Header ── */
+.lead-header {
+    display:flex; align-items:center; gap:16px;
+    margin-bottom:24px;
+}
+.lead-avatar {
+    width:48px; height:48px; border-radius:50%;
+    background:linear-gradient(135deg,#6366f1,#8b5cf6);
+    color:white; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:1.1rem;
+}
+.lead-header h1 { font-size:1.4rem; font-weight:700; }
+.lead-header .sub { font-size:0.85rem; color:#64748b; }
+
+/* ── Progress Card ── */
+.progress-card {
+    background:white; border-radius:16px; padding:24px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.06);
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:20px; border:1px solid #e2e8f0;
+}
+.progress-left { display:flex; align-items:center; gap:20px; }
+.progress-ring-wrap {
+    position:relative; width:72px; height:72px;
+}
+.progress-ring-wrap svg { transform:rotate(-90deg); }
+.progress-ring-bg { fill:none; stroke:#e2e8f0; stroke-width:6; }
+.progress-ring-fill {
+    fill:none; stroke:#6366f1; stroke-width:6;
+    stroke-linecap:round;
+    transition:stroke-dashoffset 0.6s ease;
+}
+.progress-ring-fill.complete { stroke:#22c55e; }
+.progress-text {
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+}
+.progress-text .num { font-size:1.2rem; font-weight:800; color:#6366f1; }
+.progress-text .num.complete { color:#22c55e; }
+.progress-text .label { font-size:0.6rem; color:#94a3b8; text-transform:uppercase; letter-spacing:0.05em; }
+.progress-info h3 { font-size:0.95rem; font-weight:700; }
+.progress-info p { font-size:0.78rem; color:#64748b; margin-top:2px; }
+
+.auto-fill-btn {
+    background:linear-gradient(135deg,#6366f1,#8b5cf6);
+    color:white; border:none; padding:10px 20px;
+    border-radius:10px; font-size:0.82rem; font-weight:600;
+    cursor:pointer; transition:all 0.2s; font-family:inherit;
+    display:flex; align-items:center; gap:6px;
+}
+.auto-fill-btn:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(99,102,241,0.3); }
+.auto-fill-btn:active { transform:scale(0.97); }
+
+/* ── Accordion Sections ── */
+.section-card {
+    background:white; border-radius:14px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.06);
+    margin-bottom:12px; border:1px solid #e2e8f0;
+    overflow:hidden;
+    transition:border-color 0.3s;
+}
+.section-card.section-complete { border-left:4px solid #22c55e; }
+.section-card.section-partial { border-left:4px solid #f59e0b; }
+.section-card.section-empty { border-left:4px solid #e2e8f0; }
+
+.section-header {
+    padding:18px 20px;
+    display:flex; align-items:center; justify-content:space-between;
+    cursor:pointer; user-select:none;
+    transition:background 0.2s;
+}
+.section-header:hover { background:#f8fafc; }
+.section-header-left { display:flex; align-items:center; gap:10px; }
+.section-header-left .icon { font-size:1.2rem; }
+.section-header-left h3 { font-size:0.92rem; font-weight:700; }
+.section-badge {
+    font-size:0.7rem; font-weight:600; padding:3px 10px;
+    border-radius:999px;
+}
+.badge-done { background:#dcfce7; color:#15803d; }
+.badge-pending { background:#fef3c7; color:#92400e; }
+.section-chevron {
+    transition:transform 0.3s; font-size:0.8rem; color:#94a3b8;
+}
+.section-card.open .section-chevron { transform:rotate(180deg); }
+
+.section-body {
+    max-height:0; overflow:hidden;
+    transition:max-height 0.4s ease, padding 0.3s ease;
+    padding:0 20px;
+}
+.section-card.open .section-body {
+    max-height:800px;
+    padding:0 20px 20px;
+}
+
+/* ── Form Fields ── */
+.field-group {
+    margin-bottom:18px;
+    animation:slideUp 0.3s ease;
+}
+@keyframes slideUp {
+    from { opacity:0; transform:translateY(8px); }
+    to { opacity:1; transform:translateY(0); }
+}
+.field-label {
+    font-size:0.8rem; font-weight:600; color:#475569;
+    margin-bottom:6px; display:flex; align-items:center; gap:8px;
+}
+.auto-tag {
+    font-size:0.62rem; background:#dbeafe; color:#1d4ed8;
+    padding:2px 8px; border-radius:999px; font-weight:600;
+}
+.field-input {
+    width:100%; padding:10px 14px;
+    border:1.5px solid #e2e8f0; border-radius:10px;
+    font-family:inherit; font-size:0.88rem;
+    outline:none; transition:all 0.2s;
+    background:#fafbfc;
+}
+.field-input:focus {
+    border-color:#6366f1;
+    box-shadow:0 0 0 3px rgba(99,102,241,0.1);
+    background:white;
+}
+.field-input.filled {
+    border-color:#a5b4fc;
+    background:white;
+}
+.field-input::placeholder { color:#94a3b8; }
+
+/* ── Chips ── */
+.chip-group {
+    display:flex; flex-wrap:wrap; gap:8px;
+    margin-top:4px;
+}
+.chip {
+    padding:7px 16px; border-radius:999px;
+    font-size:0.8rem; font-weight:500;
+    border:1.5px solid #e2e8f0;
+    background:white; color:#475569;
+    cursor:pointer; transition:all 0.2s;
+    user-select:none;
+}
+.chip:hover { border-color:#a5b4fc; color:#4f46e5; background:#eef2ff; }
+.chip.selected {
+    background:#4f46e5; color:white;
+    border-color:#4f46e5;
+    transform:scale(1.05);
+}
+
+/* ── Tags ── */
+.tag-group { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+.tag {
+    display:flex; align-items:center; gap:4px;
+    padding:5px 12px; border-radius:8px;
+    background:#f1f5f9; font-size:0.78rem; color:#475569;
+    border:1px solid #e2e8f0;
+}
+.tag .remove {
+    cursor:pointer; color:#94a3b8; font-weight:700;
+    transition:color 0.2s;
+}
+.tag .remove:hover { color:#ef4444; }
+.add-tag-btn {
+    padding:5px 12px; border-radius:8px;
+    background:white; font-size:0.78rem; color:#6366f1;
+    border:1.5px dashed #a5b4fc; cursor:pointer;
+    font-family:inherit; font-weight:600;
+    transition:all 0.2s;
+}
+.add-tag-btn:hover { background:#eef2ff; }
+
+/* ── Tip Box ── */
+.tip-box {
+    background:#fffbeb; border:1px solid #fde68a;
+    border-radius:10px; padding:12px 16px;
+    font-size:0.78rem; color:#92400e;
+    display:flex; align-items:flex-start; gap:8px;
+    margin-top:12px;
+}
+.tip-box .tip-icon { font-size:1rem; flex-shrink:0; }
+
+/* ── Save Bar ── */
+.save-bar {
+    position:sticky; bottom:0;
+    background:white; border-radius:14px;
+    padding:16px 20px; margin-top:16px;
+    display:flex; align-items:center; justify-content:space-between;
+    box-shadow:0 -4px 20px rgba(0,0,0,0.08);
+    border:1px solid #e2e8f0;
+}
+.save-bar-left { font-size:0.82rem; color:#64748b; }
+.save-bar-left strong { color:#1e293b; }
+.save-btn {
+    background:#4f46e5; color:white; border:none;
+    padding:10px 28px; border-radius:10px;
+    font-size:0.88rem; font-weight:600;
+    cursor:pointer; transition:all 0.2s;
+    font-family:inherit;
+}
+.save-btn:hover { background:#4338ca; transform:translateY(-1px); }
+.save-btn:active { transform:scale(0.97); }
+.save-btn.saved {
+    background:#22c55e;
+}
+
+/* ── Confetti ── */
+.confetti {
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    pointer-events:none; z-index:9999;
+}
+.confetti-piece {
+    position:absolute; width:8px; height:8px;
+    border-radius:2px; animation:confettiFall 1.5s ease forwards;
+}
+@keyframes confettiFall {
+    0% { opacity:1; transform:translateY(-20px) rotate(0deg); }
+    100% { opacity:0; transform:translateY(100vh) rotate(720deg); }
+}
+</style>
+</head>
+<body>
+<div class="container">
+    <!-- Lead Header -->
+    <div class="lead-header">
+        <div class="lead-avatar">PG</div>
+        <div>
+            <h1>Paula Garcia</h1>
+            <div class="sub">Cyberdyne · SDR Research</div>
+        </div>
+    </div>
+
+    <!-- Progress Card -->
+    <div class="progress-card">
+        <div class="progress-left">
+            <div class="progress-ring-wrap">
+                <svg width="72" height="72" viewBox="0 0 72 72">
+                    <circle class="progress-ring-bg" cx="36" cy="36" r="30"/>
+                    <circle class="progress-ring-fill" id="progress-ring" cx="36" cy="36" r="30"
+                        stroke-dasharray="188.5" stroke-dashoffset="188.5"/>
+                </svg>
+                <div class="progress-text">
+                    <span class="num" id="progress-num">0/10</span>
+                    <span class="label">done</span>
+                </div>
+            </div>
+            <div class="progress-info">
+                <h3 id="progress-title">Research Score</h3>
+                <p id="progress-sub">Fill in to unlock Calling status</p>
+            </div>
+        </div>
+        <button class="auto-fill-btn" id="auto-fill-btn">⚡ Auto-fill from data</button>
+    </div>
+
+    <!-- Section 1: Company Basics -->
+    <div class="section-card section-empty open" id="sec-company" data-fields="company_do,industry,company_size,services,geo,timezone">
+        <div class="section-header" onclick="toggleSection('sec-company')">
+            <div class="section-header-left">
+                <span class="icon">📋</span>
+                <h3>Company Basics</h3>
+                <span class="section-badge badge-pending" id="badge-company">0/6 filled</span>
+            </div>
+            <span class="section-chevron">▼</span>
+        </div>
+        <div class="section-body">
+            <div class="field-group">
+                <div class="field-label">What does this company do?</div>
+                <input class="field-input" id="f-company_do" placeholder="e.g. Cloud-based HR software for mid-market" oninput="updateProgress()">
+            </div>
+            <div class="field-group">
+                <div class="field-label">Industry</div>
+                <div class="chip-group" data-field="industry">
+                    <div class="chip" onclick="selectChip(this,'industry')">SaaS</div>
+                    <div class="chip" onclick="selectChip(this,'industry')">Healthcare</div>
+                    <div class="chip" onclick="selectChip(this,'industry')">Finance</div>
+                    <div class="chip" onclick="selectChip(this,'industry')">Retail</div>
+                    <div class="chip" onclick="selectChip(this,'industry')">Manufacturing</div>
+                    <div class="chip" onclick="selectChip(this,'industry')">Real Estate</div>
+                    <div class="chip" onclick="selectChip(this,'industry')">Education</div>
+                    <div class="chip" onclick="selectChip(this,'industry')">Other</div>
+                </div>
+            </div>
+            <div class="field-group">
+                <div class="field-label">Company Size</div>
+                <div class="chip-group" data-field="company_size">
+                    <div class="chip" onclick="selectChip(this,'company_size')">1–50</div>
+                    <div class="chip" onclick="selectChip(this,'company_size')">51–200</div>
+                    <div class="chip" onclick="selectChip(this,'company_size')">201–1000</div>
+                    <div class="chip" onclick="selectChip(this,'company_size')">1000+</div>
+                </div>
+            </div>
+            <div class="field-group">
+                <div class="field-label">Key Services Offered</div>
+                <input class="field-input" id="f-services" placeholder="What do they sell or provide?" oninput="updateProgress()">
+            </div>
+            <div class="field-group">
+                <div class="field-label">Geo / Region</div>
+                <input class="field-input" id="f-geo" placeholder="e.g. North America, APAC" oninput="updateProgress()">
+            </div>
+            <div class="field-group">
+                <div class="field-label">Time Zone</div>
+                <div class="chip-group" data-field="timezone">
+                    <div class="chip" onclick="selectChip(this,'timezone')">IST</div>
+                    <div class="chip" onclick="selectChip(this,'timezone')">EST</div>
+                    <div class="chip" onclick="selectChip(this,'timezone')">PST</div>
+                    <div class="chip" onclick="selectChip(this,'timezone')">GMT</div>
+                    <div class="chip" onclick="selectChip(this,'timezone')">CST</div>
+                    <div class="chip" onclick="selectChip(this,'timezone')">Other</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Call Strategy -->
+    <div class="section-card section-empty" id="sec-call" data-fields="hook,pitch,personalization">
+        <div class="section-header" onclick="toggleSection('sec-call')">
+            <div class="section-header-left">
+                <span class="icon">🎯</span>
+                <h3>Call Strategy</h3>
+                <span class="section-badge badge-pending" id="badge-call">0/3 filled</span>
+            </div>
+            <span class="section-chevron">▼</span>
+        </div>
+        <div class="section-body">
+            <div class="field-group">
+                <div class="field-label">What's your opening hook?</div>
+                <input class="field-input" id="f-hook" placeholder="e.g. Noticed your company just expanded to 3 new locations..." oninput="updateProgress()">
+            </div>
+            <div class="field-group">
+                <div class="field-label">Pitch Angle</div>
+                <div class="chip-group" data-field="pitch">
+                    <div class="chip" onclick="selectChip(this,'pitch')">Cost Savings</div>
+                    <div class="chip" onclick="selectChip(this,'pitch')">Efficiency</div>
+                    <div class="chip" onclick="selectChip(this,'pitch')">Growth</div>
+                    <div class="chip" onclick="selectChip(this,'pitch')">Compliance</div>
+                    <div class="chip" onclick="selectChip(this,'pitch')">Better CX</div>
+                </div>
+            </div>
+            <div class="field-group">
+                <div class="field-label">Personalization Note</div>
+                <input class="field-input" id="f-personalization" placeholder="Something specific to mention — recent news, LinkedIn post, etc." oninput="updateProgress()">
+            </div>
+            <div class="tip-box">
+                <span class="tip-icon">💡</span>
+                <span><strong>Pro tip:</strong> Reference something specific from their LinkedIn or recent company news. Personalized calls have 2.5x better connect rates.</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 3: Customer Engagement -->
+    <div class="section-card section-empty" id="sec-engagement" data-fields="channels">
+        <div class="section-header" onclick="toggleSection('sec-engagement')">
+            <div class="section-header-left">
+                <span class="icon">📡</span>
+                <h3>Customer Engagement</h3>
+                <span class="section-badge badge-pending" id="badge-engagement">0/1 filled</span>
+            </div>
+            <span class="section-chevron">▼</span>
+        </div>
+        <div class="section-body">
+            <div class="field-group">
+                <div class="field-label">How do they engage customers?</div>
+                <div class="chip-group" data-field="channels" data-multi="true">
+                    <div class="chip" onclick="toggleMultiChip(this,'channels')">Website Chat</div>
+                    <div class="chip" onclick="toggleMultiChip(this,'channels')">WhatsApp</div>
+                    <div class="chip" onclick="toggleMultiChip(this,'channels')">Social Media</div>
+                    <div class="chip" onclick="toggleMultiChip(this,'channels')">Phone/Calling</div>
+                    <div class="chip" onclick="toggleMultiChip(this,'channels')">In-Person</div>
+                    <div class="chip" onclick="toggleMultiChip(this,'channels')">Email</div>
+                    <div class="chip" onclick="toggleMultiChip(this,'channels')">Chatbot</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save Bar -->
+    <div class="save-bar">
+        <div class="save-bar-left">
+            <span id="save-status">Fill research to unlock <strong>Calling</strong> status</span>
+        </div>
+        <button class="save-btn" id="save-btn" onclick="saveResearch()">💾 Save Research</button>
+    </div>
+</div>
+
+<div class="confetti" id="confetti-container"></div>
+
+<script>
+// ── State ──
+const fieldState = {};
+const TOTAL_FIELDS = 10;
+
+function selectChip(el, field) {
+    el.parentElement.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    fieldState[field] = el.textContent;
+    updateProgress();
+}
+
+function toggleMultiChip(el, field) {
+    el.classList.toggle('selected');
+    const selected = [...el.parentElement.querySelectorAll('.chip.selected')].map(c => c.textContent);
+    fieldState[field] = selected.length > 0 ? selected.join(', ') : null;
+    updateProgress();
+}
+
+function toggleSection(id) {
+    const card = document.getElementById(id);
+    card.classList.toggle('open');
+}
+
+function countFilled() {
+    let count = 0;
+    // Text inputs
+    document.querySelectorAll('.field-input').forEach(inp => {
+        if (inp.value.trim()) { count++; inp.classList.add('filled'); }
+        else inp.classList.remove('filled');
+    });
+    // Chip fields
+    ['industry', 'company_size', 'timezone', 'pitch', 'channels'].forEach(f => {
+        if (fieldState[f]) count++;
+    });
+    return count;
+}
+
+function updateProgress() {
+    const filled = countFilled();
+    const pct = filled / TOTAL_FIELDS;
+    const ring = document.getElementById('progress-ring');
+    const circumference = 188.5;
+    ring.style.strokeDashoffset = circumference - (pct * circumference);
+
+    const numEl = document.getElementById('progress-num');
+    numEl.textContent = `${filled}/${TOTAL_FIELDS}`;
+
+    const isComplete = filled >= TOTAL_FIELDS;
+    ring.classList.toggle('complete', isComplete);
+    numEl.classList.toggle('complete', isComplete);
+
+    document.getElementById('progress-title').textContent = isComplete ? '🎉 Research Complete!' : 'Research Score';
+    document.getElementById('progress-sub').textContent = isComplete
+        ? 'You can now move this lead to Calling'
+        : `${TOTAL_FIELDS - filled} more to unlock Calling status`;
+
+    if (isComplete) document.getElementById('save-status').innerHTML = '✅ All done! <strong>Ready to call</strong>';
+    else document.getElementById('save-status').innerHTML = `Fill research to unlock <strong>Calling</strong> status`;
+
+    // Update section badges
+    updateSectionBadge('sec-company', 'badge-company', ['company_do','industry','company_size','services','geo','timezone']);
+    updateSectionBadge('sec-call', 'badge-call', ['hook','pitch','personalization']);
+    updateSectionBadge('sec-engagement', 'badge-engagement', ['channels']);
+}
+
+function updateSectionBadge(secId, badgeId, fields) {
+    let filled = 0;
+    fields.forEach(f => {
+        const inp = document.getElementById('f-' + f);
+        if (inp && inp.value.trim()) filled++;
+        else if (fieldState[f]) filled++;
+    });
+    const badge = document.getElementById(badgeId);
+    const card = document.getElementById(secId);
+    if (filled === fields.length) {
+        badge.textContent = '✓ Complete';
+        badge.className = 'section-badge badge-done';
+        card.className = card.className.replace(/section-\w+/, '') + ' section-complete';
+    } else if (filled > 0) {
+        badge.textContent = `${filled}/${fields.length} filled`;
+        badge.className = 'section-badge badge-pending';
+        card.className = card.className.replace(/section-\w+/, '') + ' section-partial';
+    } else {
+        badge.textContent = `0/${fields.length} filled`;
+        badge.className = 'section-badge badge-pending';
+        card.className = card.className.replace(/section-\w+/, '') + ' section-empty';
+    }
+}
+
+// ── Auto-fill ──
+document.getElementById('auto-fill-btn').addEventListener('click', () => {
+    const btn = document.getElementById('auto-fill-btn');
+    btn.textContent = '⏳ Filling...';
+    btn.disabled = true;
+
+    const fills = [
+        { delay: 200, action: () => { document.getElementById('f-company_do').value = 'Cloud-based customer engagement platform'; addAutoTag('f-company_do'); } },
+        { delay: 400, action: () => { selectChip(document.querySelectorAll('[data-field="industry"] .chip')[0], 'industry'); } },
+        { delay: 600, action: () => { selectChip(document.querySelectorAll('[data-field="company_size"] .chip')[1], 'company_size'); } },
+        { delay: 800, action: () => { document.getElementById('f-services').value = 'Chatbot, Live Chat, WhatsApp Business API'; addAutoTag('f-services'); } },
+        { delay: 1000, action: () => { document.getElementById('f-geo').value = 'North America, APAC'; addAutoTag('f-geo'); } },
+        { delay: 1200, action: () => { selectChip(document.querySelectorAll('[data-field="timezone"] .chip')[1], 'timezone'); } },
+    ];
+
+    fills.forEach(f => setTimeout(() => { f.action(); updateProgress(); }, f.delay));
+    setTimeout(() => { btn.textContent = '✅ Auto-filled!'; setTimeout(() => { btn.textContent = '⚡ Auto-fill from data'; btn.disabled = false; }, 2000); }, 1400);
+});
+
+function addAutoTag(inputId) {
+    const label = document.getElementById(inputId).closest('.field-group').querySelector('.field-label');
+    if (!label.querySelector('.auto-tag')) {
+        const tag = document.createElement('span');
+        tag.className = 'auto-tag';
+        tag.textContent = '⚡ Auto-filled';
+        label.appendChild(tag);
+    }
+}
+
+// ── Save ──
+function saveResearch() {
+    const btn = document.getElementById('save-btn');
+    btn.textContent = '⏳ Saving...';
+    btn.disabled = true;
+    setTimeout(() => {
+        btn.textContent = '✅ Saved!';
+        btn.classList.add('saved');
+        const filled = countFilled();
+        if (filled >= TOTAL_FIELDS) fireConfetti();
+        setTimeout(() => { btn.textContent = '💾 Save Research'; btn.classList.remove('saved'); btn.disabled = false; }, 2500);
+    }, 800);
+}
+
+// ── Confetti ──
+function fireConfetti() {
+    const container = document.getElementById('confetti-container');
+    const colors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4'];
+    for (let i = 0; i < 60; i++) {
+        const piece = document.createElement('div');
+        piece.className = 'confetti-piece';
+        piece.style.left = Math.random() * 100 + '%';
+        piece.style.top = '-10px';
+        piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+        piece.style.animationDelay = Math.random() * 0.5 + 's';
+        piece.style.animationDuration = (1 + Math.random()) + 's';
+        container.appendChild(piece);
+    }
+    setTimeout(() => container.innerHTML = '', 3000);
+}
+
+// Init
+updateProgress();
+</script>
+</body>
+</html>

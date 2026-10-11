@@ -1,44 +1,42 @@
 // ── app.js — Entry point: boot, router, global search, sync button ────────────
-import { currentUser, isAdmin, isSuperAdmin, isPodAdmin, isSDR, authHeaders, API_BASE, dialerEnabled, isViewAsSession } from './auth.js';
-import { fetchKanbanLeads, syncSalesforce, globalSearch, uploadSdrCsv, fetchDialerStatus, startDialerCall, getCallStatus, addLeadNote, getMyActiveCall, forceEndCall } from './api.js';
+//
+// Control Center (v11.11.0, widened to all Super Admins 2026-09-04) is an
+// additive surface consolidating Settings/Admin/Upload Center/System Logs.
+// See .claude/skills/settings-architecture/skill.md and
+// .claude/plans/i-was-working-on-idempotent-ritchie.md.
+import { currentUser, isAdmin, isSuperAdmin, isPodAdmin, isSDR, authHeaders, API_BASE, dialerEnabled, isViewAsSession, getAuthToken } from './auth.js';
+import { syncSalesforce, globalSearch, uploadSdrCsv, fetchDialerStatus, startDialerCall, getCallStatus, addLeadNote, getMyActiveCall, forceEndCall, getMyCapabilities } from './api.js';
 import { showLoader, showToast, fullName } from './utils.js';
+import { stackTopBanner, unstackTopBanner } from './top_banner_stack.js';
 
 // renderDashboard removed — replaced by DashboardHub React IIFE (v9.6.0)
 
-import { renderLeads, renderLeadDetail, renderKanban, setNavLeadsFromRaw } from './views/leads.js';
-import { renderAssignments } from './views/assignments.js';
+import { renderLeads, renderLeadDetail, setNavLeadsFromRaw } from './views/leads.js';
+import { getNavLeads } from './views/lead_list.js';
 import { renderDisqualifyRequests } from './views/disqualify_requests.js';
-import { renderSettings }   from './views/settings.js';
-import { renderAdmin }      from './views/admin.js';
 import { renderPods }       from './views/pods.js';
 import { renderLeaderboard } from './views/leaderboard.js';
-import { initModals, openCallModal } from './views/modals.js';
-import { showDialerWidget, showManualDialWidget, isWidgetActive } from './views/dialer_widget.js';
-// Side-effect-only import: rcm_dialer.js's module body registers the
-// TTL safety net, the beforeunload beacon, and window.RCMDialer —
+import { initModals, openCallModal, openNoShowModal, openDemoFailedModal, runLeadStageAction } from './views/modals.js';
+import { showDialerWidget, showManualDialWidget, isWidgetActive, initIncomingCallWatcher } from './views/dialer_widget.js';
+// Side-effect-only import: messenger_dialer.js's module body registers the
+// TTL safety net, the beforeunload beacon, and window.AlternateMessengerDialer —
 // that global (not this binding) is what every call site below reads, so
 // whichever engine currently owns it (this vanilla one, or the React port
-// when the rcmWidgetReact flag is on) is the one that actually
+// when the messengerWidgetReact flag is on) is the one that actually
 // drives a call. A bound import here would freeze every call to this
 // vanilla module regardless of the flag — see dialerEngine.js's own
 // comment on why that's unsafe.
-import './rcm_dialer.js?v=20260729a';
+import './messenger_dialer.js?v=20260729a';
 
-import { renderSfLogs, cleanupSfLogs } from './views/sf_logs.js';
 import { renderSdrPerformance } from './views/sdr_performance.js';
 import { getPhoneTimezone, renderPhoneLocalTime } from './phone_timezone.js'; // ENH-01
 
 // Expose phone timezone utils for manual dial widget TZ preview
 window._phoneTimezoneUtils = { getPhoneTimezone, renderPhoneLocalTime };
-import { renderAuditLogs } from './views/audit_logs.js';
-import { renderUpload } from './views/upload.js';
 // metrics.js sunset — legacy 'metrics' route redirects to 'analytics' (line 352)
 import { renderSdrSettings } from './views/sdr_settings.js';
-import { fetchPendingTasks, snoozeTask, dismissTask } from './api.js';
-import { renderActivityFeed } from './views/activity_feed.js';
-import { renderAnalytics } from './views/analytics.js';
-import { renderSmartAnalytics, runAiQuery, injectSmartAnalyticsStyles } from './views/smart_analytics.js';
-import { renderDigest } from './views/digest.js';
+import { fetchPendingTasks, snoozeTask, dismissTask, fetchPendingReplies, dismissReply } from './api.js';
+import { runAiQuery, injectSmartAnalyticsStyles } from './views/smart_analytics.js';
 import { renderCallMonitor } from './views/call_monitor.js';
 import { renderPlayground } from './views/playground.js';
 import { initErrorReporter, flushPendingErrors } from './error_reporter.js';
@@ -64,34 +62,10 @@ window.__CRM_CURRENT_USER__ = currentUser || null;
 let currentView = 'dashboard';
 let currentExtra = null;  // tracks lead ID when on lead-detail
 let _dialerConfig = { active: false, provider: 'none', has_credentials: false, sender_id: '' }; // cached dialer config
-let _rcmWidgetReady = false; // true only when RCMWidget.init() completed successfully
-window._rcmWidgetReady = false; // expose for lead_detail.js template render
+let _messengerWidgetReady = false; // true only when MessengerWidget.init() completed successfully
+window._messengerWidgetReady = false; // expose for lead_detail.js template render
 
 const vc = document.getElementById('view-container');
-
-// ── View-As banner (impersonation mode) ───────────────────────────────────────
-if (isViewAsSession) {
-    const banner = document.createElement('div');
-    banner.id = 'view-as-banner';
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#f59e0b,#ef4444);color:#fff;padding:8px 20px;display:flex;align-items:center;justify-content:center;gap:12px;font-size:0.85rem;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
-    banner.innerHTML = `
-        <span>👁️ Viewing as <strong>${currentUser?.name || currentUser?.email || 'User'}</strong> (${currentUser?.role || 'Unknown'})</span>
-        <button id="exit-view-as" style="background:#fff;color:#ef4444;border:none;padding:4px 14px;border-radius:6px;font-weight:700;font-size:0.8rem;cursor:pointer;">✕ Exit View-As</button>
-    `;
-    document.body.prepend(banner);
-    document.body.style.paddingTop = '40px';
-    mp.track('View-As Entered', {
-        target_name: currentUser?.name || currentUser?.email || '',
-        target_role: currentUser?.role || '',
-    });
-    document.getElementById('exit-view-as').addEventListener('click', () => {
-        mp.track('View-As Exited');
-        sessionStorage.removeItem('crm_view_as_token');
-        window.close();  // Close the View-As tab
-        // Fallback if window.close() is blocked by browser
-        window.location.href = 'signup.html';
-    });
-}
 
 // ── NavHub mount (React Sidebar + Topbar) ───────────────────────────────────
 // Polls for window.NavHub up to 5s (same pattern as DashboardHub).
@@ -104,13 +78,14 @@ if (isViewAsSession) {
         try { await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', headers: authHeaders() }); } catch {}
         localStorage.removeItem('crm_token');
         sessionStorage.clear();
-        window.location.href = 'signup.html';
+        window.location.href = 'login.html';
     };
 
     const navProps = {
         token:       localStorage.getItem('crm_token'),
         userRole:    currentUser?.role || '',
         userName:    currentUser?.name || currentUser?.email || '',
+        userEmail:   currentUser?.email || '',
         avatarUrl:   currentUser?.avatar_url || null,
         podId:       currentUser?.pod_id || null,
         apiBase:     API_BASE,
@@ -153,7 +128,36 @@ if (isViewAsSession) {
         const topbarEl  = document.getElementById('nav-topbar-root');
         if (sidebarEl && topbarEl && window.NavHub) {
             window.NavHub.mount(sidebarEl, topbarEl, navProps);
+            _mountViewAsBanner();
         }
+    }
+
+    // ── View-As banner (impersonation mode) ─────────────────────────────────
+    // Content is React (NavHub — see nav-entry.jsx's ViewAsBanner); this
+    // function still owns the container + stacking (top_banner_stack.js) and
+    // the exit redirect, same split as sidebar/topbar (app.js builds props +
+    // callbacks, NavHub only renders).
+    function _mountViewAsBanner() {
+        if (!isViewAsSession) return;
+        const banner = document.createElement('div');
+        banner.id = 'view-as-banner';
+        banner.style.zIndex = '9999'; // stackTopBanner sets position/left/right/top, not z-index
+        window.NavHub.mountViewAsBanner(banner, {
+            userName: currentUser?.name || currentUser?.email || 'User',
+            userRole: currentUser?.role || 'Unknown',
+            onExit: () => {
+                mp.track('View-As Exited');
+                sessionStorage.removeItem('crm_view_as_token');
+                window.close();  // Close the View-As tab
+                // Fallback if window.close() is blocked by browser
+                window.location.href = 'login.html';
+            },
+        });
+        stackTopBanner(banner);
+        mp.track('View-As Entered', {
+            target_name: currentUser?.name || currentUser?.email || '',
+            target_role: currentUser?.role || '',
+        });
     }
 
     if (window.NavHub) {
@@ -206,8 +210,19 @@ window.addEventListener('unhandledrejection', (event) => {
     if (reason && (String(reason.message).includes('401') || String(reason.message).includes('Unauthorized'))) return;
 
     console.error('[App] Unhandled rejection:', reason);
+    // A refused action (HTTP 4xx) carries the server's own reason, e.g. "already a member of 'US Team New'. Remove
+    // them from that pod first." — show that, not a generic "refresh the page" that can't help. Anything else keeps
+    // the generic message. (A button that handles its own errors never lands here.)
+    const status = reason && reason.response && reason.response.status;
+    const detail = reason && reason.response && reason.response.data && reason.response.data.detail;
+    let message = 'Something went wrong. Please try refreshing the page.';
+    if (status >= 400 && status < 500) {
+        if (typeof detail === 'string' && detail.trim()) message = detail;
+        else if (Array.isArray(detail)) message = 'Please check the details you entered and try again.';
+        else message = "That didn't work. Please try again.";
+    }
     try {
-        showToast('Something went wrong. Please try refreshing the page.', 'error', 6000);
+        showToast(message, 'error', status >= 400 && status < 500 ? 9000 : 6000);
     } catch {}
 });
 
@@ -220,144 +235,23 @@ window.addEventListener('error', (event) => {
 
 // ── Role-based visibility ─────────────────────────────────────────────────────
 if (isAdmin) {
-    const adminNav       = document.getElementById('admin-nav-item');
-    const podsNav        = document.getElementById('pods-nav-item');
-    const settingsNav    = document.getElementById('settings-nav-item');
-    if (adminNav) adminNav.style.display = 'block';
-    if (settingsNav) settingsNav.style.display = 'block';
-    if (podsNav && isSuperAdmin) podsNav.style.display = 'block';
-
-    // Super Admin only: Sync, Bulk Import, Upload Leads, Audit Logs
+    // 2026-09-09: the role-based nav show/hide that lived here is gone —
+    // none of its 21 '<name>-nav-item' ids exist in index.html any more.
+    // Nav visibility lives in NavSidebar.jsx's per-entry `roles` list.
     if (isSuperAdmin) {
         if (document.getElementById('sync-btn'))     document.getElementById('sync-btn').style.display = 'inline-flex';
-        if (document.getElementById('upload-nav-item')) document.getElementById('upload-nav-item').style.display = 'block';
-        if (document.getElementById('audit-logs-nav-item')) document.getElementById('audit-logs-nav-item').style.display = 'block';
     }
 
-    // Daily Digest: Super Admin + Pod Admin — backend (require_admin) and the
-    // React nav both already permit Pod Admin (pod-scoped); this legacy shell
-    // was the one place still gating it to Super Admin only.
-    if (isAdmin) {
-        if (document.getElementById('digest-nav-item')) document.getElementById('digest-nav-item').style.display = 'block';
-    }
-
-    // Call Monitor: Super Admin + Pod Admin
-    if (document.getElementById('call-monitor-nav-item')) {
-        document.getElementById('call-monitor-nav-item').style.display = 'block';
-    }
-
-    if (document.getElementById('playground-nav-item')) {
-        document.getElementById('playground-nav-item').style.display = 'block';
-    }
-
-    // Analytics Hub: Super Admin + Pod Admin — single nav item
-    if (isAdmin) {
-        if (document.getElementById('analytics-hub-nav-item')) document.getElementById('analytics-hub-nav-item').style.display = 'block';
-        // Inject SA styles now so the topbar AI bar dropdown looks correct immediately
-        injectSmartAnalyticsStyles();
-        // Keep legacy items hidden — they redirect to analytics via routes
-        if (document.getElementById('metrics-nav-item'))       document.getElementById('metrics-nav-item').style.display = 'none';
-        if (document.getElementById('activity-feed-nav-item')) document.getElementById('activity-feed-nav-item').style.display = 'none';
-        if (document.getElementById('analytics-nav-item'))     document.getElementById('analytics-nav-item').style.display = 'none';
-        if (document.getElementById('smart-analytics-nav-item')) document.getElementById('smart-analytics-nav-item').style.display = 'none';
-
-        // ── Global AI Query Bar ────────────────────────────────────────────────
-        const aiBar     = document.getElementById('ai-query-bar');
-        const aiInput   = document.getElementById('ai-query-input');
-        const aiBtn     = document.getElementById('ai-query-btn');
-        const aiResult  = document.getElementById('ai-query-result');
-
-        if (aiBar && aiInput && aiBtn && aiResult) {
-            aiBar.style.display = 'block'; // show the collapsed trigger pill
-
-            const trigger  = document.getElementById('ai-bar-trigger');
-            const expanded = document.getElementById('ai-bar-expanded');
-            const closeBtn = document.getElementById('ai-bar-close');
-
-            // ── Expand / collapse helpers ─────────────────────────────────
-            const _expand = () => {
-                if (trigger)  { trigger.style.display = 'none'; trigger.setAttribute('aria-expanded', 'true'); }
-                if (expanded) { expanded.style.display = 'block'; expanded.setAttribute('aria-hidden', 'false'); }
-                // Small delay so the DOM is visible before focusing
-                requestAnimationFrame(() => { aiInput.focus(); aiInput.select(); });
-            };
-
-            // Expose globally so window._expandAiBar() works from NavHub onAction
-            window._expandAiBar = _expand;
-
-            const _collapse = () => {
-                if (trigger)  { trigger.style.display = ''; trigger.setAttribute('aria-expanded', 'false'); }
-                if (expanded) { expanded.style.display = 'none'; expanded.setAttribute('aria-hidden', 'true'); }
-                aiResult.style.display = 'none';
-            };
-
-            // Trigger pill click → expand
-            trigger?.addEventListener('click', _expand);
-
-            // Close button → collapse
-            closeBtn?.addEventListener('click', () => { aiInput.value = ''; _collapse(); });
-
-            // ── Keyboard shortcut: ⌘/ expands the bar ─────────────────────
-            document.addEventListener('keydown', e => {
-                if ((e.metaKey || e.ctrlKey) && e.key === '/') {
-                    e.preventDefault();
-                    _expand();
-                }
-                // Escape collapses the expanded bar (regardless of where focus is)
-                if (e.key === 'Escape') {
-                    _collapse();
-                    trigger?.focus();
-                }
-            });
-
-            // ── Submit handler ────────────────────────────────────────────
-            const _runAiBar = async () => {
-                const q = aiInput.value.trim();
-                if (!q || aiBtn.disabled) return;  // EC-02: guard double-submit on rapid Enter
-
-                // Show inline dropdown for quick preview
-                aiResult.style.display = 'block';
-                aiBtn.disabled = true;
-                aiBtn.textContent = '…';
-
-                try {
-                    await runAiQuery(q, aiResult);
-                    // After result renders, show a "See full analytics →" link
-                    const link = document.createElement('div');
-                    link.style.cssText = 'padding:10px 0 2px;text-align:right;';
-                    link.innerHTML = `<a href="#analytics" id="ai-bar-full-link"
-                        style="font-size:0.78rem;color:var(--primary-color);text-decoration:none;font-weight:600;cursor:pointer;">
-                        📊 Open full Analytics Hub →</a>`;
-                    aiResult.appendChild(link);
-                    document.getElementById('ai-bar-full-link')?.addEventListener('click', e => {
-                        e.preventDefault();
-                        sessionStorage.setItem('ls_ai_pending_query', q);
-                        aiResult.style.display = 'none';
-                        aiInput.value = '';
-                        _collapse();
-                        loadView('analytics');
-                    });
-                } catch {} finally {
-                    aiBtn.disabled = false;
-                    aiBtn.textContent = 'Run';
-                }
-            };
-
-            aiBtn.addEventListener('click', _runAiBar);
-            aiInput.addEventListener('keydown', e => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); _runAiBar(); }
-            });
-
-            // Close result when clicking outside the entire AI bar
-            document.addEventListener('click', e => {
-                if (!aiBar.contains(e.target)) {
-                    aiResult.style.display = 'none';
-                    // Only auto-collapse if the click was truly outside (not on a result link)
-                    if (!aiBar.contains(e.target)) _collapse();
-                }
-            });
-        }
-    }
+    // Styles for the topbar Ask AI dropdown. The Global AI Query Bar's own
+    // DOM used to live here too, but its four ids (ai-query-bar/-input/
+    // -btn/-result) are all absent from index.html, so its guard was
+    // permanently false — the topbar Ask AI is React (NavTopbar) and
+    // reaches the same engine via window._runAiQuery below. Hence both of
+    // those stay and the block is gone.
+    injectSmartAnalyticsStyles();
+    // AE/SDR deliberately get no branch here: the global "Ask AI" bar stays
+    // hidden for them (AnalyticsHub.jsx gates its Ask AI tab — Ask AI has no
+    // self-scoping, unlike the analytics views' _effective_ae_sdr).
 
 
     const leadsNavLink = document.querySelector('.sidebar-nav a[data-view="leads"]');
@@ -367,23 +261,55 @@ if (isAdmin) {
 // All roles: New Lead button (SDRs create leads for referrals mid-call)
 if (document.getElementById('new-lead-btn')) document.getElementById('new-lead-btn').style.display = 'inline-flex';
 
-// Show "My Settings" only for SDR and Pod Admin (Super Admin has full Settings)
-if (!isSuperAdmin) {
-    const mySettingsNav = document.getElementById('my-settings-nav-item');
-    if (mySettingsNav) mySettingsNav.style.display = 'block';
-}
+// NOTE 2026-09-09: this block used to hide "My Settings" from Super Admins.
+// Two reasons it is gone: the nav is React now (NavSidebar.jsx owns role
+// visibility — every '*-nav-item' id this file still pokes at is absent from
+// index.html and has been a no-op for some time), and the rule itself was
+// wrong: My Settings is the only place an email signature can be set, so a
+// Super Admin had no way to set one. See NavSidebar's 'my-settings' entry.
 
-// Show "Today's Calls" only for SDR (not relevant for Super Admin / Pod Admin)
-if (isSDR) {
-    const myCallsNav = document.getElementById('my-calls-nav-item');
-    if (myCallsNav) myCallsNav.style.display = 'block';
-}
+// ("Today's Calls" was gated here — NavSidebar's 'my-calls' entry owns it.)
 
 // ── Router ────────────────────────────────────────────────────────────────────
 let _skipHashUpdate = false;  // prevent recursive hashchange → loadView loop
 let _analyticsLoading = false; // EC-15: guard against concurrent analytics mounts
 let _calendarLoading = false;  // same double-mount guard, for CalendarHub
 let _powerDialerLoading = false; // same double-mount guard, for PowerDialerHub
+
+// Every React island keyed by the view that owns it. Drives both the
+// "unmount the hubs we're leaving" sweep and the "skip showLoader() because
+// this hub is still alive" check below — those were two parallel 14-clause
+// if-chains, and a hub added to one but not the other is exactly how Calendar
+// and User Guide ended up rendering into detached nodes (2026-08-05).
+const VIEW_HUBS = {
+    'dashboard':        'DashboardHub',
+    'analytics':        'AnalyticsHub',
+    'calendar':         'CalendarHub',
+    'leads':            'LeadsHub',
+    'user-guide':       'HelpHub',
+    'sales-tools':      'SalesToolsHub',
+    'my-calls':         'PowerDialerHub',
+    'pods':             'PodsHub',
+    'activity-monitor': 'ActivityMonitorHub',
+    'digest':           'DailyDigestHub',
+    'my-settings':      'MySettingsHub',
+    'leaderboard':      'LeaderboardHub',
+    'control-center':   'ControlCenterHub',
+    'lead-detail':      'LeadDetailHub',
+    'sdr-performance':  'SdrPerformanceHub',
+    'ae-pipeline':      'AEPipelineHub',
+    // 2026-09-16: CSM Portal's 4 sections promoted to their own flat nav
+    // items for a CSM (see NavSidebar.jsx) — all 4 still mount the same
+    // CsmPortalHub bundle/global, just with a different `section` prop.
+    'csm-inbox':        'CsmPortalHub',
+    'csm-portfolio':    'CsmPortalHub',
+    'csm-playbooks':    'CsmPortalHub',
+    'csm-digest':       'CsmPortalHub',
+    // Super-Admin-only merge of AE Pipeline + CSM Portal into one nav item
+    // with a tab for each (2026-09-16 product direction).
+    'pipeline-hub':     'PipelineHub',
+    'my-tasks':         'MyTasksHub',
+};
 
 // Calendar-shaped placeholder for the window between vc.innerHTML being set and
 // CalendarHub's bundle mounting (previously a bare div — showed as blank space,
@@ -402,37 +328,40 @@ function _calendarSkeleton() {
 }
 
 async function loadView(viewName, extra, backView) {
-    // R-3 fix: only unmount the Analytics Hub when LEAVING analytics for a
-    // different view. Unconditional unmount() here was destroying the React
-    // root on every loadView() call — including navigating back TO analytics —
-    // forcing a full remount + all API calls on every visit.
-    if (viewName !== 'analytics') {
-        window.AnalyticsHub?.unmount();
+    // RCA 2026-08-20: several call sites pass a lead id that can resolve to
+    // JS `undefined` (e.g. a lead object that hadn't finished loading yet).
+    // That used to sail straight through to a bare `#lead-detail` hash and a
+    // GET /api/leads/undefined that always 404s — "Couldn't load this lead."
+    // Confirmed via production logs: 50+ occurrences over the last 7 days,
+    // always cascading into every lead-detail sub-tab. One guard here at the
+    // shared entry point covers every current and future caller, instead of
+    // hardening each click handler that could theoretically pass a bad id.
+    if (viewName === 'lead-detail' && !extra) {
+        // RCA 2026-08-21 (live): the original fix stopped the crash but left
+        // the URL hash and content area untouched -- on a fresh boot straight
+        // into a bare #lead-detail (e.g. a browser restoring a stale tab),
+        // that meant a permanently blank screen with no path forward: every
+        // reload, sign-out/in, or laptop restart just landed back on the same
+        // hash and hit this same guard again. Redirect to the dashboard
+        // instead so the hash actually changes and the user always lands
+        // somewhere usable.
+        console.warn('[loadView] lead-detail called with no lead id — redirecting to dashboard');
+        showToast('Could not open that lead — please try again.', 'warning', 4000);
+        return loadView('dashboard');
     }
-    if (viewName !== 'dashboard') {
-        window.DashboardHub?.unmount();
+    // R-3 fix: only unmount a hub when LEAVING its view. Unconditional
+    // unmount() here destroyed the React root on every loadView() call —
+    // including navigating back TO the same view — forcing a full remount and
+    // every API call again.
+    for (const [view, hub] of Object.entries(VIEW_HUBS)) {
+        if (view !== viewName) window[hub]?.unmount();
     }
-    if (viewName !== 'calendar') {
-        window.CalendarHub?.unmount();
-    }
-    if (viewName !== 'leads') {
-        window.LeadsHub?.unmount();
-    }
-    if (viewName !== 'user-guide') {
-        window.HelpHub?.unmount();
-    }
-    if (viewName !== 'sales-journeys') {
-        window.SalesJourneyHub?.unmount();
-    }
-    if (viewName !== 'my-calls') {
-        window.PowerDialerHub?.unmount();
-    }
-    // ── RCM Widget: clear lead context when leaving a lead page ────────
+    // ── Alternate Messenger Widget: clear lead context when leaving a lead page ────────
     // This ensures the FAB opens in ad-hoc mode (no stale lead) on non-lead pages.
     // setLead(null, null, null) is a pure state write — safe to call any time.
     if (currentView === 'lead-detail' && viewName !== 'lead-detail') {
-        if (window._rcmWidgetReady && typeof RCMWidget !== 'undefined') {
-            RCMWidget.setLead(null, null, null);
+        if (window._messengerWidgetReady && typeof MessengerWidget !== 'undefined') {
+            MessengerWidget.setLead(null, null, null);
         }
         window._currentLead = null;
         // Unmount the React Email Hub when navigating away from lead-detail so it
@@ -440,28 +369,21 @@ async function loadView(viewName, extra, backView) {
         window.EmailHub?.unmount();
     }
 
-    // Re-clicking the view you're already on, while its React Hub is still
-    // mounted (Dashboard/Analytics/Calendar/Leads/User Guide/Sales Journeys all
-    // preserve their mount across same-view re-navigation — see the unmount
-    // guards above), must skip showLoader(): it replaces #view-container's
-    // entire innerHTML, destroying the Hub's mount point (e.g. #calendar-react-root)
-    // out from under the "already mounted, navigate() in place" fast path each
-    // branch below takes. Every hub's navigate() calls _root.render(...) against
-    // its ORIGINAL root, ignoring the container argument passed in — so if that
-    // original mount point was just destroyed by showLoader(), navigate() renders
-    // into a detached, invisible DOM node with no error, leaving this generic
-    // skeleton stuck on screen forever — originally reproduced on Calendar;
-    // User Guide and Sales Journeys use the identical navigate() pattern and were
-    // missing from this list (2026-08-05).
-    const hubStillMounted = viewName === currentView && (
-        (viewName === 'dashboard' && window.DashboardHub?.isMounted) ||
-        (viewName === 'analytics' && window.AnalyticsHub?.isMounted) ||
-        (viewName === 'calendar' && window.CalendarHub?.isMounted) ||
-        (viewName === 'leads' && window.LeadsHub?.isMounted) ||
-        (viewName === 'user-guide' && window.HelpHub?.isMounted) ||
-        (viewName === 'sales-journeys' && window.SalesJourneyHub?.isMounted) ||
-        (viewName === 'my-calls' && window.PowerDialerHub?.isMounted)
-    );
+    // Re-clicking the view you're already on, while its React hub is still
+    // mounted, skips showLoader(): it replaces #view-container's entire
+    // innerHTML, so the hub would have to throw away a live tree and refetch
+    // everything just to redraw the same screen.
+    //
+    // This used to be load-bearing for correctness, not just speed —
+    // navigate() ignored the container it was handed and re-rendered into the
+    // node mount() first attached to, so a showLoader() here left the hub
+    // painting into a detached element and the skeleton on screen forever
+    // (Calendar, 2026-08-05; two hubs were missing from the list). hub-entry
+    // .jsx's navigate() now detects that itself, so this is an optimisation
+    // with a safety net under it rather than the only thing standing between
+    // a user and a blank page.
+    const hubStillMounted = viewName === currentView
+        && !!window[VIEW_HUBS[viewName]]?.isMounted;
 
     currentView = viewName;
     currentExtra = extra || null;
@@ -539,79 +461,295 @@ async function loadView(viewName, extra, backView) {
             dashProps
         );
     } else if (viewName === 'leads') {
-        if (localStorage.getItem('leadsBeta') !== 'false') {
-            // ── LeadsHub IIFE (React) — redesigned All Leads (now the default;
-            // 'leadsBeta' persists as an explicit opt-out, set to 'false' only
-            // when an SDR clicks "Switch to classic view") ───────────────────
-            // Mirrors the Dashboard Hub mount pattern exactly.
-            const leadsProps = {
-                token:    localStorage.getItem('crm_token'),
-                userRole: currentUser?.role,
-                apiBase:  API_BASE,
-                onSwitchToClassic: () => { localStorage.setItem('leadsBeta', 'false'); loadView('leads'); },
-                // R-4 fix: lead_detail.js's Prev/Next nav bar reads a module-level
-                // array in lead_list.js that only the classic renderLeads() populated —
-                // opening a lead from here left it stale/empty and the nav bar silently
-                // didn't render. LeadsHub passes its currently-loaded rows through.
-                onOpenLead: (lead, currentLeads) => {
-                    if (currentLeads) setNavLeadsFromRaw(currentLeads);
-                    loadView('lead-detail', lead.id);
-                },
-            };
-
-            if (window.LeadsHub?.isMounted && typeof window.LeadsHub.navigate === 'function') {
-                window.LeadsHub.navigate(document.getElementById('leads-react-root'), leadsProps);
-                return;
-            }
-
-            if (!document.getElementById('leads-react-root')) {
-                vc.innerHTML = '<div id="leads-react-root"></div>';
-            }
-
-            let waited = 0;
-            while (!window.LeadsHub && waited < 5000) {
-                await new Promise(r => setTimeout(r, 50));
-                waited += 50;
-            }
-            if (!window.LeadsHub) {
-                document.getElementById('leads-react-root').innerHTML =
-                  '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load Leads. Please refresh.</div>';
-                return;
-            }
-
-            window.LeadsHub.mount(document.getElementById('leads-react-root'), leadsProps);
-        } else {
+        // RCA 2026-08-19: users reported issues with LeadsHub (React) after
+        // v11.5.4 made it the only Leads view. Reinstating the classic
+        // renderLeads() (views/leads.js) path as the default while LeadsHub's
+        // issues are investigated — set localStorage 'leadsHub' = 'on' in a
+        // browser to opt back into LeadsHub for testing/comparison.
+        if (localStorage.getItem('leadsHub') !== 'on') {
+            window.LeadsHub?.unmount?.();
             await renderLeads(vc, null, handleCallAction, (id) => loadView('lead-detail', id));
+            return;
         }
+
+        const leadsProps = {
+            token:    localStorage.getItem('crm_token'),
+            userRole: currentUser?.role,
+            apiBase:  API_BASE,
+            onSwitchToClassic: () => {
+                // Must clear the flag the same way the reverse "Switch to the
+                // new experience" button sets it (RCA 2026-08-20 fix above) —
+                // otherwise this only swaps the current render; the next
+                // reload/navigation back to Leads bounces straight back into
+                // LeadsHub since the flag never changed.
+                localStorage.removeItem('leadsHub');
+                window.LeadsHub?.unmount?.();
+                return renderLeads(vc, null, handleCallAction, (id) => loadView('lead-detail', id));
+            },
+            // R-4 fix: lead_detail.js's Prev/Next nav bar reads a module-level
+            // array in lead_list.js that only the classic renderLeads() populated —
+            // opening a lead from here left it stale/empty and the nav bar silently
+            // didn't render. LeadsHub passes its currently-loaded rows through.
+            onOpenLead: (lead, currentLeads) => {
+                if (currentLeads) setNavLeadsFromRaw(currentLeads);
+                loadView('lead-detail', lead.id);
+            },
+        };
+
+        if (window.LeadsHub?.isMounted && typeof window.LeadsHub.navigate === 'function') {
+            window.LeadsHub.navigate(document.getElementById('leads-react-root'), leadsProps);
+            return;
+        }
+
+        if (!document.getElementById('leads-react-root')) {
+            vc.innerHTML = '<div id="leads-react-root"></div>';
+        }
+
+        let waited = 0;
+        while (!window.LeadsHub && waited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            waited += 50;
+        }
+        if (!window.LeadsHub) {
+            document.getElementById('leads-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load Leads. Please refresh.</div>';
+            return;
+        }
+
+        window.LeadsHub.mount(document.getElementById('leads-react-root'), leadsProps);
     } else if (viewName === 'lead-detail') {
-        await renderLeadDetail(vc, extra, handleCallAction, loadView, backView || 'leads');
-    } else if (viewName === 'kanban') {
-        const kanbanLeads = await fetchKanbanLeads().catch(() => []);
-        renderKanban(vc, kanbanLeads, loadView, handleCallAction);
-    } else if (viewName === 'settings') {
-        await renderSettings(vc);
-    } else if (viewName === 'my-settings') {
-        await renderSdrSettings(vc);
-    } else if (viewName === 'assignments') {
+        // Dual-view toggle, mirrors the Leads Hub pattern exactly (app.js:577
+        // above): classic is the default; localStorage 'leadDetailHub' = 'on'
+        // opts a user into the React redesign. Both stay fully functional.
+        if (localStorage.getItem('leadDetailHub') !== 'on') {
+            window.LeadDetailHub?.unmount?.();
+            await renderLeadDetail(vc, extra, handleCallAction, loadView, backView || 'leads');
+            return;
+        }
+
+        const navLeads = getNavLeads();
+        const navIdx = navLeads.findIndex(l => l.id === extra);
+        const leadDetailProps = {
+            leadId:    extra,
+            userRole:  currentUser?.role,
+            userPodId: currentUser?.pod_id ?? null,
+            apiBase:   API_BASE,
+            navPosition: navIdx >= 0 ? `${navIdx + 1} / ${navLeads.length}` : null,
+            onPreviousLead: navIdx > 0 ? () => loadView('lead-detail', navLeads[navIdx - 1].id, backView) : null,
+            onNextLead: (navIdx >= 0 && navIdx < navLeads.length - 1) ? () => loadView('lead-detail', navLeads[navIdx + 1].id, backView) : null,
+            onBack: () => loadView(backView || 'leads'),
+            onSwitchToClassic: () => {
+                localStorage.removeItem('leadDetailHub');
+                window.LeadDetailHub?.unmount?.();
+                return renderLeadDetail(vc, extra, handleCallAction, loadView, backView || 'leads');
+            },
+        };
+
+        if (window.LeadDetailHub?.isMounted && typeof window.LeadDetailHub.navigate === 'function') {
+            window.LeadDetailHub.navigate(document.getElementById('lead-detail-react-root'), leadDetailProps);
+            return;
+        }
+
+        if (!document.getElementById('lead-detail-react-root')) {
+            vc.innerHTML = '<div id="lead-detail-react-root"></div>';
+        }
+
+        let waitedLdh = 0;
+        while (!window.LeadDetailHub && waitedLdh < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            waitedLdh += 50;
+        }
+        if (!window.LeadDetailHub) {
+            document.getElementById('lead-detail-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load Lead Details. Please refresh.</div>';
+            return;
+        }
+
+        window.LeadDetailHub.mount(document.getElementById('lead-detail-react-root'), leadDetailProps);
+    } else if (viewName === 'settings' || viewName === 'admin') {
+        // Retired 2026-09 alongside upload/audit-logs (same reasoning, same
+        // pattern): every settings.js tab (Connection, Sync, AI, Channels,
+        // Public API, Sandbox) and admin.js (Users/Roles/PODs) already has
+        // full parity in Control Center (settings-architecture skill,
+        // 2026-09-04/09), and neither route had a nav entry left. Kept as a
+        // redirect rather than dead-ending a bookmarked/typed #settings or
+        // #admin. 'assignments' was removed the same way in 2026-09-04
+        // (already fully unreachable dead code; its functionality lives on
+        // the main Leads page instead).
         if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderAssignments(vc);
+        loadView('control-center').catch(() => {});
+        return;
+    } else if (viewName === 'my-settings') {
+        // React My Settings island (v12.2) — replaces renderSdrSettings().
+        // Open to every role: this is personal account preferences, not org
+        // config, so no isAdmin gate (matches the legacy page it replaces).
+        const mySettingsProps = {
+            token:    localStorage.getItem('crm_token'),
+            userRole: currentUser?.role,
+            apiBase:  API_BASE,
+        };
+
+        if (window.MySettingsHub?.isMounted && typeof window.MySettingsHub.navigate === 'function') {
+            window.MySettingsHub.navigate(document.getElementById('my-settings-react-root'), mySettingsProps);
+            return;
+        }
+
+        if (!document.getElementById('my-settings-react-root')) {
+            vc.innerHTML = '<div id="my-settings-react-root"></div>';
+        }
+
+        let mySettingsWaited = 0;
+        while (!window.MySettingsHub && mySettingsWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            mySettingsWaited += 50;
+        }
+        if (!window.MySettingsHub) {
+            // Legacy renderSdrSettings() stays imported purely as this
+            // crash-fallback, same pattern as Pods Hub / Activity Monitor.
+            await renderSdrSettings(vc);
+            return;
+        }
+
+        window.MySettingsHub.mount(document.getElementById('my-settings-react-root'), mySettingsProps);
     } else if (viewName === 'disqualify-requests') {
         if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
         await renderDisqualifyRequests(vc);
-    } else if (viewName === 'admin') {
-        if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderAdmin(vc, () => renderAssignments(vc));
     } else if (viewName === 'pods') {
         if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderPods(vc);
+        // v11.5.7: PodsHub (React) replaces the classic POD Management view —
+        // adds the Team Roster tab (per-rep active-lead count + staleness), the
+        // capability a Pod Admin asked for ("what exactly is my SDR's work
+        // going on"). Classic renderPods() kept only as the crash-fallback
+        // escape hatch below, same pattern as Leads Hub's deprecation.
+        const podsProps = {
+            token:    localStorage.getItem('crm_token'),
+            userRole: currentUser?.role,
+            apiBase:  API_BASE,
+            onSwitchToClassic: () => renderPods(vc),
+            // Hands off to Leads Hub pre-filtered to this rep by seeding its
+            // sessionStorage view state — reuses the existing filter/fetch
+            // machinery instead of building a second activity view.
+            onOpenRep: (userId, name) => {
+                sessionStorage.setItem('leadsHub.viewState', JSON.stringify({
+                    filters: { status: [], tag: [], source: '', company: '', assignedTo: userId, outcome: '', uploadLogId: '', dateFrom: '', dateTo: '' },
+                    activeFilterKeys: ['assignedTo'],
+                    // Only Super Admin needs the pod-scoping bypass here — a Pod
+                    // Admin's roster only ever lists their own pod's reps in the
+                    // first place (GET /pods already scopes to that), so there's
+                    // nothing for them to "see across pods" via this flag.
+                    globalView: isSuperAdmin,
+                    page: 1,
+                    sort: null,
+                    searchTerm: '',
+                }));
+                // Dispatched to the React ToastHost mounted by NavHub (always
+                // present app-wide) rather than the legacy showToast() —
+                // matches the polished look of the React Hub this action
+                // originates from, instead of the vanilla-JS toast style.
+                window.dispatchEvent(new CustomEvent('alternate:toast', {
+                    detail: { message: `Showing ${name}'s leads`, type: 'info', duration: 2500 },
+                }));
+                loadView('leads');
+            },
+        };
+
+        if (window.PodsHub?.isMounted && typeof window.PodsHub.navigate === 'function') {
+            window.PodsHub.navigate(document.getElementById('pods-react-root'), podsProps);
+            return;
+        }
+
+        if (!document.getElementById('pods-react-root')) {
+            vc.innerHTML = '<div id="pods-react-root"></div>';
+        }
+
+        let podsWaited = 0;
+        while (!window.PodsHub && podsWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            podsWaited += 50;
+        }
+        if (!window.PodsHub) {
+            document.getElementById('pods-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load POD Management. Please refresh.</div>';
+            return;
+        }
+
+        window.PodsHub.mount(document.getElementById('pods-react-root'), podsProps);
     } else if (viewName === 'leaderboard') {
-        await renderLeaderboard(vc);
+        // React Leaderboard island (v12.2) — replaces renderLeaderboard().
+        // roles: ['all'] in NavSidebar, so no gate here; the backend scopes
+        // what each role can actually see (Pod Admin -> own pod by default).
+        const leaderboardProps = {
+            token:    localStorage.getItem('crm_token'),
+            userRole: currentUser?.role,
+            apiBase:  API_BASE,
+            // For the "You" highlight and the SDR-sees-only-own-performance rule.
+            userId:   currentUser?.sub || currentUser?.id || null,
+            // Name click -> that person's performance dashboard, same target
+            // the legacy page's .sdr-perf-link handler used.
+            onOpenPerson: (sdrId) => { if (sdrId) loadView('sdr-performance', sdrId); },
+        };
+
+        if (window.LeaderboardHub?.isMounted && typeof window.LeaderboardHub.navigate === 'function') {
+            window.LeaderboardHub.navigate(document.getElementById('leaderboard-react-root'), leaderboardProps);
+            return;
+        }
+
+        if (!document.getElementById('leaderboard-react-root')) {
+            vc.innerHTML = '<div id="leaderboard-react-root"></div>';
+        }
+
+        let leaderboardWaited = 0;
+        while (!window.LeaderboardHub && leaderboardWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            leaderboardWaited += 50;
+        }
+        if (!window.LeaderboardHub) {
+            // Legacy renderLeaderboard() stays imported purely as this
+            // crash-fallback, same pattern as My Settings / Pods Hub.
+            await renderLeaderboard(vc);
+            return;
+        }
+
+        window.LeaderboardHub.mount(document.getElementById('leaderboard-react-root'), leaderboardProps);
     } else if (viewName === 'sf-logs') {
-        // Redirect legacy sf-logs route to unified audit-logs view
-        loadView('audit-logs').catch(() => {});
+        // Was: redirect to audit-logs. audit-logs is itself now a redirect
+        // (see above) — point straight at the real destination rather than
+        // chaining through it.
+        loadView('control-center').catch(() => {});
         return;
     } else if (viewName === 'sdr-performance') {
-        await renderSdrPerformance(vc, extra, loadView);
+        // React SDR Performance island (v12.2.4) — replaces
+        // renderSdrPerformance(). Read-only, so no beta flag: same full
+        // cutover as Dashboard/Analytics, legacy kept only as the
+        // bundle-load-failure fallback (Pods/Leaderboard pattern).
+        const sdrPerfProps = {
+            sdrId:   extra,
+            apiBase: API_BASE,
+            onBack:  () => loadView('leaderboard'),
+        };
+
+        if (window.SdrPerformanceHub?.isMounted && typeof window.SdrPerformanceHub.navigate === 'function') {
+            window.SdrPerformanceHub.navigate(document.getElementById('sdr-performance-react-root'), sdrPerfProps);
+            return;
+        }
+
+        if (!document.getElementById('sdr-performance-react-root')) {
+            vc.innerHTML = '<div id="sdr-performance-react-root"></div>';
+        }
+
+        let sdrPerfWaited = 0;
+        while (!window.SdrPerformanceHub && sdrPerfWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            sdrPerfWaited += 50;
+        }
+        if (!window.SdrPerformanceHub) {
+            // Legacy renderSdrPerformance() stays imported purely as this
+            // crash-fallback, same pattern as Leaderboard / My Settings.
+            await renderSdrPerformance(vc, extra, loadView);
+            return;
+        }
+
+        window.SdrPerformanceHub.mount(document.getElementById('sdr-performance-react-root'), sdrPerfProps);
     } else if (viewName === 'user-guide') {
         // ── HelpHub IIFE (React) ──────────────────────────────────────────
         // Mirrors the Dashboard Hub mount pattern exactly (full cutover, no
@@ -640,52 +778,68 @@ async function loadView(viewName, extra, backView) {
         }
 
         window.HelpHub.mount(document.getElementById('help-react-root'), helpProps);
-    } else if (viewName === 'sales-journeys') {
-        // ── Sales Journey Hub IIFE (React) ─────────────────────────────────
-        // Mirrors the Help Hub mount pattern exactly.
-        const journeyProps = {
+    } else if (viewName === 'sales-tools') {
+        // ── Sales Tools Hub IIFE (React) ────────────────────────────────────
+        // Supersedes the old standalone Sales Journey mount block — Cadence
+        // is now embedded inside this hub as a tab. Mirrors the Help Hub
+        // mount pattern exactly.
+        const salesToolsProps = {
             userRole: currentUser?.role,
             apiBase:  API_BASE,
+            journeyId: extra || null,   // #sales-tools/{journeyId} deep link
         };
 
-        if (window.SalesJourneyHub?.isMounted && typeof window.SalesJourneyHub.navigate === 'function') {
-            window.SalesJourneyHub.navigate(document.getElementById('sales-journey-react-root'), journeyProps);
+        if (window.SalesToolsHub?.isMounted && typeof window.SalesToolsHub.navigate === 'function') {
+            window.SalesToolsHub.navigate(document.getElementById('sales-tools-react-root'), salesToolsProps);
             return;
         }
 
-        vc.innerHTML = '<div id="sales-journey-react-root"></div>';
+        vc.innerHTML = '<div id="sales-tools-react-root"></div>';
 
-        let sjWaited = 0;
-        while (!window.SalesJourneyHub && sjWaited < 5000) {
+        let stWaited = 0;
+        while (!window.SalesToolsHub && stWaited < 5000) {
             await new Promise(r => setTimeout(r, 50));
-            sjWaited += 50;
+            stWaited += 50;
         }
-        if (!window.SalesJourneyHub) {
-            document.getElementById('sales-journey-react-root').innerHTML =
-              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load Sales Cadences. Please refresh.</div>';
+        if (!window.SalesToolsHub) {
+            document.getElementById('sales-tools-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load Sales Tools. Please refresh.</div>';
             return;
         }
 
-        window.SalesJourneyHub.mount(document.getElementById('sales-journey-react-root'), journeyProps);
+        window.SalesToolsHub.mount(document.getElementById('sales-tools-react-root'), salesToolsProps);
     } else if (viewName === 'upload') {
+        // Retired 2026-09 alongside audit-logs (same reasoning, same
+        // pattern): Control Center's Data section has full parity — every
+        // legacy upload*.js endpoint has a UploadService counterpart, and
+        // the port's own commit history caught two real bugs the legacy
+        // page never had (services/api.js UploadService, 2026-09-02/04).
+        // No nav entry pointed here already; this keeps a bookmarked/typed
+        // #upload useful instead of dead.
         if (!isSuperAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderUpload(vc);
+        loadView('control-center').catch(() => {});
+        return;
     } else if (viewName === 'audit-logs') {
+        // Retired 2026-09 alongside upload (same reasoning, same pattern):
+        // Control Center's Monitoring section has full parity — its own
+        // comment documents "read-only parity with every tab of
+        // frontend/js/views/audit_logs.js (Activity, Login History,
+        // Feedback, SF Logs, Error Logs, Perf Health)". Call Logs was
+        // deliberately dropped as redundant with Activity Monitor. No nav
+        // entry pointed here already; this keeps a bookmarked/typed
+        // #audit-logs useful instead of dead.
         if (!isSuperAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderAuditLogs(vc);
+        loadView('control-center').catch(() => {});
+        return;
     } else if (viewName === 'metrics' || viewName === 'activity-feed') {
         // Legacy redirects → unified Analytics Hub
         loadView('analytics').catch(() => {});
         return;
-    } else if (viewName === 'smart-analytics') {
-        // EC-10: kept as a routable view (sidebar item hidden, accessible via "Full AI Workspace" link)
-        if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderSmartAnalytics(vc);
     } else if (viewName === 'analytics') {
-        // AE gets Analytics Hub too, forced to their own leads/calls only —
+        // AE/SDR get Analytics Hub too, forced to their own leads/calls only —
         // see backend analytics_routes._effective_ae_sdr and
-        // DashboardTab.jsx's isAE (pod picker hidden, no pod-wide access).
-        if (!isAdmin && currentUser?.role !== 'AE') { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
+        // DashboardTab.jsx's isSelfScoped (pod picker hidden, no pod-wide access).
+        if (!isAdmin && !['AE', 'SDR'].includes(currentUser?.role)) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
 
         // EC-15: prevent double-mount when loadView('analytics') is called a second
         // time while the first call is still in the bundle-poll loop (up to 3 s).
@@ -717,8 +871,15 @@ async function loadView(viewName, extra, backView) {
 
         try {
             // EC-14: light skeleton shown immediately so there's no white flash
+            // RCA 2026-08-19 (Clarity CLS audit): this was min-height:600px,
+            // well under Analytics Hub's real ~1215px (measured live, default
+            // Dashboard tab) — real content still shifted everything below it
+            // down by ~615px on every load. Same technique as #dashboard-
+            // react-root's reservation in style.css, just inline here since
+            // this route already builds its own skeleton instead of using
+            // the generic showLoader().
             vc.innerHTML = `
-              <div id="analytics-react-root" style="min-height:600px;">
+              <div id="analytics-react-root" style="min-height:1215px;">
                 <div style="display:flex;flex-direction:column;gap:20px;padding:32px 24px;">
                   <div style="height:36px;width:280px;background:#f1f5f9;border-radius:8px;animation:ah-pulse 1.4s ease-in-out infinite;"></div>
                   <div style="display:flex;gap:16px;">
@@ -837,12 +998,266 @@ async function loadView(viewName, extra, backView) {
         }
     } else if (viewName === 'digest') {
         if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderDigest(vc);
-    } else if (viewName === 'call-monitor') {
+        const dailyDigestProps = {
+            token:    localStorage.getItem('crm_token'),
+            userRole: currentUser?.role,
+            apiBase:  API_BASE,
+        };
+
+        if (window.DailyDigestHub?.isMounted && typeof window.DailyDigestHub.navigate === 'function') {
+            window.DailyDigestHub.navigate(document.getElementById('daily-digest-react-root'), dailyDigestProps);
+            return;
+        }
+
+        if (!document.getElementById('daily-digest-react-root')) {
+            vc.innerHTML = '<div id="daily-digest-react-root"></div>';
+        }
+
+        let dailyDigestWaited = 0;
+        while (!window.DailyDigestHub && dailyDigestWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            dailyDigestWaited += 50;
+        }
+        if (!window.DailyDigestHub) {
+            document.getElementById('daily-digest-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load Team Digest. Please refresh.</div>';
+            return;
+        }
+
+        window.DailyDigestHub.mount(document.getElementById('daily-digest-react-root'), dailyDigestProps);
+    } else if (viewName === 'my-tasks') {
+        // No role/admin gate — every authenticated user can have tasks
+        // assigned to them (GET /api/my/tasks scopes server-side by user_id).
+        const myTasksProps = {
+            token:    localStorage.getItem('crm_token'),
+            apiBase:  API_BASE,
+            onLeadClick: (id) => loadView('lead-detail', id, 'my-tasks'),
+            // v13.7.0: the bell's approvals open straight on that tab.
+            initialTab: extra || undefined,
+            navAt:      Date.now(),
+        };
+
+        if (window.MyTasksHub?.isMounted && typeof window.MyTasksHub.navigate === 'function') {
+            window.MyTasksHub.navigate(document.getElementById('my-tasks-react-root'), myTasksProps);
+            return;
+        }
+
+        if (!document.getElementById('my-tasks-react-root')) {
+            vc.innerHTML = '<div id="my-tasks-react-root"></div>';
+        }
+
+        let myTasksWaited = 0;
+        while (!window.MyTasksHub && myTasksWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            myTasksWaited += 50;
+        }
+        if (!window.MyTasksHub) {
+            document.getElementById('my-tasks-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load My Tasks. Please refresh.</div>';
+            return;
+        }
+
+        window.MyTasksHub.mount(document.getElementById('my-tasks-react-root'), myTasksProps);
+    } else if (viewName === 'activity-monitor') {
         if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderCallMonitor(vc);
+        // Activity Monitor (React) replaces the classic Call Monitor view —
+        // adds Email/Message tabs alongside Calls, same page. Classic
+        // renderCallMonitor() kept only as the crash-fallback escape hatch,
+        // same pattern as Pods Hub's deprecation.
+        const activityMonitorProps = {
+            token:    localStorage.getItem('crm_token'),
+            userRole: currentUser?.role,
+            apiBase:  API_BASE,
+            onSwitchToClassic: () => renderCallMonitor(vc),
+            onOpenLead: (leadId) => loadView('lead-detail', leadId),
+        };
+
+        if (window.ActivityMonitorHub?.isMounted && typeof window.ActivityMonitorHub.navigate === 'function') {
+            window.ActivityMonitorHub.navigate(document.getElementById('activity-monitor-react-root'), activityMonitorProps);
+            return;
+        }
+
+        if (!document.getElementById('activity-monitor-react-root')) {
+            vc.innerHTML = '<div id="activity-monitor-react-root"></div>';
+        }
+
+        let activityMonitorWaited = 0;
+        while (!window.ActivityMonitorHub && activityMonitorWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            activityMonitorWaited += 50;
+        }
+        if (!window.ActivityMonitorHub) {
+            document.getElementById('activity-monitor-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load Activity Monitor. Please refresh.</div>';
+            return;
+        }
+
+        window.ActivityMonitorHub.mount(document.getElementById('activity-monitor-react-root'), activityMonitorProps);
+    } else if (viewName === 'control-center') {
+        // 2026-09-04: widened from single-owner-email to all Super Admins.
+        // 2026-09-09 (v12.2): Pod Admin admitted too, but the sections are now
+        // individually role-gated (frontend-react/.../control-center/
+        // constants.js SECTION_TABS[].roles) so a Pod Admin sees only Team &
+        // Access — the one section they already hold in legacy (admin.js
+        // "Team Management"). Integrations / AI & Automation / Data /
+        // Monitoring stay Super-Admin-only, which is what previously made
+        // opening this page to Pod Admin an over-grant.
+        // Typing #control-center must still do nothing for every other role.
+        if (!['Super Admin', 'Pod Admin'].includes(currentUser?.role || '')) {
+            loadView('dashboard');
+            return;
+        }
+        const controlCenterProps = {
+            token:    localStorage.getItem('crm_token'),
+            userRole: currentUser?.role,
+            apiBase:  API_BASE,
+        };
+
+        if (window.ControlCenterHub?.isMounted && typeof window.ControlCenterHub.navigate === 'function') {
+            window.ControlCenterHub.navigate(document.getElementById('control-center-react-root'), controlCenterProps);
+            return;
+        }
+
+        if (!document.getElementById('control-center-react-root')) {
+            vc.innerHTML = '<div id="control-center-react-root"></div>';
+        }
+
+        let controlCenterWaited = 0;
+        while (!window.ControlCenterHub && controlCenterWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            controlCenterWaited += 50;
+        }
+        if (!window.ControlCenterHub) {
+            document.getElementById('control-center-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load Control Center. Please refresh.</div>';
+            return;
+        }
+
+        window.ControlCenterHub.mount(document.getElementById('control-center-react-root'), controlCenterProps);
+    } else if (viewName === 'ae-pipeline') {
+        // Phase 1: AE Pipeline. Own-data view for AE; Pod Admin gets the same
+        // oversight extension the AE leaderboard already gives them. SDR
+        // excluded — also enforced server-side in ae_pipeline_routes.py.
+        // Super Admin excluded here (2026-09-16): they now reach this same
+        // view — plus CSM Portal — through the merged 'pipeline-hub' route
+        // below, one nav item with a tab each, instead of two separate ones.
+        if (!['AE', 'Pod Admin', 'Admin'].includes(currentUser?.role || '')) {
+            loadView('dashboard');
+            return;
+        }
+        const aePipelineProps = {
+            token:    localStorage.getItem('crm_token'),
+            userRole: currentUser?.role,
+            apiBase:  API_BASE,
+        };
+
+        if (window.AEPipelineHub?.isMounted && typeof window.AEPipelineHub.navigate === 'function') {
+            window.AEPipelineHub.navigate(document.getElementById('ae-pipeline-react-root'), aePipelineProps);
+            return;
+        }
+
+        if (!document.getElementById('ae-pipeline-react-root')) {
+            vc.innerHTML = '<div id="ae-pipeline-react-root"></div>';
+        }
+
+        let aePipelineWaited = 0;
+        while (!window.AEPipelineHub && aePipelineWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            aePipelineWaited += 50;
+        }
+        if (!window.AEPipelineHub) {
+            document.getElementById('ae-pipeline-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load AE Pipeline. Please refresh.</div>';
+            return;
+        }
+
+        window.AEPipelineHub.mount(document.getElementById('ae-pipeline-react-root'), aePipelineProps);
+    } else if (['csm-inbox', 'csm-portfolio', 'csm-playbooks', 'csm-digest'].includes(viewName)) {
+        // Phase 2: CSM Portal Beta, CSM's own view. 2026-09-16: promoted from
+        // one 'csm-portal' item with an internal tab strip to 4 flat
+        // top-level nav items — "all the tabs should come outside... a view
+        // which greets them" — so each of these routes mounts the same
+        // CsmPortalHub bundle, just pinned to one section (see
+        // CsmPortalHub.jsx's `section` prop) with no internal tab strip.
+        // Super Admin oversight moved to the merged 'pipeline-hub' route.
+        if (!['CSM'].includes(currentUser?.role || '')) {
+            loadView('dashboard');
+            return;
+        }
+        const section = viewName.slice('csm-'.length); // inbox | portfolio | playbooks | digest
+        const csmPortalProps = {
+            token:           localStorage.getItem('crm_token'),
+            userRole:        currentUser?.role,
+            userName:        currentUser?.name || currentUser?.email || '',
+            apiBase:         API_BASE,
+            section,
+            // Deep-link from the global search's Accounts group straight
+            // into that account's detail, instead of just the section list.
+            initialAccountId: extra || null,
+        };
+
+        if (window.CsmPortalHub?.isMounted && typeof window.CsmPortalHub.navigate === 'function') {
+            window.CsmPortalHub.navigate(document.getElementById('csm-portal-react-root'), csmPortalProps);
+            return;
+        }
+
+        if (!document.getElementById('csm-portal-react-root')) {
+            vc.innerHTML = '<div id="csm-portal-react-root"></div>';
+        }
+
+        let csmPortalWaited = 0;
+        while (!window.CsmPortalHub && csmPortalWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            csmPortalWaited += 50;
+        }
+        if (!window.CsmPortalHub) {
+            document.getElementById('csm-portal-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load CSM Portal. Please refresh.</div>';
+            return;
+        }
+
+        window.CsmPortalHub.mount(document.getElementById('csm-portal-react-root'), csmPortalProps);
+    } else if (viewName === 'pipeline-hub') {
+        // 2026-09-16: Super-Admin-only merge of AE Pipeline + CSM Portal
+        // into one nav item with a tab for each ("the both the items should
+        // be merged as they have a tab for themselves") — a third bundle
+        // (features/pipeline-hub/PipelineHub.jsx) that imports both
+        // islands' real components directly, rather than two separate nav
+        // entries pointing at the same content.
+        if (!['Super Admin'].includes(currentUser?.role || '')) {
+            loadView('dashboard');
+            return;
+        }
+        const pipelineHubProps = {
+            token:            localStorage.getItem('crm_token'),
+            userRole:         currentUser?.role,
+            apiBase:          API_BASE,
+            initialAccountId: extra || null,
+        };
+
+        if (window.PipelineHub?.isMounted && typeof window.PipelineHub.navigate === 'function') {
+            window.PipelineHub.navigate(document.getElementById('pipeline-hub-react-root'), pipelineHubProps);
+            return;
+        }
+
+        if (!document.getElementById('pipeline-hub-react-root')) {
+            vc.innerHTML = '<div id="pipeline-hub-react-root"></div>';
+        }
+
+        let pipelineHubWaited = 0;
+        while (!window.PipelineHub && pipelineHubWaited < 5000) {
+            await new Promise(r => setTimeout(r, 50));
+            pipelineHubWaited += 50;
+        }
+        if (!window.PipelineHub) {
+            document.getElementById('pipeline-hub-react-root').innerHTML =
+              '<div style="padding:60px;text-align:center;color:#DC2626;">⚠️ Failed to load Pipeline. Please refresh.</div>';
+            return;
+        }
+
+        window.PipelineHub.mount(document.getElementById('pipeline-hub-react-root'), pipelineHubProps);
     } else if (viewName === 'playground') {
-        if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
+        if (!isSuperAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
         await renderPlayground(vc);
     } else {
         vc.innerHTML = `<h2>View not found</h2>`;
@@ -892,7 +1307,7 @@ if (syncBtn) {
     });
 }
 
-// ── Upload Leads: now handled by views/upload.js ─────────────────────────────
+// ── Upload Leads: now handled by Control Center's Data section (React) ───────
 
 // ── Global Search ─────────────────────────────────────────────────────────────
 // The old vanilla #global-search input was removed when NavHub (React) replaced
@@ -915,6 +1330,10 @@ window._runAiQuery = runAiQuery;
 window._fetchPendingTasks = fetchPendingTasks;
 window._snoozeTask = snoozeTask;
 window._dismissTask = dismissTask;
+
+// Same bridge, for the reply-notification section of the same bell.
+window._fetchPendingReplies = fetchPendingReplies;
+window._dismissReply = dismissReply;
 
 /**
  * _runGlobalSearch — called by NavTopbar onSearch prop with the typed query.
@@ -995,6 +1414,9 @@ document.addEventListener('change', async e => {
 
 // ── Globals (used by kanban inline onclick, search results) ───────────────────
 window._openCallModal = handleCallAction;
+window._openNoShowModal = openNoShowModal;
+window._openDemoFailedModal = openDemoFailedModal;
+window._runLeadStageAction = runLeadStageAction;
 window._loadView      = (view, extra) => loadView(view, extra);
 window._navigateToDetail = (id, backView) => loadView('lead-detail', id, backView || null);
 
@@ -1033,25 +1455,45 @@ async function handleCallAction(leadId, leadName, phone, lead = {}) {
 
     // Prevent duplicate calls while any dialer is active.
     // IMPORTANT: isWidgetActive() checks window.DialerMachine which is the AIRCALL-only
-    // XState machine. For RCM SDRs, DialerMachine may be stuck in AWAITING_MODE
+    // XState machine. For Alternate Messenger SDRs, DialerMachine may be stuck in AWAITING_MODE
     // or INITIATING from a previous failed attempt — this causes isWidgetActive()=true
     // and silently blocks every call attempt (no _callInFlight set, no backend call).
     // FIX: gate each provider on its own state machine only.
     const _provider = (_dialerConfig.provider || '').toLowerCase();
-    const _isRCMActive = window.RCMDialer?.isActive?.() ?? false;
-    // For Aircall: check DialerMachine. For RCM: ignore DialerMachine entirely.
-    const _isAircallActive = _provider !== 'rcm' && isWidgetActive();
+    const _isAlternateMessenger = window.AlternateMessengerDialer?.isActive?.() ?? false;
+    // For Aircall: check DialerMachine. For Alternate Messenger: ignore DialerMachine entirely.
+    const _isAircallActive = _provider !== 'messenger' && isWidgetActive();
 
-    // Auto-heal: if DialerMachine is stuck in non-IDLE state for a RCM SDR,
+    // Auto-heal: if DialerMachine is stuck in non-IDLE state for a Alternate Messenger SDR,
     // reset it so it never blocks future Aircall calls either (if provider switches).
-    if (_provider === 'rcm' && isWidgetActive()) {
-        console.warn('[handleCallAction] DialerMachine stuck in non-IDLE for RCM SDR — auto-resetting');
+    if (_provider === 'messenger' && isWidgetActive()) {
+        console.warn('[handleCallAction] DialerMachine stuck in non-IDLE for Alternate Messenger SDR — auto-resetting');
         if (window.DialerMachine) window.DialerMachine.send('RESET');
     }
 
-    if (_isAircallActive || _isRCMActive) {
-        showToast('📞 A call is already in progress. End the current call first.', 'warning', 4000);
-        return;
+    if (_isAircallActive || _isAlternateMessenger) {
+        // RCA 2026-08-19 (Aditya, Slack): this gate used to be a dead end — if
+        // DialerMachine/AlternateMessenger got stuck non-IDLE (client glitch) or a
+        // real ghost call sat in the DB, the SDR saw this toast forever, with no
+        // way to reach the EC-16 self-heal that already exists for calls that
+        // fail AFTER reaching the backend (see the catch block below). Hard
+        // refresh/relogin doesn't help because a genuinely-active DB row keeps
+        // reporting itself active regardless of client state. Check backend
+        // truth before blocking, same as that later path already does.
+        try {
+            const activeData = await getMyActiveCall();
+            if (!activeData?.active) {
+                console.warn('[handleCallAction] Client showed active call but backend disagrees (stale/healed) — auto-resetting');
+                if (window.DialerMachine) window.DialerMachine.send('RESET');
+                try { window.AlternateMessengerDialer?.destroy?.(); } catch { /* ignore */ }
+            } else {
+                _showForceClearBanner(activeData);
+                return;
+            }
+        } catch {
+            showToast('📞 A call is already in progress. End the current call first.', 'warning', 4000);
+            return;
+        }
     }
 
 
@@ -1067,7 +1509,7 @@ async function handleCallAction(leadId, leadName, phone, lead = {}) {
     if (isDialerActive && phone) {
         const provider = (_dialerConfig.provider || '').toLowerCase();
 
-        // ── RCM: open the RCMWidget Call tab for mode selection ────
+        // ── Alternate Messenger: open the MessengerWidget Call tab for mode selection ────
         // The widget renders "Phone Bridge / Browser Call" buttons inside its own
         // Call tab pane, returning the chosen mode via a Promise.
         // Aircall routes directly to startDialerCall() — no mode selection needed.
@@ -1076,7 +1518,7 @@ async function handleCallAction(leadId, leadName, phone, lead = {}) {
         // device Aircall's existing click-to-dial REST call already rings. See
         // useAircallEverywhere.js's docblock.)
         let callMode = 'bridge'; // default for Aircall
-        if (provider === 'rcm') {
+        if (provider === 'messenger') {
             // RCA 2026-07-22: this promise only resolves when the SDR clicks a mode
             // button inside the widget panel. If the panel fails to mount/render for
             // any reason, the promise hangs forever with no error — _callInFlight
@@ -1085,10 +1527,10 @@ async function handleCallAction(leadId, leadName, phone, lead = {}) {
             // outside any try/catch entirely) and a timeout so this can never brick
             // the call button again, regardless of the underlying widget glitch.
             try {
-                const modeSelection = (!_rcmWidgetReady || typeof RCMWidget === 'undefined')
+                const modeSelection = (!_messengerWidgetReady || typeof MessengerWidget === 'undefined')
                     // Widget not initialised (no credentials / wrong provider) — fall back
                     ? _showCallModeSelector(leadName, phone)
-                    : RCMWidget.openForCall({ leadId, leadName, phone });
+                    : MessengerWidget.openForCall({ leadId, leadName, phone });
                 callMode = await _withTimeout(modeSelection, 45000, 'Dialer did not respond');
             } catch (err) {
                 window._callInFlight = false;
@@ -1106,42 +1548,47 @@ async function handleCallAction(leadId, leadName, phone, lead = {}) {
         const providerLabel = _dialerConfig.provider.charAt(0).toUpperCase() + _dialerConfig.provider.slice(1);
         showToast(`📞 Initiating call via ${providerLabel}...`, 'info', 3000);
 
-        // For RCM: set INITIATING state before the API call so _syncCallPane()
-        // in rcm_widget.js doesn't reset the "Connecting..." spinner to idle
+        // For Alternate Messenger: set INITIATING state before the API call so _syncCallPane()
+        // in messenger_widget.js doesn't reset the "Connecting..." spinner to idle
         // during the async gap between mode selection and activate().
-        if (provider === 'rcm') {
-            window.RCMDialer.setInitiating();
+        if (provider === 'messenger') {
+            window.AlternateMessengerDialer.setInitiating();
         }
 
         try {
             const result = await startDialerCall(leadId, phone, callMode);
 
 
-            // Activate RCMDialer for RCM calls — replaces showDialerWidget()
-            if (result.provider === 'rcm') {
-                // RCMDialer owns state, fires rcm:call-started (renders panel)
-                // and rcm:call-ended (opens outcome modal). No machine dependency.
-                await window.RCMDialer.activate(result, leadName, phone, callMode);
+            // Activate AlternateMessenger for Alternate Messenger calls — replaces showDialerWidget()
+            if (result.provider === 'messenger') {
+                // AlternateMessenger owns state, fires alternate:call-started (renders panel)
+                // and alternate:call-ended (opens outcome modal). No machine dependency.
+                await window.AlternateMessengerDialer.activate(result, leadName, phone, callMode);
                 window._callInFlight = false;
                 return;
             } else {
                 // Aircall: initiate in the Aircall phone app.
-                // If Aircall returned a provider_call_id, poll for termination and auto-open modal.
-                // If provider_call_id is missing (call not registered in Aircall app yet, or
-                // staging/test environment), open the outcome modal immediately so the SDR
-                // can still log the result without being stuck waiting forever.
+                // RCA 2026-08-17 (LIVE): getCallStatus() polls GET /calls/{callId}/status,
+                // which is keyed on our own DB call_id — always present regardless of
+                // whether Aircall's REST response for POST /users/{id}/calls carried a
+                // provider_call_id synchronously (a bridge-mode dial often doesn't get
+                // one until the agent's IVR leg connects). Gating polling on
+                // provider_call_id meant that window — which can span most of a bridge
+                // call's early lifetime — fell through to a banner claiming "Call ended"
+                // the instant the call was merely dialed, while Aircall's own panel
+                // still showed "Ringing…". Poll on callId alone; it's always present.
                 const callId = result.call_id;  // our DB UUID — always present
-                const hasProviderCallId = result.provider_call_id && result.provider_call_id.trim() !== '';
 
-                if (hasProviderCallId && callId && window._startAircallOutcomePolling) {
+                if (callId && window._startAircallOutcomePolling) {
                     window._startAircallOutcomePolling(callId, leadId, leadName, phone);
                     showToast(`✅ Aircall initiated. The outcome form will open automatically when the call ends.`, 'success', 5000);
                     window._callInFlight = false;
                     return;
                 } else {
-                    // No provider_call_id — can't poll. Show banner and open modal immediately.
+                    // No callId at all (should not happen — initiate_call() always
+                    // creates the DialerCall row first) — can't poll or attach an
+                    // outcome. Prompt for a manual log without claiming the call ended.
                     _setPendingOutcome({ leadId, leadName, phone, callId });
-                    _showStickyBanner({ leadId, leadName, phone });
                     showToast(`📞 Aircall initiated. Please log the outcome below.`, 'info', 4000);
                     openCallModal(leadId, leadName, phone, lead, callId, _dialerConfig.provider || null);
                     window._callInFlight = false;
@@ -1150,23 +1597,23 @@ async function handleCallAction(leadId, leadName, phone, lead = {}) {
             }
         } catch (err) {
             // Dialer call failed (e.g. Aircall 405 — user offline/unavailable, or
-            // RCM API error). Show the error toast but do NOT open the outcome
+            // Alternate Messenger API error). Show the error toast but do NOT open the outcome
             // modal — the call never connected, so there is nothing to log.
             window._callInFlight = false;
 
-            // For RCM: reset the dialer state machine (INITIATING → IDLE)
+            // For Alternate Messenger: reset the dialer state machine (INITIATING → IDLE)
             // so the next call attempt is not blocked by a stale INITIATING state.
-            if ((_dialerConfig.provider || '').toLowerCase() === 'rcm') {
-                try { window.RCMDialer?.destroy?.(); } catch { /* ignore */ }
+            if ((_dialerConfig.provider || '').toLowerCase() === 'messenger') {
+                try { window.AlternateMessengerDialer?.destroy?.(); } catch { /* ignore */ }
                 // Revert widget from "Connecting..." back to lead idle view.
-                if (typeof RCMWidget !== 'undefined') {
-                    RCMWidget.notifyCallFailed(err.message);
+                if (typeof MessengerWidget !== 'undefined') {
+                    MessengerWidget.notifyCallFailed(err.message);
                 }
             }
 
             // Ghost call auto-heal: if the error is "active call in progress",
             // hit GET /api/calls/my-active which applies EC-16 staleness thresholds
-            // and auto-heals stale CALL_STARTED records (e.g. missed RCM webhook).
+            // and auto-heals stale CALL_STARTED records (e.g. missed Alternate Messenger webhook).
             // If EC-16 already healed the ghost call → prompt retry.
             // If the call is still live (CALL_ANSWERED zombie from a lost disconnect 502) →
             // show an actionable "Force Clear" banner so the SDR doesn't have to wait.
@@ -1201,25 +1648,25 @@ async function handleCallAction(leadId, leadName, phone, lead = {}) {
 /**
  * RCA 2026-06-16: Show a dismissable "Force Clear" banner when the SDR's new call
  * is blocked by a zombie CALL_ANSWERED record that EC-16 hasn't healed yet.
- * This happens when RCMDialer.hangup() got a 502 from /calls/disconnect,
+ * This happens when AlternateMessenger.hangup() got a 502 from /calls/disconnect,
  * silently caught it, and reset the local state to IDLE — leaving the DB stuck.
  * The SDR now has a one-click escape instead of waiting 15 minutes (new EC-16 threshold).
  */
 function _showForceClearBanner(activeCallData) {
     const _FORCE_CLEAR_ID = 'force-clear-call-banner';
-    document.getElementById(_FORCE_CLEAR_ID)?.remove();
+    unstackTopBanner(document.getElementById(_FORCE_CLEAR_ID));
 
+    // RCA 2026-08-19: was a plain (non-fixed) outer div wrapping an inner
+    // position:fixed div — a fixed-position child is taken out of normal
+    // flow, so the outer div's own box collapsed to 0 height and never
+    // pushed page content down at all, unconditionally covering whatever
+    // topbar controls sat underneath it (a real Clarity dead-click cause).
+    // stackTopBanner needs the element it positions to be the actual
+    // banner box, so the fixed styling now lives directly on it.
     const banner = document.createElement('div');
     banner.id = _FORCE_CLEAR_ID;
+    banner.style.cssText = 'z-index:10000;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;padding:11px 20px;display:flex;align-items:center;justify-content:space-between;font-size:0.84rem;font-weight:600;box-shadow:0 4px 20px rgba(124,58,237,0.4);animation:slideDown 0.3s ease;gap:12px;';
     banner.innerHTML = `
-        <div style="
-            position:fixed;top:0;left:0;right:0;z-index:10000;
-            background:linear-gradient(135deg,#7c3aed,#4f46e5);
-            color:#fff;padding:11px 20px;
-            display:flex;align-items:center;justify-content:space-between;
-            font-size:0.84rem;font-weight:600;box-shadow:0 4px 20px rgba(124,58,237,0.4);
-            animation:slideDown 0.3s ease;gap:12px;
-        ">
             <span>⚠️ A previous call is still active in the system. If your last call already ended, click <strong>Force Clear</strong> to unblock your dialer.</span>
             <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
                 <button id="force-clear-btn" style="
@@ -1234,13 +1681,12 @@ function _showForceClearBanner(activeCallData) {
                     cursor:pointer;font-size:0.82rem;
                 ">Dismiss</button>
             </div>
-        </div>
     `;
-    document.body.prepend(banner);
+    stackTopBanner(banner);
 
     // Dismiss
     document.getElementById('force-clear-dismiss')?.addEventListener('click', () => {
-        banner.remove();
+        unstackTopBanner(banner);
     });
 
     // Force clear
@@ -1251,9 +1697,9 @@ function _showForceClearBanner(activeCallData) {
             if (activeCallData?.call_id) {
                 await forceEndCall(activeCallData.call_id);
             }
-            // Also reset local RCMDialer state in case it's in a partial state
-            try { window.RCMDialer?.destroy?.(); } catch { /* ignore */ }
-            banner.remove();
+            // Also reset local AlternateMessenger state in case it's in a partial state
+            try { window.AlternateMessengerDialer?.destroy?.(); } catch { /* ignore */ }
+            unstackTopBanner(banner);
             showToast('✅ Cleared. You can now make a new call.', 'success', 5000);
         } catch (err) {
             showToast(`❌ Force clear failed: ${err.message}`, 'warning', 5000);
@@ -1332,10 +1778,33 @@ function _escHtml(str) {
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
+// v11.10.0: what this user may actually do (calling / SMS / WhatsApp), resolved
+// server-side. Fetched alongside dialer status rather than derived from it —
+// messaging used to be inferred from the *dialer* provider, which is why an SDR
+// on Aircall for calling could never message. Never rejects: a failure here
+// must not block page boot, so it resolves to null and the widget falls back to
+// the dialer-only behaviour.
+let _capabilities = null;
+const _capabilitiesPromise = getMyCapabilities()
+    .then(caps => {
+        _capabilities = caps;
+        // The React islands read this to decide whether to show Export buttons (src/lib/useCanExport.js).
+        window.__CRM_CAPS__ = caps;
+        window.dispatchEvent(new CustomEvent('alternate:caps', { detail: caps }));
+        return caps;
+    })
+    .catch(err => { console.warn('[Capabilities] load failed:', err.message); return null; });
+
 // Fetch dialer config at startup (store promise to await later)
 const _dialerConfigPromise = fetchDialerStatus().then(conf => {
     _dialerConfig = conf;
     window._dialerConfig = conf;
+
+    // v11.3.0: Caller-ID — watch for inbound calls even when no widget is
+    // open yet (see dialer_widget.js's initIncomingCallWatcher docblock).
+    if (conf.active && conf.has_credentials && conf.provider !== 'none') {
+        initIncomingCallWatcher();
+    }
 
     // BUG-04: Show manual dial button if dialer is active
     const manualDialBtn = document.getElementById('manual-dial-btn');
@@ -1346,7 +1815,7 @@ const _dialerConfigPromise = fetchDialerStatus().then(conf => {
         manualDialBtn.style.borderColor = _accentColor;
         manualDialBtn.addEventListener('click', () => {
             // v6.2.0: Route all manual dial through showManualDialWidget().
-            // For RCM, that function calls RCMWidget.openForManualDial()
+            // For Alternate Messenger, that function calls MessengerWidget.openForManualDial()
             // internally AND attaches the .then() handler that POSTs /api/calls/start.
             // Calling openForManualDial() directly here dropped the Promise result,
             // so the call never went through our backend — calls/start was never hit.
@@ -1360,49 +1829,92 @@ const _dialerConfigPromise = fetchDialerStatus().then(conf => {
 
 initModals(loadView, () => currentView, () => []);
 
-// ── RCM Messaging Widget ───────────────────────────────────────────────
-// Initialize the floating WhatsApp/SMS widget if RCM messaging is enabled.
-// RCMWidget is a UMD global loaded via <script src="js/rcm_widget.js">.
-// GUARD: Skip init for SDRs whose resolved dialer provider is 'aircall' — the
-// RCM SDK floating button conflicts with the Aircall call flow and causes
-// confusion (Monisha bug: widget FAB visible even when provider override = aircall).
-try {
-    // Await dialer status — already fetched at startup, this resolves instantly
+// ── Alternate Messenger Messaging Widget ───────────────────────────────────────────────
+// Initialize the floating WhatsApp/SMS widget if Alternate Messenger messaging is enabled.
+// MessengerWidget is a UMD global loaded via <script src="js/messenger_widget.js">.
+// GUARD (v11.10.0): the widget mounts when the user holds *any* live
+// capability, and each tab gates on its own. The Call tab stays Alternate Messenger-only
+// because the Alternate Messenger SDK's floating button conflicts with the Aircall call
+// flow (Monisha bug: widget FAB visible even when provider override = aircall),
+// but an Aircall caller who holds SMS/WhatsApp now gets the Message tab — the
+// old rule skipped the whole widget for them, making Alternate Messenger messaging
+// unreachable no matter how it was configured.
+// RCA 2026-08-24 (live, prod): this whole decision used to be one shot —
+// a transient /api/dialer/status hiccup left _messengerWidgetReady false
+// for the rest of the session with only a console.warn, while the call
+// engine (dialerEngine.js) still ran the call for real: audio worked, but
+// no timer/mute/hangup ever appeared. _tryInitMessengerWidget() returns
+// whether the attempt was a *trustworthy* outcome (init succeeded, or the
+// SDR is genuinely on Aircall/no dialer) vs one that should be retried
+// (the status fetch itself failed, or the widget script wasn't ready yet).
+async function _tryInitMessengerWidget(dialerConfigPromise, capabilitiesPromise) {
     let _resolvedProvider = 'none';
-    try { const _ds = await _dialerConfigPromise; _resolvedProvider = (_ds?.provider || 'none').toLowerCase(); } catch {}
+    let _statusFetchFailed = false;
+    try {
+        const _ds = await dialerConfigPromise;
+        _resolvedProvider = (_ds?.provider || 'none').toLowerCase();
+        // Keep the module-level config in sync — the retry path fetches fresh
+        // status independent of the startup `_dialerConfigPromise`, and the
+        // `if` below reads `_dialerConfig.has_credentials`, not `_ds` directly.
+        if (_ds) { _dialerConfig = _ds; window._dialerConfig = _ds; }
+    } catch { _statusFetchFailed = true; }
 
-    const _aircallUser    = _resolvedProvider === 'aircall';
-    const _rcmUser = _resolvedProvider === 'rcm';
+    // Taken as a parameter, not read from the module-level promise, so the
+    // retry below genuinely re-fetches instead of re-reading a failed result.
+    const _caps = await capabilitiesPromise;
+    if (_caps) _capabilities = _caps;
 
-    // Only init the widget if:
-    //  • SDR's resolved provider is RCM (not Aircall, not none)
-    //  • SDR has valid credentials (has_credentials=true from /api/dialer/status)
-    // Note: _dialerConfig.active already encodes the live DB dialer_enabled check performed
-    // by get_provider_for_user() on every /api/dialer/status call — no JWT flag needed here.
-    if (_rcmUser && _dialerConfig.has_credentials && !_aircallUser) {
-        if (typeof RCMWidget !== 'undefined') {
-            RCMWidget.init({
+    const _messengerUser = _resolvedProvider === 'messenger';
+
+    // v11.10.0: the widget hosts two independent things — a Alternate Messenger Call tab
+    // and a Message tab. Gating the whole widget on the *dialer* provider (the
+    // old rule) meant Alternate Messenger messaging was unreachable for anyone calling on
+    // Aircall, and that granting the dialer silently granted WhatsApp. Each tab
+    // now gates on its own capability.
+    //
+    // The Call tab stays Alternate Messenger-only: the Alternate Messenger SDK's call flow
+    // conflicts with Aircall's, which is the original reason for the Aircall
+    // skip (Monisha bug: widget FAB visible even when provider override =
+    // aircall). Aircall users still get the Message tab if they hold a channel.
+    const _canCall = _messengerUser && _dialerConfig.has_credentials
+                     && (_caps ? _caps.calling?.enabled !== false : true);
+    const _canMessage = !!_caps && (_caps.sms?.ready || _caps.whatsapp?.ready);
+
+    if (_canCall || _canMessage) {
+        if (typeof MessengerWidget !== 'undefined') {
+            MessengerWidget.init({
                 apiBase:  API_BASE,
                 senderId: _dialerConfig.sender_id || '',
                 theme:    'dark',   // dark glassmorphism — light theme CSS incomplete (white-on-white)
+                // Which tabs to render. The widget must not offer a channel the
+                // API will reject, so these come straight from the server's
+                // capability resolution rather than being re-derived here.
+                capabilities: {
+                    call:     _canCall,
+                    sms:      !!_caps?.sms?.ready,
+                    whatsapp: !!_caps?.whatsapp?.ready,
+                },
             });
-            _rcmWidgetReady = true;
-            window._rcmWidgetReady = true;
+            _messengerWidgetReady = true;
+            window._messengerWidgetReady = true;
 
-            // ── Bridge window.rcmDialer → RCMDialer ────────────────────
-            // rcm_widget.js uses window.rcmDialer.isActive() in its
+            // ── Bridge window.alternatecrmDialer → AlternateMessenger ────────────────────
+            // messenger_widget.js uses window.alternatecrmDialer.isActive() in its
             // _activeSyncTimer safety net (line ~1239). Without this bridge, the timer
             // always sees isActive()=undefined, waits 10 s, then calls _renderCallIdle()
             // → "Ready to call" appears mid-call AND _pendingModeResolve is cleared,
             // blocking every subsequent call attempt in the same session.
-            window.rcmDialer = window.RCMDialer;
+            window.alternatecrmDialer = window.AlternateMessengerDialer;
 
-            console.info('[RCMWidget] Initialised — provider=rcm, senderId set');
+            console.info('[MessengerWidget] Initialised — call:%s sms:%s whatsapp:%s',
+                _canCall, !!_caps?.sms?.ready, !!_caps?.whatsapp?.ready);
 
             // ── T4D: Caller ID startup warning ─────────────────────────────────────
             // If the SDR has no personal caller ID AND the global from_number is not
-            // set, leads will see a RCM default number. Warn once per session.
-            if (!_dialerConfig.from_number && !sessionStorage.getItem('_cwCallerIdWarnShown')) {
+            // set, leads will see a Alternate Messenger default number. Warn once per session.
+            // Only relevant when the Call tab is actually live — a messaging-only
+            // user has no caller ID to set and shouldn't be told to set one.
+            if (_canCall && !_dialerConfig.from_number && !sessionStorage.getItem('_cwCallerIdWarnShown')) {
                 sessionStorage.setItem('_cwCallerIdWarnShown', '1');
                 setTimeout(() => {
                     showToast(
@@ -1416,24 +1928,42 @@ try {
             // ── T3: Page-load call recovery ────────────────────────────────────────
             // Non-blocking: check if the SDR has an active call in the DB (ghost call).
             // If yes and widget is IDLE (page was reloaded mid-call), restore the widget.
-            getMyActiveCall().then(activeCallData => {
-                if (activeCallData?.active && !window.RCMDialer?.isActive?.()) {
-                    console.info('[App] Recovering mid-call state from DB:', activeCallData.call_id);
-                    window.RCMDialer?.recoverFromActiveCall?.(activeCallData);
-                }
-            }).catch(() => {}); // non-fatal — page loads normally
+            if (_canCall) {
+                getMyActiveCall().then(activeCallData => {
+                    if (activeCallData?.active && !window.AlternateMessengerDialer?.isActive?.()) {
+                        console.info('[App] Recovering mid-call state from DB:', activeCallData.call_id);
+                        window.AlternateMessengerDialer?.recoverFromActiveCall?.(activeCallData);
+                    }
+                }).catch(() => {}); // non-fatal — page loads normally
+            }
 
             // NOTE (SS1 revisited): The original SS1 fix tried to suppress a
-            // "third-party RCM SDK FAB", but RCMWidget is our own
-            // custom component — #rcm-widget-root and .cw-fab are OUR
+            // "third-party Alternate Messenger SDK FAB", but MessengerWidget is our own
+            // custom component — #messenger-widget-root and .cw-fab are OUR
             // elements. Suppressing them hides the entire widget. Removed.
+            return true;
         }
-    } else if (_aircallUser) {
-        console.info('[RCMWidget] Init skipped — user is on Aircall provider');
-    } else {
-        console.info('[RCMWidget] Init skipped — provider:', _resolvedProvider);
+        return false; // widget script not ready yet — worth a retry
     }
-} catch (_e) { console.warn('[RCMWidget] Init skipped:', _e.message); }
+    console.info('[MessengerWidget] Init skipped — no live capability (dialer provider: %s)', _resolvedProvider);
+    // "nothing enabled" is only a trustworthy answer if both fetches actually
+    // succeeded; otherwise the retry path should have another go.
+    return !_statusFetchFailed && !!_caps;
+}
+
+try {
+    let _ready = await _tryInitMessengerWidget(_dialerConfigPromise, _capabilitiesPromise);
+    if (!_ready) {
+        await new Promise(r => setTimeout(r, 3000));
+        _ready = await _tryInitMessengerWidget(
+            fetchDialerStatus(),
+            getMyCapabilities().catch(() => null),
+        );
+    }
+    if (!_ready) {
+        showToast('⚠️ Call/message widget failed to load — refresh the page before calling or messaging', 'warning', 8000);
+    }
+} catch (_e) { console.warn('[MessengerWidget] Init skipped:', _e.message); }
 
 // ── Dialer Outcome Gate ────────────────────────────────────────────────────────
 // Ensures SDRs always log an outcome after a dialer-assisted call.
@@ -1442,6 +1972,7 @@ try {
 const _OUTCOME_KEY  = 'ls_pending_outcome';  // localStorage key
 const _BANNER_ID    = 'outcome-gate-banner';
 let   _aircallPollInterval = null;
+let   _aircallSSE = null;
 
 /** Persist a pending outcome to localStorage. */
 function _setPendingOutcome(data) {
@@ -1469,17 +2000,13 @@ function _getPendingOutcome() {
 /** Show/refresh the sticky "You haven't logged the outcome" banner. */
 function _showStickyBanner(pending) {
     _removeStickyBanner();  // avoid duplicates
+    // RCA 2026-08-19: see _showForceClearBanner's comment — same bug shape
+    // (fixed styling on a detached inner div instead of the banner itself),
+    // same fix (flatten it, route through the shared stacking helper).
     const banner = document.createElement('div');
     banner.id = _BANNER_ID;
+    banner.style.cssText = 'z-index:9999;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;font-size:0.85rem;font-weight:600;box-shadow:0 4px 20px rgba(220,38,38,0.4);animation:slideDown 0.3s ease;';
     banner.innerHTML = `
-        <div style="
-            position:fixed;top:0;left:0;right:0;z-index:9999;
-            background:linear-gradient(135deg,#dc2626,#b91c1c);
-            color:#fff;padding:10px 20px;
-            display:flex;align-items:center;justify-content:space-between;
-            font-size:0.85rem;font-weight:600;box-shadow:0 4px 20px rgba(220,38,38,0.4);
-            animation:slideDown 0.3s ease;
-        ">
             <span>📞 Call ended — please log the outcome for <strong>${_escHtml(pending.leadName)}</strong></span>
             <button id="outcome-banner-log-btn" style="
                 padding:6px 16px;border-radius:8px;border:none;
@@ -1487,16 +2014,15 @@ function _showStickyBanner(pending) {
                 cursor:pointer;font-size:0.82rem;font-weight:700;
                 margin-left:16px;flex-shrink:0;
             ">Log Outcome</button>
-        </div>
     `;
-    document.body.prepend(banner);
+    stackTopBanner(banner);
     document.getElementById('outcome-banner-log-btn')?.addEventListener('click', () => {
         _openPendingOutcomeModal();
     });
 }
 
 function _removeStickyBanner() {
-    document.getElementById(_BANNER_ID)?.remove();
+    unstackTopBanner(document.getElementById(_BANNER_ID));
 }
 
 /** Open the outcome modal for the current pending call. */
@@ -1521,7 +2047,7 @@ async function _handleOutcomeDismissed() {
     _clearPendingOutcome();
     // Power Dialer hook — same event as modals.js's Save/auto-sync paths, so
     // a queue re-enables "Call Next" on dismiss too, not just a logged outcome.
-    window.dispatchEvent(new CustomEvent('rcm:call-outcome-resolved',
+    window.dispatchEvent(new CustomEvent('alternate:call-outcome-resolved',
         { detail: { leadId: pending.leadId, outcome: null, resolved: 'dismissed' } }));
     try {
         const ts = new Date().toLocaleString();
@@ -1535,7 +2061,7 @@ async function _handleOutcomeDismissed() {
 }
 
 /**
- * Fired whenever a dialer call ends (RCM widget event or Aircall poll).
+ * Fired whenever a dialer call ends (Alternate Messenger widget event or Aircall poll).
  * Saves to localStorage + shows the sticky banner + opens the modal.
  * @param {string} leadId
  * @param {string} leadName
@@ -1554,41 +2080,88 @@ function _onDialerCallEnded(leadId, leadName, phone, callId = null) {
  * Start polling Aircall call status every 10 s.
  * Stops when the call reaches a terminal state and fires _onDialerCallEnded.
  */
+function _stopAircallOutcomeWatch() {
+    if (_aircallPollInterval) { clearInterval(_aircallPollInterval); _aircallPollInterval = null; }
+    if (_aircallSSE) { _aircallSSE.close(); _aircallSSE = null; }
+}
+
+// Terminal statuses from aircall_provider.py webhook mapping
+const _AIRCALL_TERMINAL = new Set(['ended', 'done', 'CALL_ENDED', 'disconnected', 'missed',
+                                    'failed', 'cancelled', 'busy', 'unanswered', 'CALL_MISSED']);
+
 function _startAircallOutcomePolling(callId, leadId, leadName, phone) {
-    // Terminal statuses from aircall_provider.py webhook mapping
-    const TERMINAL = new Set(['ended', 'done', 'CALL_ENDED', 'disconnected', 'missed',
-                              'failed', 'cancelled', 'busy', 'unanswered', 'CALL_MISSED']);
     const MAX_POLLS = 60;  // 60 × 10 s = 10 min timeout
     let polls = 0;
+    let resolved = false;
 
-    if (_aircallPollInterval) clearInterval(_aircallPollInterval);
+    _stopAircallOutcomeWatch();
 
+    const resolve = () => {
+        if (resolved) return;  // SSE and the poll can both fire — only act once
+        resolved = true;
+        _stopAircallOutcomeWatch();
+        _onDialerCallEnded(leadId, leadName, phone, callId);
+    };
+
+    // Fast path: the backend already publishes this call's CALL_STATUS to the
+    // SSE broker on every webhook (dialer_routes.py::_publish_call_status).
+    // RCA 2026-08-20: nothing on the frontend ever subscribed for Aircall
+    // calls, so this event was always going into the void and every call
+    // fell through to the 10s poll below — a real, consistent 10-20s delay
+    // before the outcome modal opened. Same EventSource + query-string-token
+    // pattern dialer_widget.js already uses for incoming calls.
+    //
+    // RCA 2026-08-21 (LIVE, prod): live timestamped tracing showed this path
+    // itself resolves ~2ms after receiving a terminal event — the real
+    // remaining 10-30s "delay" reported live was entirely upstream, in
+    // aircall_provider.py's webhook event mapping (call.hungup, sent by
+    // Aircall the instant the line disconnects, was unmapped and discarded;
+    // only call.ended — which this org's Aircall account sends ~30s later —
+    // was acted on). Fixed there; nothing to change here.
+    const token = getAuthToken();
+    if (token && window.EventSource) {
+        try {
+            const es = new EventSource(`${API_BASE}/api/calls/events?token=${encodeURIComponent(token)}`);
+            _aircallSSE = es;
+            es.onmessage = (ev) => {
+                try {
+                    const data = JSON.parse(ev.data);
+                    if (data.call_id === callId && (data.type === 'CALL_ENDED' || _AIRCALL_TERMINAL.has(data.status))) resolve();
+                } catch { /* ignore malformed/keepalive event */ }
+            };
+            // RCA 2026-08-21 (LIVE, prod): unconditionally closing here on every
+            // `error` event killed this connection's OWN native auto-reconnect —
+            // EventSource retries transient drops by itself (readyState goes back
+            // to CONNECTING, not CLOSED), but calling close() ourselves cancels
+            // that and permanently falls back to the 10s poll for the rest of the
+            // call. Render/Cloudflare's infra reliably drops a long-lived SSE
+            // connection at least once over a 15-55s call, so this "fast path"
+            // (RCA 2026-08-20 above) never actually stayed fast — only give up
+            // once the browser itself has (readyState CLOSED); otherwise let it
+            // keep retrying on its own.
+            es.onerror = () => {
+                if (es.readyState === EventSource.CLOSED && _aircallSSE === es) _aircallSSE = null;
+            };
+        } catch { /* EventSource unavailable — poll below covers it */ }
+    }
+
+    // Safety net: still polls even if SSE never connects/fires, and is the
+    // sole path when EventSource isn't available at all.
     _aircallPollInterval = setInterval(async () => {
         polls++;
-        if (polls > MAX_POLLS) {
-            // Timeout: open modal anyway so SDR isn't stuck without a prompt
-            clearInterval(_aircallPollInterval);
-            _aircallPollInterval = null;
-            _onDialerCallEnded(leadId, leadName, phone, callId);
-            return;
-        }
+        if (polls > MAX_POLLS) { resolve(); return; }  // timeout: open modal anyway so SDR isn't stuck
         try {
             const data = await getCallStatus(callId);
             // Terminal if: status string matches, OR ended_at is set (webhook fired)
-            const isTerminal = TERMINAL.has(data?.status) || !!data?.ended_at;
-            if (isTerminal) {
-                clearInterval(_aircallPollInterval);
-                _aircallPollInterval = null;
-                _onDialerCallEnded(leadId, leadName, phone, callId);
-            }
+            if (_AIRCALL_TERMINAL.has(data?.status) || !!data?.ended_at) resolve();
         } catch { /* polling errors are non-fatal */ }
     }, 10_000);
 }
 
 // ── Wire up the 'call-ended' CustomEvent from the dialer widget ───────────────
-// The widget fires window.dispatchEvent(new CustomEvent('rcm:call-ended', { detail: ... }))
-// whenever a RCM call ends (via status poll or manual hangup).
-window.addEventListener('rcm:call-ended', (ev) => {
+// The widget fires window.dispatchEvent(new CustomEvent('alternate:call-ended', { detail: ... }))
+// whenever a Alternate Messenger call ends (via status poll or manual hangup).
+window.addEventListener('alternate:call-ended', (ev) => {
     const state = ev.detail || {};
     // Guard: if a modal is already open don't re-open
     const existingModal = document.getElementById('call-log-modal');
@@ -1651,16 +2224,20 @@ async function _refreshDialerConfig() {
             }
         }
         
-        // Hide RCM widget FAB if dialer is now disabled
-        if (!conf.active || conf.provider !== 'rcm') {
+        // Hide the widget only when it has nothing to offer: no Alternate Messenger
+        // calling AND no messaging. v13.7.0: it used to hide on any non-
+        // Alternate Messenger dialer, so an Aircall rep's "Message" opened an invisible
+        // panel — the same rule init uses (_tryInitMessengerWidget).
+        const _canMessageHere = !!(_capabilities?.sms?.ready || _capabilities?.whatsapp?.ready);
+        if ((!conf.active || conf.provider !== 'messenger') && !_canMessageHere) {
             const fab = document.querySelector('.cw-fab');
             if (fab) fab.style.display = 'none';
-            const widgetRoot = document.getElementById('rcm-widget-root');
+            const widgetRoot = document.getElementById('messenger-widget-root');
             if (widgetRoot) widgetRoot.style.display = 'none';
         } else {
             const fab = document.querySelector('.cw-fab');
             if (fab) fab.style.display = 'flex';
-            const widgetRoot = document.getElementById('rcm-widget-root');
+            const widgetRoot = document.getElementById('messenger-widget-root');
             if (widgetRoot) widgetRoot.style.display = 'block';
         }
     } catch (e) {
@@ -1669,20 +2246,53 @@ async function _refreshDialerConfig() {
 }
 
 // Global hook for lead_detail.js to open the messaging widget for a specific lead.
-// Guard uses _rcmWidgetReady — NOT typeof RCMWidget, which is always defined
+// Guard uses _messengerWidgetReady — NOT typeof MessengerWidget, which is always defined
 // because the UMD script is always loaded regardless of whether init() ran.
 window._openMessagingWidget = (leadId, leadName, phone, lead = {}) => {
-    if (!_rcmWidgetReady) {
-        showToast('Messaging is not available for your account configuration. Contact your admin.', 'warning', 4000);
+    // v11.10.0: name the actual reason. "not available for your account
+    // configuration" sent every SDR to their admin with nothing to act on;
+    // the server already resolves why a channel isn't live, so say it.
+    const _sms = _capabilities?.sms, _wa = _capabilities?.whatsapp;
+    if (!_sms?.enabled && !_wa?.enabled) {
+        showToast('Messaging is not enabled for your account. Ask your admin to grant SMS or WhatsApp.', 'warning', 6000);
         return;
     }
-    RCMWidget.openForLead({ leadId, leadName, phone, lead });
+    if (!_messengerWidgetReady) {
+        showToast(_sms?.reason || _wa?.reason || 'Messaging is unavailable right now — try refreshing.', 'warning', 7000);
+        return;
+    }
+    MessengerWidget.openForLead({ leadId, leadName, phone, lead });
 };
+
+// Whether to render the 💬 Message affordance at all — read by lead_detail.js.
+// A button that always shows and then explains it can't work is worse than no
+// button; an SDR without the channel simply doesn't see one.
+window._canMessageLeads = () => !!(_capabilities?.sms?.enabled || _capabilities?.whatsapp?.enabled);
 
 // Parse hash to restore view on page refresh / initial load
 function _parseHash() {
     const raw = location.hash.replace(/^#/, '');
-    if (!raw) return { view: 'dashboard', extra: null };
+    // CSM lands on their Inbox — the "what needs you today" queue, not the
+    // SDR/AE-shaped Dashboard (My Leads, Calling, Meetings Booked,
+    // leaderboard — none of it applies to a CSM's account-portfolio work;
+    // NavSidebar.jsx also hides both of those nav items from CSM for the
+    // same reason). 2026-09-16: was 'csm-portal' (one wrapper page); Inbox
+    // is now its own flat nav item and the natural landing section.
+    if (!raw) return { view: currentUser?.role === 'CSM' ? 'csm-inbox' : 'dashboard', extra: null };
+    // Easter-egg unlock for Pipeline & CSM Portal (see NavSidebar.jsx
+    // MOGAMBO_KEY) — those nav items are hidden from everyone while that
+    // surface is reworked; typing #mogambo once per browser session reveals
+    // them again, but only for this one account (NavSidebar re-checks the
+    // email itself, this isn't the only gate). Not a real view, so fall
+    // through to the default landing view instead of trying to mount a
+    // "mogambo" hub.
+    if (raw.toLowerCase() === 'mogambo') {
+        let justUnlocked = false;
+        if ((currentUser?.email || '').trim().toLowerCase() === 'neelmani.mishra@screen-magic.com') {
+            try { sessionStorage.setItem('alternate:mogambo-unlocked', '1'); justUnlocked = true; } catch {}
+        }
+        return { view: currentUser?.role === 'CSM' ? 'csm-inbox' : 'dashboard', extra: null, justUnlocked };
+    }
     const parts = raw.split('/');
     return { view: parts[0], extra: parts.slice(1).join('/') || null };
 }
@@ -1691,10 +2301,19 @@ function _parseHash() {
 window.addEventListener('hashchange', () => {
     // EC-15b: skip if this hashchange was triggered by loadView itself setting the hash
     if (_skipHashUpdate) return;
-    const { view, extra } = _parseHash();
+    const { view, extra, justUnlocked } = _parseHash();
     if (view !== currentView || extra !== currentExtra) {
         _skipHashUpdate = true;
         loadView(view, extra).finally(() => { _skipHashUpdate = false; });
+    } else if (justUnlocked) {
+        // #mogambo resolves to whatever view the user is already on (most
+        // often "dashboard") — the equality check above then skips loadView
+        // entirely, so NavSidebar never got nudged to re-render and pick up
+        // the sessionStorage flag it just set. Nothing else changed, but
+        // NavHub.update() calls React's root.render() directly, which
+        // re-runs NavSidebar regardless of whether activeView's value
+        // actually differs.
+        window.NavHub?.update({ activeView: currentView });
     }
 });
 
@@ -1717,7 +2336,7 @@ try {
         vc.innerHTML = `
             <div id="cold-start-overlay" style="padding:80px 40px;text-align:center;max-width:480px;margin:0 auto;">
                 <div style="font-size:3rem;margin-bottom:16px;">✨</div>
-                <h2 style="font-size:1.3rem;font-weight:700;color:#18181b;margin:0 0 8px;">RCM is waking up...</h2>
+                <h2 style="font-size:1.3rem;font-weight:700;color:#18181b;margin:0 0 8px;">Alternate CRM is waking up...</h2>
                 <p style="font-size:0.88rem;color:#71717a;margin:0 0 24px;line-height:1.5;">
                     Our server fell asleep due to inactivity.<br>It's booting up now — this usually takes 20–40 seconds.
                 </p>

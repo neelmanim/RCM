@@ -12,15 +12,24 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   BarChart3, TrendingUp, Users, Target, Calendar, RefreshCw,
-  Download, Phone, Mail, CheckCircle, Sparkles, ChevronRight,
-  Search, XCircle
+  Download, Phone, Mail, CheckCircle, Sparkles, ChevronRight, ChevronDown,
+  Search, XCircle, Lock, AlertTriangle
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from '../../components/ui/Table';
+import { SortableTableHeader } from '../../components/ui/SortableTableHeader';
+import { useSort } from '../../utils/useSort';
+import { Select } from '../../components/ui/Select';
+import { DateRangePicker } from '../../components/ui/DateRangePicker';
+import { Checkbox } from '../../components/ui/Checkbox';
+import { SearchInput } from '../../components/ui/SearchInput';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { AnalyticsService } from '../../services/api';
 import { PinnedReports } from './PinnedReports';
+import { AnalyticsHubTour } from './AnalyticsHubTour';
+import { useCanExport } from '../../lib/useCanExport';
 
 /* ── Helpers ─────────────────────────────────────────────── */
 const _pct = v => (v == null ? '—' : `${v}%`);
@@ -57,6 +66,7 @@ const normalizeFunnel = (d) => {
     calls_unique_leads:    c.unique_leads_called          ?? null,
     calls_avg_per_lead:    c.avg_calls_per_lead           ?? null,
     calls_connected:       c.connected                   ?? null,
+    calls_null_outcome:    c.null_outcome_count           ?? 0,
     connect_rate:          d.connect_rate                ?? null,
     meetings:              m.booked                      ?? 0,
     conversion_rate:       m.conversion_pct              ?? null,
@@ -129,10 +139,10 @@ const RichKpiCard = ({ label, value, subtitle, badge, icon: Icon, colorClass, bg
 const FunnelStrip = ({ data }) => {
   if (!data) return null;
   const stages = [
-    { label: 'Assigned',     val: data.funnel_assigned,     color: 'bg-blue-500' },
-    { label: 'Calling',      val: data.funnel_calling,      color: 'bg-sky-500' },
-    { label: 'Meeting',      val: data.funnel_meeting,      color: 'bg-green-500' },
-    { label: 'Disqualified', val: data.funnel_disqualified, color: 'bg-red-400' },
+    { label: 'Assigned',     val: data.funnel_assigned,     color: 'bg-blue-500', tooltip: 'Leads assigned to an SDR in this period' },
+    { label: 'Calling',      val: data.funnel_calling,      color: 'bg-sky-500',  tooltip: 'Distinct leads dialed at least once — not total call attempts' },
+    { label: 'Meeting',      val: data.funnel_meeting,      color: 'bg-green-500', tooltip: 'Leads that reached a Meeting Scheduled+ status' },
+    { label: 'Disqualified', val: data.funnel_disqualified, color: 'bg-red-400',  tooltip: 'Leads marked Disqualified, Not Interested, Unreachable, or Customer Declined' },
   ].filter(s => s.val != null && s.val > 0);
   if (!stages.length) return <p className="text-sm text-slate-400 py-4 text-center">No lead data for this filter.</p>;
   const max = Math.max(...stages.map(s => s.val), 1);
@@ -140,7 +150,7 @@ const FunnelStrip = ({ data }) => {
   return (
     <div className="flex items-end gap-2 h-20">
       {stages.map((s, i) => (
-        <div key={i} className="flex flex-col items-center gap-1 flex-1">
+        <div key={i} className="flex flex-col items-center gap-1 flex-1" title={s.tooltip}>
           <span className="text-[10px] font-bold text-slate-600">{_num(s.val)}</span>
           <div className={`w-full ${s.color} rounded-t-lg transition-all duration-700`}
             style={{ height: `${Math.max(8, (s.val / max) * 56)}px` }} />
@@ -157,7 +167,7 @@ const StepPill = ({ num: n, label, active, locked }) => (
     ${active ? 'bg-indigo-600 text-white shadow-md' : locked ? 'bg-slate-100 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
     <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-extrabold
       ${active ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'}`}>{n}</span>
-    {label} {locked && '🔒'}
+    {label} {locked && <Lock size={10} />}
   </span>
 );
 
@@ -304,10 +314,10 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
   // regardless of any pod_id sent (see backend analytics_routes._effective_ae_sdr)
   // — no pod-wide view exists for this role, so the pod picker (which
   // /filters now returns empty for an AE anyway) is hidden.
-  const isAE = userRole === 'AE';
+  const isSelfScoped = userRole === 'AE' || userRole === 'SDR';
 
   useEffect(() => {
-    try { window.mixpanel?.track('Analytics Hub Viewed', { role: userRole, self_scoped: isAE }); } catch { /* analytics is best-effort */ }
+    try { window.mixpanel?.track('Analytics Hub Viewed', { role: userRole, self_scoped: isSelfScoped }); } catch { /* analytics is best-effort */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -318,6 +328,7 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
   const [dateFrom, setDateFrom]     = useState(externalFilters?.date_from || '');
   const [dateTo, setDateTo]         = useState(externalFilters?.date_to || '');
   const [batchId, setBatchId]       = useState(externalFilters?.upload_log_id || '');
+  const [sdrId, setSdrId]           = useState(externalFilters?.sdr_id || '');
   const [viewMode, setViewMode]     = useState('single');
 
   // Applied filters — what's actually fetched. Only updated by handleApply().
@@ -333,18 +344,31 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
     dateFrom: externalFilters?.date_from || '',
     dateTo: externalFilters?.date_to || '',
     batchId: externalFilters?.upload_log_id || '',
+    sdrId: externalFilters?.sdr_id || '',
   });
 
   const isDirty = (
     podId !== applied.podId || preset !== applied.preset ||
-    dateFrom !== applied.dateFrom || dateTo !== applied.dateTo || batchId !== applied.batchId
+    dateFrom !== applied.dateFrom || dateTo !== applied.dateTo || batchId !== applied.batchId ||
+    sdrId !== applied.sdrId
   );
 
-  const handleApply = () => setApplied({ podId, preset, dateFrom, dateTo, batchId });
+  // Landing state: nothing is fetched and the filter picker renders centered
+  // until the user applies at least once — reuses the existing "no autosubmit"
+  // Apply gate instead of adding a second, looser trigger.
+  const [hasAppliedOnce, setHasAppliedOnce] = useState(() => Boolean(
+    externalFilters?.pod_id || externalFilters?.preset || externalFilters?.date_from || externalFilters?.upload_log_id
+  ));
+
+  const handleApply = () => {
+    setApplied({ podId, preset, dateFrom, dateTo, batchId, sdrId });
+    setHasAppliedOnce(true);
+  };
 
   // Filter options
   const [pods, setPods]     = useState([]);
   const [batches, setBatches] = useState([]);
+  const [sdrs, setSdrs]     = useState([]);
 
   // Data
   const [funnel, setFunnel]               = useState(null);
@@ -352,7 +376,19 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
   const [sdrTable, setSdrTable]           = useState([]);
   const [trendData, setTrendData]         = useState(null);
   const [batchSummary, setBatchSummary]   = useState([]);
+  const [expandedBatchId, setExpandedBatchId] = useState(null); // qualified/disqualified-by-SDR breakdown row
   const [aiRec, setAiRec]                 = useState('');
+
+  // Lead Activity drill-down — collapsed by default, fetched only on open
+  const [leadActivityOpen, setLeadActivityOpen] = useState(false);
+  const [leadActivity, setLeadActivity]         = useState([]);
+  const [leadActivityLoading, setLeadActivityLoading] = useState(false);
+  const [leadActivityPage, setLeadActivityPage] = useState(1);
+  const [leadActivityTotal, setLeadActivityTotal] = useState(0);
+  const [leadActivityConnects, setLeadActivityConnects] = useState({ total: 0, withOutcome: 0 });
+  const [leadActivitySort, toggleLeadActivitySort] = useSort();
+  const [expandedLeadId, setExpandedLeadId]     = useState(null);
+  const [leadTimelines, setLeadTimelines]       = useState({}); // lead_id -> { loading, events }
 
   // UI
   const [loading, setLoading]           = useState(true);
@@ -368,9 +404,9 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
   const step = useMemo(() => {
     if (batchId) return 4;
     if (dateFrom || dateTo || preset) return 3;
-    if (podId || isAE) return 2; // AE has no pod step to complete
+    if (podId || isSelfScoped) return 2; // AE has no pod step to complete
     return 1;
-  }, [podId, preset, dateFrom, dateTo, batchId, isAE]);
+  }, [podId, preset, dateFrom, dateTo, batchId, isSelfScoped]);
 
   // Build API filters from APPLIED state, not the draft widgets — this is
   // what actually drives loadAll(). Deps EXCLUDE pods so an async pod-list
@@ -382,6 +418,7 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
     if (applied.dateFrom) f.date_from = applied.dateFrom;
     if (applied.dateTo) f.date_to = applied.dateTo;
     if (applied.batchId) f.upload_log_id = applied.batchId;
+    if (applied.sdrId) f.sdr_id = applied.sdrId;
     return f;
   }, [applied]);
 
@@ -414,8 +451,11 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
     if (dateTo) params.date_to = dateTo;
     if (preset && preset !== 'custom') params.preset = preset;
     AnalyticsService.getFilters(params)
-      .then(opts => setBatches(Array.isArray(opts?.batches) ? opts.batches : []))
-      .catch(() => setBatches([]));
+      .then(opts => {
+        setBatches(Array.isArray(opts?.batches) ? opts.batches : []);
+        setSdrs(Array.isArray(opts?.sdrs) ? opts.sdrs : []);
+      })
+      .catch(() => { setBatches([]); setSdrs([]); });
   }, [podId, dateFrom, dateTo, preset, step]);
 
   // Main data load. Guarded by a request-id ref so a slower, stale response
@@ -453,7 +493,38 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
     }
   }, [filters, viewMode, sdrSortBy]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { if (hasAppliedOnce) loadAll(); }, [loadAll, hasAppliedOnce]);
+
+  // Lead Activity — only fetches once opened, then re-fetches on filter/page
+  // change while it stays open (same "don't fetch what isn't visible" gate
+  // as the rest of this hub).
+  useEffect(() => {
+    if (!leadActivityOpen) return;
+    setLeadActivityLoading(true);
+    setExpandedLeadId(null);
+    const sortFilters = leadActivitySort.key
+      ? { ...filters, sort_by: `${leadActivitySort.dir === 'desc' ? '-' : ''}${leadActivitySort.key}` }
+      : filters;
+    AnalyticsService.getLeadActivity(sortFilters, leadActivityPage)
+      .then(data => {
+        setLeadActivity(Array.isArray(data?.leads) ? data.leads : []);
+        setLeadActivityTotal(data?.total || 0);
+        setLeadActivityConnects({ total: data?.total_connects || 0, withOutcome: data?.connects_with_outcome || 0 });
+      })
+      .finally(() => setLeadActivityLoading(false));
+  }, [leadActivityOpen, filters, leadActivityPage, leadActivitySort]);
+
+  useEffect(() => { setLeadActivityPage(1); }, [filters, leadActivitySort]);
+
+  const toggleLeadRow = (leadId) => {
+    setExpandedLeadId(prev => (prev === leadId ? null : leadId));
+    if (!leadTimelines[leadId]) {
+      setLeadTimelines(prev => ({ ...prev, [leadId]: { loading: true, events: [] } }));
+      AnalyticsService.getLeadTimeline(leadId).then(data => {
+        setLeadTimelines(prev => ({ ...prev, [leadId]: { loading: false, events: data?.timeline || [] } }));
+      });
+    }
+  };
 
   // Re-fetch trend whenever the SDR filter on the trend chart changes
   useEffect(() => {
@@ -490,6 +561,7 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
     else { setShowCustomDates(false); setDateFrom(''); setDateTo(''); }
   };
 
+  const canExport = useCanExport();
   const handleExport = () => AnalyticsService.downloadCsv(filters);
 
   // Breadcrumb reflects APPLIED state — it must describe what's actually on
@@ -504,8 +576,9 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
       parts.push(`${applied.dateFrom} → ${applied.dateTo}`);
     }
     if (applied.batchId) parts.push(batches.find(b => String(b.id) === applied.batchId)?.label || 'Batch');
+    if (applied.sdrId) parts.push(sdrs.find(s => String(s.id) === applied.sdrId)?.name || 'Rep');
     return parts.length ? parts.join(' › ') : 'All Pods · All Time';
-  }, [applied, appliedPodName, batches]);
+  }, [applied, appliedPodName, batches, sdrs]);
 
   // Rule engine insights
   const insights = useMemo(() => runRuleEngine(funnel), [funnel]);
@@ -562,7 +635,8 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
       icon:     Target,
       colorClass: funnel.connect_rate >= 30 ? 'text-green-600' : 'text-amber-600',
       bgClass:    funnel.connect_rate >= 30 ? 'bg-green-50'  : 'bg-amber-50',
-      tooltip:  'Live connects / calls with outcome',
+      tooltip:  `${_num(funnel.calls_connected)} connected ÷ ${_num(funnel.calls_made)} calls made = ${_pct(funnel.connect_rate)}. "Connected" = a dialer-detected answer, or any outcome other than No Answer / Voicemail / Wrong Number / Unreachable.` +
+        (funnel.calls_null_outcome > 0 ? ` ${_num(funnel.calls_null_outcome)} calls have no logged outcome yet.` : ''),
       badge: funnel.connect_rate != null
         ? `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${funnel.connect_rate >= 30 ? '#dcfce7' : '#fef3c7'};color:${funnel.connect_rate >= 30 ? '#15803d' : '#92400e'};">${funnel.connect_rate >= 30 ? '✓ Strong' : '↓ Low'}</span>`
         : null,
@@ -576,7 +650,7 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
       icon:     XCircle,
       colorClass: 'text-red-600',
       bgClass:    'bg-red-50',
-      tooltip:  'Not Interested, Disqualified, Unreachable',
+      tooltip:  'Status is Disqualified, Not Interested, Unreachable, or Customer Declined',
       badge:    null,
     },
   ] : [];
@@ -591,89 +665,129 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">Hierarchical SDR activity by POD, date range, and batch</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex bg-white border border-slate-200 rounded-xl p-1">
-            <button onClick={() => setViewMode('single')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'single' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>
-              Single Batch
-            </button>
-            <button onClick={() => setViewMode('all_batches')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'all_batches' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>
-              All Batches
-            </button>
-          </div>
-          <Button variant="secondary" size="sm" onClick={handleExport}><Download size={14} /> Export</Button>
-          <Button variant="secondary" size="sm" onClick={loadAll} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </Button>
-        </div>
-      </div>
-
-      {/* Step Pills */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {!isAE && <>
-          <StepPill num={1} label="POD"        active={step >= 1} />
-          <ChevronRight size={14} className="text-slate-300" />
-        </>}
-        <StepPill num={2} label="Date Range" active={step >= 2} locked={!isAE && step < 1} />
-        <ChevronRight size={14} className="text-slate-300" />
-        <StepPill num={3} label="Batch"      active={step >= 3} locked={step < 2} />
-        <ChevronRight size={14} className="text-slate-300" />
-        <StepPill num={4} label="Refine"     active={step >= 4} locked={step < 3} />
-      </div>
-
-      {/* Filters Row */}
-      <div className="flex items-end gap-4 flex-wrap bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-        {/* POD — hidden for AE, whose data is always self-scoped server-side */}
-        {!isAE && (
-          <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">① POD</label>
-            <select value={podId} onChange={e => { setPodId(e.target.value); setBatchId(''); }}
-              className="text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white font-medium outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20 min-w-[160px]">
-              <option value="">All Pods</option>
-              {pods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+        {hasAppliedOnce && (
+          <div className="flex items-center gap-2">
+            <div className="flex bg-white border border-slate-200 rounded-xl p-1">
+              <button onClick={() => setViewMode('single')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'single' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>
+                Single Batch
+              </button>
+              <button onClick={() => setViewMode('all_batches')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'all_batches' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>
+                All Batches
+              </button>
+            </div>
+            {canExport && <Button variant="secondary" size="sm" onClick={handleExport}><Download size={14} /> Export</Button>}
+            <Button variant="secondary" size="sm" onClick={loadAll} disabled={loading}>
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            </Button>
           </div>
         )}
-
-        {/* Date Presets */}
-        <div>
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">② Date Range</label>
-          <div className="flex gap-1">
-            {PRESETS.map(p => (
-              <button key={p.value} onClick={() => handlePreset(p.value)}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${preset === p.value ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                {p.label}
-              </button>
-            ))}
-          </div>
-          {showCustomDates && (
-            <div className="flex items-center gap-2 mt-2">
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none" />
-              <span className="text-xs text-slate-400">to</span>
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none" />
-            </div>
-          )}
-        </div>
-
-        {/* Batch */}
-        <div>
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">③ Batch</label>
-          <select value={batchId} onChange={e => setBatchId(e.target.value)} disabled={step < 2}
-            className="text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white font-medium outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20 min-w-[180px] disabled:opacity-50">
-            <option value="">{step < 2 ? 'Select date first' : 'All Batches'}</option>
-            {batches.map(b => <option key={b.id} value={b.id}>{b.label || b.name}</option>)}
-          </select>
-        </div>
-
-        {/* Apply — nothing above fetches until this is clicked */}
-        <Button variant="primary" size="sm" onClick={handleApply} disabled={!isDirty}>
-          <Search size={14} /> Apply Filters
-        </Button>
       </div>
 
+      {!hasAppliedOnce && (
+        <EmptyState
+          icon={Search}
+          title="Choose filters to see your data"
+          message="Nothing loads until you apply — pick a POD, a date range, and (optionally) a batch below."
+        />
+      )}
+
+      <AnalyticsHubTour />
+      <Card data-tour="analytics-filters">
+        <CardContent className="space-y-4">
+          {/* Step Pills */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {!isSelfScoped && <>
+              <StepPill num={1} label="POD"        active={step >= 1} />
+              <ChevronRight size={14} className="text-slate-300" />
+            </>}
+            <StepPill num={2} label="Date Range" active={step >= 2} locked={!isSelfScoped && step < 1} />
+            <ChevronRight size={14} className="text-slate-300" />
+            <StepPill num={3} label="Batch"      active={step >= 3} locked={step < 2} />
+            <ChevronRight size={14} className="text-slate-300" />
+            <StepPill num={4} label="Rep"        active={step >= 4} locked={step < 3} />
+            <ChevronRight size={14} className="text-slate-300" />
+            <StepPill num={5} label="Refine"     active={step >= 4} locked={step < 3} />
+          </div>
+
+          {/* Filters Row */}
+          <div className="flex items-end gap-4 flex-wrap">
+            {/* POD — hidden for AE, whose data is always self-scoped server-side */}
+            {!isSelfScoped && (
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">① POD</label>
+                <Select
+                  value={podId}
+                  onChange={v => { setPodId(v); setBatchId(''); setSdrId(''); }}
+                  options={pods.map(p => ({ value: p.id, label: p.name }))}
+                  placeholder="All Pods"
+                  searchable
+                />
+              </div>
+            )}
+
+            {/* Date Presets */}
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">② Date Range</label>
+              <div className="flex gap-1">
+                {PRESETS.map(p => (
+                  <button key={p.value} onClick={() => handlePreset(p.value)}
+                    className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${preset === p.value ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {showCustomDates && (
+                <div className="flex items-center gap-2 mt-2">
+                  <DateRangePicker
+                    from={dateFrom}
+                    to={dateTo}
+                    onChange={({ from, to }) => { setDateFrom(from); setDateTo(to); }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Batch */}
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">③ Batch</label>
+              <Select
+                value={batchId}
+                onChange={v => setBatchId(v)}
+                disabled={step < 2}
+                options={batches.map(b => ({ value: b.id, label: b.label || b.name }))}
+                placeholder={step < 2 ? 'Select date first' : 'All Batches'}
+                className="min-w-[180px]"
+                searchable
+              />
+            </div>
+
+            {/* Rep — hidden for AE/SDR, whose data is already self-scoped */}
+            {!isSelfScoped && (
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">④ Rep</label>
+                <Select
+                  value={sdrId}
+                  onChange={v => setSdrId(v)}
+                  options={sdrs.map(s => ({ value: s.id, label: s.name }))}
+                  placeholder="All Reps"
+                  className="min-w-[160px]"
+                  searchable
+                />
+              </div>
+            )}
+
+            {/* Apply — nothing above fetches until this is clicked */}
+            <Button variant="primary" size="sm" onClick={handleApply} disabled={!isDirty}>
+              <Search size={14} /> Apply Filters
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {hasAppliedOnce && (
+        <>
       {/* Breadcrumb */}
       <div className="text-xs text-slate-500 font-semibold px-1">📍 {breadcrumb}</div>
 
@@ -699,22 +813,60 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
                   <TableHeader className="text-center">Leads</TableHeader>
                   <TableHeader className="text-center">Calls</TableHeader>
                   <TableHeader className="text-center">Meetings</TableHeader>
+                  <TableHeader className="text-center">Disqualified</TableHeader>
                   <TableHeader className="text-center">Emails</TableHeader>
                   <TableHeader className="text-center">Connect %</TableHeader>
+                  <TableHeader className="text-center">By SDR</TableHeader>
                 </TableRow></TableHead>
                 <TableBody>
                   {batchSummary.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="text-center py-12 text-slate-400 italic">No batch data</TableCell></TableRow>
-                  ) : batchSummary.map((b, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="pl-4 font-bold text-sm">{b.batch_name || b.label || `Batch ${i + 1}`}</TableCell>
-                      <TableCell className="text-center font-mono">{_num(b.leads)}</TableCell>
-                      <TableCell className="text-center font-mono text-indigo-600 font-semibold">{_num(b.calls)}</TableCell>
-                      <TableCell className="text-center font-mono text-emerald-600 font-semibold">{_num(b.meetings)}</TableCell>
-                      <TableCell className="text-center font-mono">{_num(b.emails)}</TableCell>
-                      <TableCell className="text-center"><Badge>{_pct(b.connect_rate ?? b.conversion_rate)}</Badge></TableCell>
-                    </TableRow>
-                  ))}
+                    <TableRow><TableCell colSpan={8} className="text-center py-12 text-slate-400 italic">No batch data</TableCell></TableRow>
+                  ) : batchSummary.map((b, i) => {
+                    const rowKey = b.id ?? i;
+                    const isExpanded = expandedBatchId === rowKey;
+                    const bySdr = b.by_sdr || [];
+                    return (
+                      <React.Fragment key={rowKey}>
+                        <TableRow>
+                          <TableCell className="pl-4 font-bold text-sm">{b.batch_name || b.label || `Batch ${i + 1}`}</TableCell>
+                          <TableCell className="text-center font-mono">{_num(b.leads)}</TableCell>
+                          <TableCell className="text-center font-mono text-indigo-600 font-semibold">{_num(b.calls)}</TableCell>
+                          <TableCell className="text-center font-mono text-emerald-600 font-semibold">{_num(b.meetings)}</TableCell>
+                          <TableCell className="text-center font-mono text-rose-600 font-semibold">{_num(b.disqualified)}</TableCell>
+                          <TableCell className="text-center font-mono">{_num(b.emails)}</TableCell>
+                          <TableCell className="text-center"><Badge>{_pct(b.connect_rate ?? b.conversion_rate)}</Badge></TableCell>
+                          <TableCell className="text-center">
+                            {bySdr.length > 0 && (
+                              <button
+                                onClick={() => setExpandedBatchId(isExpanded ? null : rowKey)}
+                                className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
+                              >
+                                <ChevronRight size={12} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                {bySdr.length} SDR{bySdr.length === 1 ? '' : 's'}
+                              </button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && bySdr.length > 0 && (
+                          <TableRow>
+                            <TableCell colSpan={8} className="bg-slate-50 py-2 px-4">
+                              <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+                                {bySdr.map(s => (
+                                  <div key={s.sdr_id} className="text-xs text-slate-600">
+                                    <span className="font-semibold text-slate-800">{s.sdr_name}</span>
+                                    {' — '}
+                                    <span className="text-emerald-600 font-mono">{s.qualified} qualified</span>
+                                    {', '}
+                                    <span className="text-rose-600 font-mono">{s.disqualified} disqualified</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -777,19 +929,14 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
                 title="Activity Trend"
                 subtitle="Calls, meetings & more over time"
                 actions={
-                  <select
+                  <Select
                     value={trendSdrId}
-                    onChange={e => setTrendSdrId(e.target.value)}
-                    className="text-xs border border-slate-200 rounded-lg px-2 py-1 outline-none bg-white text-slate-600 cursor-pointer hover:border-indigo-300 transition-colors"
-                    title="Filter trend by SDR/AE"
-                  >
-                    <option value="">All SDRs / AEs</option>
-                    {sdrTable.map(sdr => (
-                      <option key={sdr.user_id || sdr.sdr_id} value={sdr.user_id || sdr.sdr_id}>
-                        {sdr.sdr_name || sdr.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={v => setTrendSdrId(v)}
+                    options={sdrTable.map(sdr => ({ value: sdr.user_id || sdr.sdr_id, label: sdr.sdr_name || sdr.name }))}
+                    placeholder="All SDRs / AEs"
+                    ariaLabel="Filter trend by SDR/AE"
+                    searchable
+                  />
                 }
               />
               <CardContent>
@@ -803,25 +950,23 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
                 title="SDR Performance"
                 subtitle={`${filteredSdrs.length} SDR(s)`}
                 actions={
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 cursor-pointer select-none">
-                    <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)}
-                      className="rounded" />
-                    Inactive
-                  </label>
+                  <Checkbox
+                    checked={showInactive}
+                    onChange={e => setShowInactive(e.target.checked)}
+                    label="Inactive"
+                    className="font-semibold text-slate-500"
+                  />
                 }
               />
               <CardContent>
                 {/* Search */}
-                <div className="relative mb-3">
-                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search SDR…"
-                    value={sdrSearch}
-                    onChange={e => setSdrSearch(e.target.value)}
-                    className="w-full pl-7 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20 bg-slate-50"
-                  />
-                </div>
+                <SearchInput
+                  placeholder="Search SDR…"
+                  value={sdrSearch}
+                  onChange={e => setSdrSearch(e.target.value)}
+                  className="mb-3 bg-slate-50"
+                  inputClassName="text-xs py-1.5"
+                />
                 {/* Bounded height + its own vertical scroll — without this,
                     a pod with many SDRs (or a broad search match) just grew
                     the whole card past the viewport with no way to reach the
@@ -836,23 +981,21 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
                     default border/rounded-xl classes here isn't safe. */}
                   <Table className="max-h-[320px] overflow-y-auto">
                     <TableHead className="sticky top-0 z-10 bg-slate-50"><TableRow>
-                      <TableHeader className="pl-3">SDR</TableHeader>
-                      <TableHeader className="text-center">Leads</TableHeader>
-                      <TableHeader className="text-center">Calls ↓</TableHeader>
-                      <TableHeader className="text-center" title="Calls over 30s that weren't a no-answer, wrong number, or voicemail">Conversations</TableHeader>
-                      <TableHeader className="text-center">Connect %</TableHeader>
-                      <TableHeader className="text-center">Emails</TableHeader>
-                      <TableHeader className="text-center">Meetings</TableHeader>
+                      <TableHeader className="pl-3" title="Sales rep (or AE) this row breaks down">SDR</TableHeader>
+                      <TableHeader className="text-center" title="Distinct company names dialed this period (case-insensitive). Leads with no company on file aren't counted. Near-duplicate company names (e.g. 'Acme Inc' vs 'Acme Incorporated') aren't merged, so this can slightly overcount true accounts.">Accounts Called</TableHeader>
+                      <TableHeader className="text-center" title="Total dial attempts (dialer + manually logged), including redials to the same lead — not distinct leads or numbers">Calls ↓</TableHeader>
+                      <TableHeader className="text-center" title="Connected calls ÷ total calls made. Connected = a dialer-detected answer, or any outcome other than No Answer / Voicemail / Wrong Number / Unreachable.">Connect %</TableHeader>
+                      <TableHeader className="text-center" title="Outbound emails sent by this SDR in the selected period">Emails</TableHeader>
+                      <TableHeader className="text-center" title="Leads that reached Meeting Scheduled+ status, attributed to this SDR">Meetings</TableHeader>
                     </TableRow></TableHead>
                     <TableBody>
                       {filteredSdrs.length === 0 ? (
-                        <TableRow><TableCell colSpan={7} className="text-center py-8 text-slate-400 italic text-xs">
+                        <TableRow><TableCell colSpan={6} className="text-center py-8 text-slate-400 italic text-xs">
                           No SDR data for this period
                         </TableCell></TableRow>
                       ) : filteredSdrs.map((sdr, idx) => {
                         const rate = sdr.connect_rate ?? null;
-                        const rateBg = rate == null ? '' : rate >= 30 ? '#dcfce7' : '#fef3c7';
-                        const rateColor = rate == null ? '' : rate >= 30 ? '#15803d' : '#92400e';
+                        const callsMade = sdr.calls_made ?? sdr.calls;
                         return (
                           <TableRow key={sdr.user_id || idx}
                             style={sdr.is_inactive ? { opacity: 0.55 } : {}}>
@@ -864,25 +1007,35 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
                                 <div>
                                   <p className="text-xs font-bold text-slate-800 leading-tight">
                                     {sdr.sdr_name || sdr.name || 'SDR'}
-                                    {sdr.is_inactive && (
-                                      <span className="ml-1 px-1 py-0.5 text-[9px] bg-slate-100 text-slate-400 rounded font-semibold">Inactive</span>
+                                    {sdr.left && (
+                                      <Badge variant="default" className="ml-1 !text-[9px] !px-1 !py-0.5 !rounded" title="This person has left — their access was removed">Left</Badge>
+                                    )}
+                                    {sdr.is_inactive && !sdr.left && (
+                                      <Badge variant="default" className="ml-1 !text-[9px] !px-1 !py-0.5 !rounded">Inactive</Badge>
                                     )}
                                   </p>
                                   {sdr.pod_name && <p className="text-[10px] text-slate-400">{sdr.pod_name}</p>}
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell className="text-center font-mono text-xs">{_num(sdr.leads_assigned)}</TableCell>
-                            <TableCell className="text-center font-mono text-xs text-indigo-600 font-semibold">{_num(sdr.calls_made ?? sdr.calls)}</TableCell>
-                            <TableCell className="text-center font-mono text-xs">{_num(sdr.conversations)}</TableCell>
-                            <TableCell className="text-center">
+                            <TableCell className="text-center font-mono text-xs"
+                              title={`${_num(sdr.accounts_connected)} of ${_num(sdr.accounts_called)} accounts connected${sdr.account_connect_rate != null ? ` (${sdr.account_connect_rate}%)` : ''}`}>
+                              {_num(sdr.accounts_called)}
+                            </TableCell>
+                            <TableCell className="text-center font-mono text-xs text-indigo-600 font-semibold"
+                              title={`${_num(callsMade)} total dial attempts, including redials to the same lead`}>
+                              {_num(callsMade)}
+                            </TableCell>
+                            <TableCell className="text-center"
+                              title={`${_num(sdr.calls_connected)} connected ÷ ${_num(callsMade)} calls made`}>
                               {rate != null
-                                ? <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                                    style={{ background: rateBg, color: rateColor }}>{rate}%</span>
+                                ? <Badge variant={rate >= 30 ? 'success' : 'warning'} className="!text-[10px]">{rate}%</Badge>
                                 : <span className="text-slate-300 text-xs">—</span>}
                             </TableCell>
-                            <TableCell className="text-center font-mono text-xs">{_num(sdr.emails_sent)}</TableCell>
-                            <TableCell className="text-center font-mono text-xs text-emerald-600 font-semibold">{_num(sdr.meetings)}</TableCell>
+                            <TableCell className="text-center font-mono text-xs"
+                              title="Outbound emails sent by this SDR in the selected period">{_num(sdr.emails_sent)}</TableCell>
+                            <TableCell className="text-center font-mono text-xs text-emerald-600 font-semibold"
+                              title="Meetings booked and attributed to this SDR">{_num(sdr.meetings)}</TableCell>
                           </TableRow>
                         );
                       })}
@@ -891,6 +1044,107 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
               </CardContent>
             </Card>
           </div>
+
+          {/* ── Lead Activity drill-down — who's assigned, who called, what happened ── */}
+          <Card data-tour="lead-activity-card">
+            <CardHeader
+              title="Lead Activity"
+              subtitle={leadActivityOpen
+                ? `${leadActivityTotal} lead(s) matching the filters above · ${leadActivityConnects.total} connect(s), ${leadActivityConnects.withOutcome} with a logged outcome`
+                : 'Per-lead assignment, call and email history'}
+              actions={
+                <Button data-tour="lead-activity-toggle" variant="secondary" size="sm" onClick={() => setLeadActivityOpen(o => !o)}>
+                  {leadActivityOpen ? 'Hide' : 'Show'} <ChevronDown size={14} className={leadActivityOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                </Button>
+              }
+            />
+            {leadActivityOpen && (
+              <CardContent>
+                {leadActivityLoading ? (
+                  <div className="h-24 bg-slate-100 rounded-xl animate-pulse" />
+                ) : leadActivity.length === 0 ? (
+                  <p className="text-sm text-slate-400 py-4 text-center">No leads match the current filters.</p>
+                ) : (
+                  <>
+                    <Table>
+                      <TableHead><TableRow>
+                        <TableHeader></TableHeader>
+                        <TableHeader>Lead</TableHeader>
+                        <SortableTableHeader label="Company" sortKey="company" sort={leadActivitySort} onSort={toggleLeadActivitySort} />
+                        <SortableTableHeader label="Status" sortKey="status" sort={leadActivitySort} onSort={toggleLeadActivitySort} />
+                        <TableHeader>Assigned To</TableHeader>
+                        <SortableTableHeader label="Calls" sortKey="calls" sort={leadActivitySort} onSort={toggleLeadActivitySort} className="text-center" />
+                        <SortableTableHeader label="Last Outcome" sortKey="last_activity" sort={leadActivitySort} onSort={toggleLeadActivitySort} />
+                        <TableHeader className="text-center">Emails</TableHeader>
+                        <TableHeader>Last Email Status</TableHeader>
+                      </TableRow></TableHead>
+                      <TableBody>
+                        {leadActivity.map(lead => {
+                          const expanded = expandedLeadId === lead.id;
+                          const tl = leadTimelines[lead.id];
+                          return (
+                            <React.Fragment key={lead.id}>
+                              <TableRow className="cursor-pointer hover:bg-slate-50" onClick={() => toggleLeadRow(lead.id)}>
+                                <TableCell><ChevronRight size={14} className={`text-slate-400 transition-transform ${expanded ? 'rotate-90' : ''}`} /></TableCell>
+                                <TableCell className="font-semibold text-slate-700">{lead.name}</TableCell>
+                                <TableCell className="text-slate-500">{lead.company || '—'}</TableCell>
+                                <TableCell><Badge variant="default" className="!text-[10px]">{lead.status}</Badge></TableCell>
+                                <TableCell className="text-slate-600">
+                                  {lead.assigned_to.length ? lead.assigned_to.map(u => u.name).join(', ') : 'Unassigned'}
+                                </TableCell>
+                                <TableCell className="text-center font-mono text-xs">{lead.call_count}</TableCell>
+                                <TableCell className="text-slate-500" title={lead.last_activity_at ? new Date(lead.last_activity_at).toLocaleString() : ''}>
+                                  {lead.connect_no_outcome && (
+                                    <AlertTriangle size={12} title="Connected — no outcome logged by an SDR" className="inline text-amber-500 mr-1" />
+                                  )}
+                                  {lead.last_call_outcome || '—'}
+                                </TableCell>
+                                <TableCell className="text-center font-mono text-xs">{lead.email_count}</TableCell>
+                                <TableCell className="text-slate-500">{lead.last_email_status || '—'}</TableCell>
+                              </TableRow>
+                              {expanded && (
+                                <TableRow>
+                                  <TableCell colSpan={9} className="bg-slate-50">
+                                    {tl?.loading ? (
+                                      <div className="h-12 bg-slate-100 rounded animate-pulse" />
+                                    ) : tl?.events?.length ? (
+                                      <ul className="space-y-1.5 py-1">
+                                        {tl.events.map((e, i) => (
+                                          <li key={i} className="text-xs text-slate-600 flex items-center gap-2">
+                                            <span className="text-slate-400 font-mono">{e.at ? new Date(e.at).toLocaleString() : '—'}</span>
+                                            <Badge variant="default" className="!text-[9px]">{e.type.replace('_', ' ')}</Badge>
+                                            <span>{e.detail}{e.notes ? ` — "${e.notes}"` : ''}</span>
+                                            {e.by && <span className="text-slate-400">— {e.by}</span>}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <p className="text-xs text-slate-400 py-2">No activity recorded for this lead yet.</p>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                    {leadActivityTotal > leadActivity.length && (
+                      <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
+                        <span>Page {leadActivityPage} of {Math.ceil(leadActivityTotal / 25)}</span>
+                        <div className="flex gap-2">
+                          <Button variant="secondary" size="sm" disabled={leadActivityPage <= 1} onClick={() => setLeadActivityPage(p => p - 1)}>Prev</Button>
+                          <Button variant="secondary" size="sm" disabled={leadActivityPage >= Math.ceil(leadActivityTotal / 25)} onClick={() => setLeadActivityPage(p => p + 1)}>Next</Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            )}
+          </Card>
+        </>
+      )}
         </>
       )}
     </div>

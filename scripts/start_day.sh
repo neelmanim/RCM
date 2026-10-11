@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# 🌅 Daily Context Loader — RCM
+# 🌅 Daily Context Loader — Alternate CRM
 # ============================================================================
 #
 # Run this at the START of each working day to load yesterday's context.
@@ -29,7 +29,7 @@ cd "$PROJECT_ROOT"
 
 echo ""
 echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}║     🌅 RCM — Start of Day Briefing     ║${NC}"
+echo -e "${BOLD}${CYAN}║     🌅 Alternate CRM — Start of Day Briefing     ║${NC}"
 echo -e "${BOLD}${CYAN}║     $(date '+%A, %Y-%m-%d')                   ║${NC}"
 echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════╝${NC}"
 echo ""

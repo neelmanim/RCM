@@ -20,10 +20,12 @@ expected to fail in the local test environment. They pass on staging (Postgres).
 """
 import sys
 import os
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
+from unittest.mock import patch, MagicMock
 from conftest import (
     create_test_user,
     create_test_lead,
@@ -46,9 +48,11 @@ def _clear_analytics_cache():
     """
     _analytics_mod._cache.clear()
     _analytics_ai_mod._llm_summary_cache.clear()
+    _analytics_ai_mod._ai_rec_cache.clear()
     yield
     _analytics_mod._cache.clear()
     _analytics_ai_mod._llm_summary_cache.clear()
+    _analytics_ai_mod._ai_rec_cache.clear()
 
 
 # Mark to indicate a test needs Postgres date_trunc and is expected to fail
@@ -301,9 +305,12 @@ class TestFunnelEndpoint:
         resp = client.get("/api/admin/analytics/funnel")
         assert resp.json()["meetings"]["booked"] == 0
 
-    def test_connect_rate_counts_provider_disposition(self, client, db):
-        """RCA 2026-08-03: same dialer_call_connected() helper as the SDR
-        table — Klenty calls carry provider_disposition, never outcome."""
+    def test_connect_rate_ignores_provider_disposition(self, client, db):
+        """2026-09-01: provider_disposition == "ANSWERED" is no longer
+        trusted (product-owner call: Aircall's own disposition field is
+        unreliable in production) — with no SDR-logged outcome and no
+        duration over the threshold, a call does not count as connected
+        no matter what the provider's raw disposition says."""
         user = create_test_user(db, email="funnel-klenty-cr@t.com")
         lead = create_test_lead(db, email="funnel-klenty-cr-lead@t.com")
         create_test_dialer_call(db, lead.id, user.id, provider="klenty", provider_disposition="ANSWERED")
@@ -314,8 +321,8 @@ class TestFunnelEndpoint:
         assert resp.status_code == 200
         body = resp.json()
         assert body["calls"]["made"] == 2
-        assert body["calls"]["connected"] == 1
-        assert body["connect_rate"] == 50.0
+        assert body["calls"]["connected"] == 0
+        assert body["connect_rate"] == 0.0
 
     def test_lead_source_filter_scopes_calls_made(self, client, db):
         """
@@ -500,12 +507,12 @@ class TestSdrTableEndpoint:
         rate = sdr_row.get("connect_rate", 0)
         assert 0 < rate < 100
 
-    def test_connect_rate_counts_provider_disposition_for_batch_synced_calls(self, client, db):
-        """RCA 2026-08-03: Klenty calls never get an SDR-tagged outcome (no
-        Connect Rate tie-in via `outcome`), so Connect Rate always read 0%
-        for a Klenty-heavy SDR regardless of real performance. provider_
-        disposition (Klenty's own ANSWERED/NOT_ANSWERED) is the connect
-        signal those calls actually carry."""
+    def test_connect_rate_ignores_provider_disposition_for_batch_synced_calls(self, client, db):
+        """2026-09-01: provider_disposition-based fallback removed (product-
+        owner call: Aircall's own disposition field is unreliable in
+        production) — Klenty calls with no SDR-tagged outcome and no
+        duration over the threshold do not count as connected, regardless
+        of what Klenty's own ANSWERED/NOT_ANSWERED disposition says."""
         sdr = create_test_user(db, email="klenty_cr@t.com", name="Klenty CR SDR", role="SDR")
         lead = create_test_lead(db, email="klenty_cr_lead@t.com")
         assign_lead_to_sdr(db, lead, sdr)
@@ -523,8 +530,8 @@ class TestSdrTableEndpoint:
         )
         assert sdr_row is not None
         assert sdr_row["calls_made"] == 3
-        assert sdr_row["calls_connected"] == 1
-        assert sdr_row["connect_rate"] == pytest.approx(33.3, abs=0.1)
+        assert sdr_row["calls_connected"] == 0
+        assert sdr_row["connect_rate"] == 0.0
 
     def test_pod_filter_scopes_sdr_table(self, client, db):
         pod_x = create_test_pod(db, name="Pod X")
@@ -556,6 +563,33 @@ class TestSdrTableEndpoint:
         body = resp.json()
         assert len(body["sdrs"]) <= 2
         assert body["total"] >= 5
+
+    def test_calls_made_does_not_double_count_auto_logged_dialer_calls(self, client, db):
+        """RCA 2026-08-20 (same shape as the dashboard-stats overcount):
+        _cl_sdr_q must exclude CallLogs auto-created from a DialerCall
+        (dialer_call_id set by dialer_service._auto_log_outcome), or every
+        auto-tagged Aircall call is summed twice (once via the DialerCall
+        aggregate, once via the CallLog aggregate)."""
+        sdr = create_test_user(db, email="sdrtable_dedup@t.com", name="Dedup SDR", role="SDR")
+        lead = create_test_lead(db, email="sdrtable_dedup_lead@t.com")
+        assign_lead_to_sdr(db, lead, sdr)
+        dc = create_test_dialer_call(db, lead.id, sdr.id, outcome="No Answer")
+        auto_log = models.CallLog(
+            lead_id=lead.id, user_id=sdr.id, outcome="No Answer",
+            notes="[Auto-logged from Aircall tag: test]", dialer_call_id=dc.id,
+        )
+        db.add(auto_log)
+        db.commit()
+
+        resp = client.get("/api/admin/analytics/sdr-table?preset=all")
+        assert resp.status_code == 200
+        sdr_row = next(
+            (r for r in resp.json()["sdrs"]
+             if (r.get("name") or r.get("sdr_name")) == "Dedup SDR"),
+            None,
+        )
+        assert sdr_row is not None
+        assert sdr_row["calls_made"] == 1
 
     def test_empty_sdr_table_returns_empty_list(self, client, db):
         resp = client.get("/api/admin/analytics/sdr-table")
@@ -590,6 +624,9 @@ class TestSdrTableEndpoint:
         lead_new.lead_closed_at = datetime.now(timezone.utc)
         assign_lead_to_sdr(db, lead_new, sdr)
         db.commit()
+        from conftest import create_test_booking
+        create_test_booking(db, lead_old, sdr.id, booked_at=datetime.now(timezone.utc) - timedelta(days=60))
+        create_test_booking(db, lead_new, sdr.id)
 
         # With 7D preset — only the recent meeting should appear
         resp = client.get("/api/admin/analytics/sdr-table?preset=7d&page_size=100")
@@ -677,14 +714,15 @@ def _sdr_row(resp, name):
 
 class TestConversationsColumn:
     """Added 2026-08-14: a call counts as a real Conversation if outcome
-    isn't a not-answered one and duration is unknown or > 30s (see
-    models.dialer_call_is_conversation / call_log_is_conversation)."""
+    isn't a not-answered one and duration is unknown or > 120s (raised from
+    30s on 2026-08-31 — see models.dialer_call_is_conversation /
+    call_log_is_conversation)."""
 
-    def test_dialer_call_over_30s_with_no_outcome_counts(self, client, db):
+    def test_dialer_call_over_120s_with_no_outcome_counts(self, client, db):
         sdr = create_test_user(db, email="conv1@t.com", name="Conv SDR 1", role="SDR")
         lead = create_test_lead(db, email="conv1_lead@t.com")
         assign_lead_to_sdr(db, lead, sdr)
-        create_test_dialer_call(db, lead.id, sdr.id, duration=45)
+        create_test_dialer_call(db, lead.id, sdr.id, duration=150)
         db.commit()
 
         resp = client.get("/api/admin/analytics/sdr-table?preset=all")
@@ -692,10 +730,9 @@ class TestConversationsColumn:
         assert row is not None
         assert row["conversations"] == 1
 
-    def test_org_configured_threshold_overrides_the_30s_default(self, client, db):
+    def test_org_configured_threshold_overrides_the_120s_default(self, client, db):
         """SyncSettings.conversation_min_seconds (Super Admin configurable) —
-        a 45s call counts at the 30s default but not once an org raises the
-        threshold to 60s."""
+        a 45s call is excluded once an org lowers the threshold to 60s."""
         db.add(models.SyncSettings(id=1, conversation_min_seconds=60))
         db.commit()
         sdr = create_test_user(db, email="conv_threshold@t.com", name="Conv Threshold SDR", role="SDR")
@@ -709,7 +746,7 @@ class TestConversationsColumn:
         assert row is not None
         assert row["conversations"] == 0
 
-    def test_dialer_call_under_30s_with_no_outcome_does_not_count(self, client, db):
+    def test_dialer_call_under_120s_with_no_outcome_does_not_count(self, client, db):
         sdr = create_test_user(db, email="conv2@t.com", name="Conv SDR 2", role="SDR")
         lead = create_test_lead(db, email="conv2_lead@t.com")
         assign_lead_to_sdr(db, lead, sdr)
@@ -721,14 +758,14 @@ class TestConversationsColumn:
         assert row is not None
         assert row["conversations"] == 0
 
-    def test_dialer_call_over_30s_but_tagged_left_voicemail_does_not_count(self, client, db):
-        """A dialer's voicemail pickup can itself run 20-30s+ — duration alone
-        can't tell that apart from a short real answer, so an explicit SDR/AE
+    def test_dialer_call_over_120s_but_tagged_left_voicemail_does_not_count(self, client, db):
+        """A dialer's voicemail pickup can itself run long — duration alone
+        can't tell that apart from a real answer, so an explicit SDR/AE
         "Left Voicemail" tag always overrides duration."""
         sdr = create_test_user(db, email="conv3@t.com", name="Conv SDR 3", role="SDR")
         lead = create_test_lead(db, email="conv3_lead@t.com")
         assign_lead_to_sdr(db, lead, sdr)
-        create_test_dialer_call(db, lead.id, sdr.id, duration=40, outcome="Left Voicemail")
+        create_test_dialer_call(db, lead.id, sdr.id, duration=150, outcome="Left Voicemail")
         db.commit()
 
         resp = client.get("/api/admin/analytics/sdr-table?preset=all")
@@ -736,19 +773,35 @@ class TestConversationsColumn:
         assert row is not None
         assert row["conversations"] == 0
 
-    def test_dialer_call_with_no_duration_at_all_counts(self, client, db):
-        """Duration is unknown (never set) — not the same as a short call.
-        Passes the duration gate so outcome alone decides."""
+    def test_dialer_call_with_explicit_outcome_and_no_duration_counts(self, client, db):
+        """An explicit positive outcome is evidence on its own — missing
+        duration doesn't override it."""
         sdr = create_test_user(db, email="conv4@t.com", name="Conv SDR 4", role="SDR")
         lead = create_test_lead(db, email="conv4_lead@t.com")
         assign_lead_to_sdr(db, lead, sdr)
-        create_test_dialer_call(db, lead.id, sdr.id, duration=None)
+        create_test_dialer_call(db, lead.id, sdr.id, duration=None, outcome="Meeting Scheduled")
         db.commit()
 
         resp = client.get("/api/admin/analytics/sdr-table?preset=all")
         row = _sdr_row(resp, "Conv SDR 4")
         assert row is not None
         assert row["conversations"] == 1
+
+    def test_dialer_call_with_no_outcome_and_no_duration_does_not_count(self, client, db):
+        """RCA 2026-08-18: no outcome AND no duration is zero evidence of a
+        real conversation (e.g. a FAILED call that never connected) — used
+        to count anyway because the old duration check treated "unknown"
+        as "assume yes" even with nothing else to go on."""
+        sdr = create_test_user(db, email="conv4b@t.com", name="Conv SDR 4b", role="SDR")
+        lead = create_test_lead(db, email="conv4b_lead@t.com")
+        assign_lead_to_sdr(db, lead, sdr)
+        create_test_dialer_call(db, lead.id, sdr.id, duration=None)
+        db.commit()
+
+        resp = client.get("/api/admin/analytics/sdr-table?preset=all")
+        row = _sdr_row(resp, "Conv SDR 4b")
+        assert row is not None
+        assert row["conversations"] == 0
 
     def test_call_log_negative_outcomes_do_not_count(self, client, db):
         sdr = create_test_user(db, email="conv5@t.com", name="Conv SDR 5", role="SDR")
@@ -776,6 +829,41 @@ class TestConversationsColumn:
         row = _sdr_row(resp, "Conv SDR 6")
         assert row is not None
         assert row["conversations"] == 2
+
+
+class TestConnectedIsSupersetOfConversation:
+    """RCA 2026-08-18 (part 2): production data (Sumiti Dangi, 2026-08-17)
+    showed 13 conversations but only 11 connected calls — a call this long
+    with no logged outcome was being counted as a conversation but not as
+    connected, because dialer_call_connected()'s null-outcome fallback only
+    trusted provider_disposition == "ANSWERED" literally, ignoring duration.
+    connected must always be >= conversations for the same rows."""
+
+    def test_long_call_no_outcome_no_answered_disposition_counts_as_connected(self, client, db):
+        sdr = create_test_user(db, email="conn_super1@t.com", name="ConnSuper SDR 1", role="SDR")
+        lead = create_test_lead(db, email="conn_super1_lead@t.com")
+        assign_lead_to_sdr(db, lead, sdr)
+        create_test_dialer_call(db, lead.id, sdr.id, duration=150, provider_disposition="COMPLETED")
+        db.commit()
+
+        resp = client.get("/api/admin/analytics/sdr-table?preset=all")
+        row = _sdr_row(resp, "ConnSuper SDR 1")
+        assert row is not None
+        assert row["conversations"] == 1
+        assert row["calls_connected"] == 1
+
+    def test_short_call_no_outcome_no_answered_disposition_not_connected(self, client, db):
+        sdr = create_test_user(db, email="conn_super2@t.com", name="ConnSuper SDR 2", role="SDR")
+        lead = create_test_lead(db, email="conn_super2_lead@t.com")
+        assign_lead_to_sdr(db, lead, sdr)
+        create_test_dialer_call(db, lead.id, sdr.id, duration=15, provider_disposition="COMPLETED")
+        db.commit()
+
+        resp = client.get("/api/admin/analytics/sdr-table?preset=all")
+        row = _sdr_row(resp, "ConnSuper SDR 2")
+        assert row is not None
+        assert row["conversations"] == 0
+        assert row["calls_connected"] == 0
 
     def test_conversations_included_in_csv_export(self, client, db):
         sdr = create_test_user(db, email="conv7@t.com", name="Conv SDR 7", role="SDR")
@@ -903,6 +991,81 @@ class TestPodTimezoneBucketing:
         assert us_row is None or us_row["calls_made"] == 0
         assert india_row is not None
         assert india_row["calls_made"] == 1
+
+
+class TestPresetTimezoneAware:
+    """RCA 2026-08-21 (live — reported as "call counts don't match within
+    Analytics Hub itself"): the 2026-08-14 pod-timezone fix only covered a
+    custom date_from/date_to pick. Presets (7d/30d/90d) still resolved their
+    start boundary ("today minus N days", at midnight) in raw UTC — so for a
+    US team, that midnight could fall mid-shift, splitting one evening's
+    calls across two different on-screen windows. get_funnel/get_trend/
+    get_email_breakdown/get_batch_summary all called the UTC-only resolver
+    directly; only the SDR table (tested above) went through the
+    timezone-aware one -- two views in the same Analytics Hub, two different
+    day-boundary rules, on the same underlying calls."""
+
+    def test_preset_7d_start_boundary_uses_pod_local_midnight_not_utc(self):
+        from routes.analytics_routes import _resolve_date_range_for_tz
+        import datetime as _dt
+        from unittest.mock import patch
+
+        # Freeze "now" at 2026-08-21 02:00 UTC = 2026-08-20 19:00 PDT
+        # (America/Los_Angeles is UTC-7 in August).
+        fixed_now = _dt.datetime(2026, 8, 21, 2, 0, tzinfo=_dt.timezone.utc)
+
+        class _FixedDatetime(_dt.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed_now.astimezone(tz) if tz else fixed_now
+
+        with patch("routes.analytics_routes.datetime", _FixedDatetime):
+            start, end = _resolve_date_range_for_tz(None, None, "7d", "America/Los_Angeles")
+
+        # LA-local "today" is Aug 20 (19:00 PDT) -> today minus 6 days = Aug 14,
+        # 00:00 PDT = Aug 14, 07:00 UTC.
+        expected_start = _dt.datetime(2026, 8, 14, 7, 0, tzinfo=_dt.timezone.utc)
+        assert start == expected_start
+        # A naive UTC-anchored version would treat Aug 21 00:00 UTC as "today"
+        # and start the window at Aug 15 00:00 UTC — 17 hours later, wrongly
+        # excluding real Aug-14-evening-PDT activity that belongs in this window.
+        assert start < _dt.datetime(2026, 8, 15, 0, 0, tzinfo=_dt.timezone.utc)
+
+    def test_preset_falls_back_to_utc_for_a_pod_with_no_timezone_set(self):
+        from routes.analytics_routes import _resolve_date_range_for_tz
+        import datetime as _dt
+        from unittest.mock import patch
+
+        fixed_now = _dt.datetime(2026, 8, 21, 2, 0, tzinfo=_dt.timezone.utc)
+
+        class _FixedDatetime(_dt.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed_now.astimezone(tz) if tz else fixed_now
+
+        with patch("routes.analytics_routes.datetime", _FixedDatetime):
+            start, _ = _resolve_date_range_for_tz(None, None, "7d", "UTC")
+        assert start == _dt.datetime(2026, 8, 15, 0, 0, tzinfo=_dt.timezone.utc)
+
+    def test_all_preset_is_unaffected_returns_none_none(self):
+        from routes.analytics_routes import _resolve_date_range_for_tz
+        assert _resolve_date_range_for_tz(None, None, "all", "America/Los_Angeles") == (None, None)
+
+    def test_resolve_analytics_date_range_uses_the_effective_sdrs_own_pod_timezone(self, db):
+        from routes.analytics_routes import _resolve_analytics_date_range
+        import datetime as _dt
+        pod = create_test_pod(db, name="Resolver Test Pod")
+        pod.timezone = "America/Los_Angeles"
+        sdr = create_test_user(db, email="resolver-tz@t.com", name="Resolver SDR", role="SDR")
+        sdr.pod_id = pod.id
+        db.commit()
+
+        # Custom range: reuses the already-proven _resolve_date_range_for_tz
+        # path -- confirms the new helper actually looks up and passes the
+        # SDR's own pod timezone, not just UTC by default.
+        start, end = _resolve_analytics_date_range(db, None, sdr.id, "2026-08-14", "2026-08-14", None)
+        assert start == _dt.datetime(2026, 8, 14, 7, 0, tzinfo=_dt.timezone.utc)  # midnight PDT
+        assert end == _dt.datetime(2026, 8, 15, 6, 59, 59, tzinfo=_dt.timezone.utc)  # 23:59:59 PDT
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1058,6 +1221,80 @@ class TestInsightsSummaryEndpoint:
             json={"wrong_key": "oops"},
         )
         assert resp.status_code == 422
+
+
+class TestLlmSummaryCacheExpiry:
+    """RCA 2026-08-26 (staging OOM): _llm_summary_cache never checked TTL on
+    read (the TTL constant was dead) and never evicted anything, so it grew
+    forever and could never even self-heal by expiring."""
+
+    def _mock_groq_response(self, text):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"choices": [{"message": {"content": text}}]}
+        return resp
+
+    def test_second_call_within_ttl_is_served_from_cache_not_recomputed(self, client, db):
+        with patch("routes.ai_research_routes._get_llm_config", return_value={"api_key": "sk-fake", "model": "m"}), \
+             patch("httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.post.return_value = self._mock_groq_response("Call more leads")
+
+            resp1 = client.post("/api/admin/analytics/insights-summary", json={"insights": ["Low call volume"]})
+            assert resp1.json()["summary"] == "Call more leads"
+            assert mock_client.call_count == 1
+
+            resp2 = client.post("/api/admin/analytics/insights-summary", json={"insights": ["Low call volume"]})
+            assert resp2.json()["summary"] == "Call more leads"
+            assert mock_client.call_count == 1  # still 1 — served from cache, not recomputed
+
+    def test_expired_entry_is_recomputed_not_served_stale(self, client, db):
+        with patch("routes.ai_research_routes._get_llm_config", return_value={"api_key": "sk-fake", "model": "m"}), \
+             patch("httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.post.return_value = self._mock_groq_response("First summary")
+            client.post("/api/admin/analytics/insights-summary", json={"insights": ["Expiring insight"]})
+
+            # Force the cached entry to look expired, as if 15 minutes had passed.
+            cache_key = hash(("Expiring insight",))
+            summary, _ = _analytics_ai_mod._llm_summary_cache[cache_key]
+            _analytics_ai_mod._llm_summary_cache[cache_key] = (summary, 0.0)
+
+            mock_client.return_value.__enter__.return_value.post.return_value = self._mock_groq_response("Second summary")
+            resp = client.post("/api/admin/analytics/insights-summary", json={"insights": ["Expiring insight"]})
+            assert resp.json()["summary"] == "Second summary"
+
+
+class TestAiRecCacheSweep:
+    """RCA 2026-08-26 (staging OOM): _ai_rec_cache keys embed live KPI counts,
+    so nearly every call mints a new key — must sweep once over threshold."""
+
+    def test_sweep_evicts_expired_entries_once_over_threshold(self):
+        store = _analytics_ai_mod._ai_rec_cache
+        for i in range(_analytics_ai_mod._CACHE_SWEEP_THRESHOLD + 1):
+            store[f"k{i}"] = (f"v{i}", 0.0)
+
+        store["new_key"] = ("new_val", time.time() + 120)
+        if len(store) > _analytics_ai_mod._CACHE_SWEEP_THRESHOLD:
+            now = time.time()
+            for k in [k for k, (_, exp) in store.items() if now > exp]:
+                del store[k]
+
+        assert len(store) == 1
+        assert store["new_key"][0] == "new_val"
+
+
+class TestAnalyticsCacheSweep:
+    """RCA 2026-08-26 (staging OOM): _cache keys include free-form date-range/
+    pod/sdr/source/page combos — high cardinality, rarely re-read after
+    expiry, so the lazy delete-on-read in _cache_get never freed them."""
+
+    def test_sweep_evicts_expired_entries_once_over_threshold(self):
+        for i in range(_analytics_mod._CACHE_SWEEP_THRESHOLD + 1):
+            _analytics_mod._cache[f"k{i}"] = (f"v{i}", 0.0)
+
+        _analytics_mod._cache_set("new_key", "new_val")
+
+        assert len(_analytics_mod._cache) == 1
+        assert _analytics_mod._cache["new_key"][0] == "new_val"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1278,7 +1515,7 @@ class TestAccountConnectRate:
 
     # ── AEC-1 CallLog path: CallLog also counts toward account metrics ────────
     def test_call_log_path_also_counted(self, client, db):
-        """Calls via CallLog (RCM/manual) must also be counted for account metrics."""
+        """Calls via CallLog (Alternate Messenger/manual) must also be counted for account metrics."""
         sdr = create_test_user(db, email="acct8@t.com", name="Acct SDR 8", role="SDR")
         lead = create_test_lead(db, email="acct8_lead@t.com", company="LogCorp")
         assign_lead_to_sdr(db, lead, sdr)
@@ -1333,13 +1570,11 @@ class TestAccountConnectRate:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestAESelfScope:
-    """AE gets the same Analytics Hub endpoints as an admin, but every metric
-    is forced to their own leads/calls only — no pod-wide or cross-SDR
-    visibility, and the sdr_id/pod_id query params can't override that."""
-
-    def test_sdr_blocked_from_analytics(self, client_as_sdr, db):
-        resp = client_as_sdr.get("/api/admin/analytics/funnel")
-        assert resp.status_code == 403
+    """AE/SDR get the same Analytics Hub endpoints as an admin, but every
+    metric is forced to their own leads/calls only — no pod-wide or
+    cross-SDR visibility, and the sdr_id/pod_id query params can't override
+    that. SDR cases mirror the AE ones exactly (same _effective_ae_sdr
+    mechanism, widened from AE-only to AE+SDR)."""
 
     def test_ae_allowed_into_funnel(self, client_as_ae, db):
         resp = client_as_ae.get("/api/admin/analytics/funnel")
@@ -1391,6 +1626,73 @@ class TestAESelfScope:
         assert resp.status_code == 200
         sdr_ids = [row["sdr_id"] for row in resp.json()["sdrs"]]
         assert sdr_ids == [AE_USER["sub"]], "AE's SDR table must contain only their own row"
+
+    def test_sdr_allowed_into_funnel(self, client_as_sdr, db):
+        resp = client_as_sdr.get("/api/admin/analytics/funnel")
+        assert resp.status_code == 200
+
+    def test_sdr_funnel_scoped_to_own_leads_only(self, client_as_sdr, db):
+        from conftest import SDR_USER
+        other_sdr = create_test_user(db, email="other-sdr@t.com", name="Other SDR", role="SDR")
+        me = create_test_user(db, email=SDR_USER["email"], name=SDR_USER["name"], role="SDR", id=SDR_USER["sub"])
+
+        my_lead = create_test_lead(db, email="sdr-mine@t.com")
+        other_lead = create_test_lead(db, email="sdr-theirs@t.com")
+        assign_lead_to_sdr(db, my_lead, me)
+        assign_lead_to_sdr(db, other_lead, other_sdr)
+
+        resp = client_as_sdr.get("/api/admin/analytics/funnel")
+        assert resp.status_code == 200
+        assert resp.json()["leads_assigned"] == 1, (
+            "SDR's funnel must count only their own assigned leads, not another SDR's"
+        )
+
+    def test_sdr_cannot_override_scope_via_pod_id_param(self, client_as_sdr, db):
+        """A self-scoped SDR passing a pod_id must not widen their scope —
+        same guarantee as the AE case, now covering the role this was
+        actually built for."""
+        from conftest import SDR_USER
+        other_sdr = create_test_user(db, email="other-sdr2@t.com", name="Other SDR 2", role="SDR")
+        create_test_user(db, email=SDR_USER["email"] + "2", name=SDR_USER["name"], role="SDR", id=SDR_USER["sub"])
+        pod = create_test_pod(db, name="Some Other Pod")
+        other_sdr.pod_id = pod.id
+        db.commit()
+
+        other_lead = create_test_lead(db, email="sdr-pod-scoped@t.com")
+        assign_lead_to_sdr(db, other_lead, other_sdr)
+
+        resp = client_as_sdr.get(f"/api/admin/analytics/funnel?pod_id={pod.id}")
+        assert resp.status_code == 200
+        assert resp.json()["leads_assigned"] == 0, (
+            "SDR must not see another SDR's pod data even when passing that pod's pod_id"
+        )
+
+    def test_sdr_table_shows_only_self(self, client_as_sdr, db):
+        from conftest import SDR_USER
+        other_sdr = create_test_user(db, email="other-sdr3@t.com", name="Other SDR 3", role="SDR")
+        create_test_user(db, email=SDR_USER["email"] + "3", name=SDR_USER["name"], role="SDR", id=SDR_USER["sub"])
+        db.commit()
+
+        resp = client_as_sdr.get("/api/admin/analytics/sdr-table")
+        assert resp.status_code == 200
+        sdr_ids = [row["sdr_id"] for row in resp.json()["sdrs"]]
+        assert sdr_ids == [SDR_USER["sub"]], "SDR's own SDR table must contain only their own row"
+
+    def test_sdr_filters_endpoint_does_not_leak_pod_or_other_sdrs(self, client_as_sdr, db):
+        """Regression test for the plan's 'verified safe' finding: /filters
+        must return an empty pod list and a single (self-only) SDR list for
+        a self-scoped caller, not just for AE — confirming this by reading
+        the code once wasn't enough, this locks the guarantee in."""
+        other_sdr = create_test_user(db, email="other-sdr4@t.com", name="Other SDR 4", role="SDR")
+        pod = create_test_pod(db, name="Filters Pod")
+        other_sdr.pod_id = pod.id
+        db.commit()
+
+        resp = client_as_sdr.get("/api/admin/analytics/filters")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["pods"] == [], "Self-scoped SDR must not see any pod in /filters"
+        assert [s["id"] for s in body["sdrs"]] != [other_sdr.id], "Self-scoped SDR must not see another SDR in /filters"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1473,6 +1775,9 @@ class TestSandboxTestLeadExclusion:
         db.add(models.LeadEmailActivity(lead_id=real_lead.id, user_id=sdr.id, direction="outbound"))
         db.add(models.LeadEmailActivity(lead_id=test_lead.id, user_id=sdr.id, direction="outbound"))
         db.commit()
+        from conftest import create_test_booking
+        create_test_booking(db, real_lead, sdr.id)
+        create_test_booking(db, test_lead, sdr.id)
 
         resp = client.get("/api/admin/analytics/sdr-table?preset=all")
         row = _sdr_row(resp, "Sandbox SDR Table SDR")
@@ -1532,3 +1837,95 @@ class TestSandboxTestLeadExclusion:
         assert resp.status_code == 200
         row = next(b for b in resp.json()["batches"] if b["id"] == batch.id)
         assert row["leads"] == 1, "test lead must not inflate the batch's lead count"
+
+    # RCA 2026-08-17: stakeholder ask — analytics on qualified/disqualified
+    # leads by list/SDR/period. List (upload_log_id) and period (date_from/
+    # date_to) already existed on this endpoint; SDR-level breakdown per
+    # batch was the missing axis.
+    def test_batch_summary_by_sdr_breakdown(self, client, db):
+        from datetime import datetime, timezone
+        batch = create_test_upload_log(db, filename="sdr_breakdown.csv")
+        sdr = create_test_user(db, email="breakdown_sdr@t.com", role="SDR")
+
+        qualified_lead = create_test_lead(db, email="breakdown_qualified@t.com", status="Meeting Scheduled")
+        qualified_lead.upload_log_id = batch.id
+        qualified_lead.lead_closed_at = datetime.now(timezone.utc)
+        sdr.assigned_leads.append(qualified_lead)
+
+        disqualified_lead = create_test_lead(db, email="breakdown_disqualified@t.com", status="Disqualified")
+        disqualified_lead.upload_log_id = batch.id
+        disqualified_lead.lead_closed_at = datetime.now(timezone.utc)
+        sdr.assigned_leads.append(disqualified_lead)
+        db.commit()
+
+        resp = client.get("/api/admin/analytics/batch-summary")
+        assert resp.status_code == 200
+        row = next(b for b in resp.json()["batches"] if b["id"] == batch.id)
+        sdr_row = next(s for s in row["by_sdr"] if s["sdr_id"] == sdr.id)
+        assert sdr_row["qualified"] == 1
+        assert sdr_row["disqualified"] == 1
+
+    def test_batch_summary_as_ae_does_not_raise_invalidrequesterror(self, client_as_ae, db):
+        """RCA 2026-09-10 (prod, live 3 times over 2+ weeks, only for AE
+        users): the by-SDR breakdown query joins lead_assignments directly;
+        _pod_scope_lead_query's effective_sdr branch ALSO builds an EXISTS
+        against lead_assignments. With both present, SQLAlchemy auto-
+        correlates lead_assignments away from the EXISTS along with Lead,
+        leaving it with zero FROM clauses —
+        "InvalidRequestError: ... returned no FROM clauses due to
+        auto-correlation". Fixed via .correlate(models.Lead) in
+        _pod_scope_lead_query, which was the actual root cause across every
+        one of its ~15 call sites, not just this one."""
+        from conftest import AE_USER
+        me = create_test_user(db, email=AE_USER["email"], name=AE_USER["name"], role="AE", id=AE_USER["sub"])
+        batch = create_test_upload_log(db, filename="ae_breakdown.csv")
+        lead = create_test_lead(db, email="ae_breakdown@t.com", status="Meeting Scheduled")
+        lead.upload_log_id = batch.id
+        assign_lead_to_sdr(db, lead, me)
+        db.commit()
+
+        resp = client_as_ae.get("/api/admin/analytics/batch-summary")
+        assert resp.status_code == 200
+        row = next(b for b in resp.json()["batches"] if b["id"] == batch.id)
+        sdr_row = next(s for s in row["by_sdr"] if s["sdr_id"] == me.id)
+        assert sdr_row["qualified"] == 1
+
+    def test_batch_summary_calls_does_not_double_count_auto_logged_dialer_calls(self, client, db):
+        """RCA 2026-08-20 (same shape as the dashboard-stats overcount):
+        _cl_call_q must exclude CallLogs auto-created from a DialerCall, or
+        every auto-tagged Aircall call is summed twice in a batch's total
+        (once via _dc_call_agg, once via _cl_call_agg)."""
+        batch = create_test_upload_log(db, filename="dedup_batch.csv")
+        sdr = create_test_user(db, email="batch_dedup_sdr@t.com", role="SDR")
+        lead = create_test_lead(db, email="batch_dedup_lead@t.com")
+        lead.upload_log_id = batch.id
+        db.commit()
+        dc = create_test_dialer_call(db, lead.id, sdr.id, outcome="No Answer")
+        auto_log = models.CallLog(
+            lead_id=lead.id, user_id=sdr.id, outcome="No Answer",
+            notes="[Auto-logged from Aircall tag: test]", dialer_call_id=dc.id,
+        )
+        db.add(auto_log)
+        db.commit()
+
+        resp = client.get("/api/admin/analytics/batch-summary")
+        assert resp.status_code == 200
+        row = next(b for b in resp.json()["batches"] if b["id"] == batch.id)
+        assert row["calls"] == 1
+
+    def test_batch_summary_by_sdr_excludes_deleted_leads(self, client, db):
+        batch = create_test_upload_log(db, filename="sdr_softdel.csv")
+        sdr = create_test_user(db, email="softdel_sdr@t.com", role="SDR")
+        lead = create_test_lead(db, email="softdel_qualified@t.com", status="Disqualified")
+        lead.upload_log_id = batch.id
+        from datetime import datetime, timezone
+        lead.lead_closed_at = datetime.now(timezone.utc)
+        lead.deleted_at = datetime.now(timezone.utc)
+        sdr.assigned_leads.append(lead)
+        db.commit()
+
+        resp = client.get("/api/admin/analytics/batch-summary")
+        row = next((b for b in resp.json()["batches"] if b["id"] == batch.id), None)
+        # The batch itself has zero non-deleted leads, so it's dropped entirely
+        # (get_batch_summary skips batches with leads == 0).
+        assert row is None

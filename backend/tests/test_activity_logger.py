@@ -87,3 +87,20 @@ class TestLogActivity:
             )
         count = db.query(models.UserActivityLog).count()
         assert count == len(ACTION_TYPES)
+
+
+def test_every_action_type_the_code_logs_is_registered():
+    """log_activity silently drops unregistered types — ten were being lost
+    (cadence removals, Claude connector audit, no-shows) before this test."""
+    import ast, pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    missing = []
+    for p in root.rglob("*.py"):
+        if "tests" in p.parts or ".venv" in p.parts or "venv" in p.parts:
+            continue
+        for n in ast.walk(ast.parse(p.read_text())):
+            if isinstance(n, ast.Call) and getattr(n.func, "id", getattr(n.func, "attr", None)) == "log_activity":
+                v = next((k.value for k in n.keywords if k.arg == "action_type"), n.args[1] if len(n.args) > 1 else None)
+                if isinstance(v, ast.Constant) and v.value not in ACTION_TYPES:
+                    missing.append(f"{p.relative_to(root)}:{n.lineno} {v.value}")
+    assert not missing, missing

@@ -1,4 +1,4 @@
-# RCM — User Guide
+# Alternate CRM — User Guide
 ### Phase 4
 
 ---
@@ -7,7 +7,7 @@
 
 ### Logging In
 
-1. Go to your RCM URL: `https://rcm.txtbox.in`
+1. Go to your Alternate CRM URL: `https://alternatecrm.staging.in`
 2. Click **Sign in with Google** — use your company Google account
 3. You'll be redirected to your dashboard automatically
 
@@ -19,8 +19,26 @@
 | Role | Access Level |
 |---|---|
 | **Super Admin** | Full access — all leads, all users, POD management, Salesforce logs, sync controls, call & pipeline settings |
-| **Pod Admin** | Manages their POD's leads and SDRs — can view, assign, and track pod performance |
-| **SDR** | Works their assigned leads — research, calling, logging activity |
+| **Pod Admin** | Manages their POD's leads and SDRs — can view, assign, and track pod performance. Can **view** any lead in the company, but can only **change** (edit, call, email, text, add notes) their own POD's leads |
+| **SDR / AE** | Works the leads assigned to them — research, calling, logging activity |
+| **CSM** | Works the accounts and leads assigned to them |
+
+#### Who can see which leads
+
+Everything about a lead — its details, emails, calls and recordings, notes,
+tasks and attachments — follows one rule:
+
+- **SDRs, AEs and CSMs** see only the leads assigned to them. If a lead is
+  reassigned to someone else, it leaves your list and its pages stop opening
+  for you (you'll see *"This lead doesn't exist, or you don't have access to
+  it."*). Ask your Pod Admin if you need it back.
+- **Pod Admins** can open any lead to read it. Leads outside your POD are
+  **read-only**: no edits, calls, emails, texts, notes or tasks. **Export
+  Leads** only includes your own POD's leads.
+- **Super Admins** can see and change every lead.
+
+If someone's access is removed, or their role or POD changes, it takes effect
+within a minute — they don't need to log out first.
 
 ### Signing Out
 Click your avatar in the bottom-left corner of the sidebar, then click the **⏻** button.
@@ -82,6 +100,38 @@ Click **Leads** in the sidebar to see all leads assigned to you.
 > [!NOTE]
 > The Call button is disabled for leads in **Lead Assigned** or **Research** status. Complete the research phase first to unlock calling.
 
+### The New Leads Experience
+
+A newer version of the leads list is rolling out alongside the one described above — you may already be on it. What's different:
+
+- **🏢 Company grouping is on automatically**, even while sorted by priority (your default view). Leads with no company on file always group under **⚠️ No Company** at the *bottom* of the list — never mixed in at the top, which used to make grouping look broken.
+- **Select Leads** — a lighter checkbox mode (no admin access needed) to add leads to a **Call List** for the Power Dialer.
+- **Saved views** — save your current filters as a named tab you can jump back to.
+- **Columns** — reorder, resize, or hide columns; your layout is remembered next time.
+- **Switch to classic view** — a link at the top of the page always lets you go back to the table above, if you prefer it.
+
+> [!NOTE]
+> Both versions show the same leads and the same underlying data — it's a different table, not a different dataset.
+
+### Call Lists
+
+A Call List is a named group of leads you build yourself, to dial from later in the **Power Dialer** — separate from your normal assigned-leads queue. Anyone (SDR, AE, or Admin) can create one, and every Call List is visible to everyone, not just the person who made it.
+
+**Creating a list and adding leads — two ways:**
+
+1. **Bulk-select**: check the boxes next to any leads on the Leads page, then click **Add to Call List** in the action bar at the bottom. Pick an existing list, or type a name and click **Create** to make a new one on the spot.
+2. **Save your current filter**: apply any filters (Status, Source, Company, etc.), then click **Save as Call List** next to the filter chips. This adds **every lead matching your filter** — not just what's on the current page — after you confirm the exact count it found.
+
+> [!TIP]
+> Because a Call List is org-wide, it's a good way to hand off a specific batch of leads to someone else to dial — e.g. "call these 40 trade-show leads" — without reassigning them.
+
+**Dialing from a list:** open **Power Dialer** and pick the list from the new **Call List** dropdown at the top. Your queue is filtered to that list's leads — combined with the normal callable-status rules, so a lead that's since moved to a closed/parked stage won't show up just because it's still in the list.
+
+> [!NOTE]
+> If someone deletes a Call List while you have it selected in Power Dialer, your queue falls back to **All leads** automatically the next time you hit **Refresh**, with a small notice explaining why.
+
+Anyone can add leads to any list. Deleting a whole list is limited to the person who created it, or a Pod Admin/Super Admin.
+
 ### Lead Priority Queue
 
 My Leads is sorted by **priority tier**, so the leads most worth calling appear at the top.
@@ -128,6 +178,13 @@ At the top of every lead detail, a **visual pipeline stepper** shows exactly whe
 
 #### Lead Information
 All lead fields (name, email, phone, company, title, status) are **click-to-edit** — click any field value to edit it inline. Press `Enter` or click away to save.
+
+#### Opting a Lead Out (v11.5.18 — New)
+If a lead asks to stop being contacted, click **🚫 Mark Opted Out** near the top of the lead detail page and confirm. This is the CRM's opt-out marker — once set:
+- No more calls, texts, or journey emails go out to this lead
+- A red **🚫 Opted Out** badge appears permanently on the lead
+
+This action cannot be undone from the UI — double-check before confirming. Only users who can otherwise modify the lead (its assigned rep, or an Admin/Super Admin) see this button.
 
 #### Research Phase
 For leads in **Research** status, a guided research form appears with:
@@ -182,10 +239,10 @@ If your admin has enabled the Aircall dialer for your account:
 
 1. Open any lead detail page
 2. Click the **📞 Call via Aircall** button — the call is initiated directly through Aircall
-3. The call is **automatically logged** in RCM — no manual call logging needed
+3. The call is **automatically logged** in Alternate CRM — no manual call logging needed
 4. After the call, the **call duration, outcome, and recording** are captured automatically
 
-**Aircall Auto-Sync (v5.16.0):** When you tag a call in Aircall with a standard tag (e.g. *No Answer*, *Left Voicemail*, *Meeting Booked*), RCM automatically logs the outcome — no manual entry required. If you prefer to log it yourself, your entry always takes precedence.
+**Aircall Auto-Sync (v5.16.0):** When you tag a call in Aircall with a standard tag (e.g. *No Answer*, *Left Voicemail*, *Meeting Booked*), Alternate CRM automatically logs the outcome — no manual entry required. If you prefer to log it yourself, your entry always takes precedence.
 
 > [!NOTE]
 > When Aircall dialer is active, the manual "Log a Call" modal is disabled to prevent duplicate entries. All calls are tracked automatically via the Aircall integration.
@@ -201,7 +258,7 @@ If your admin has turned this on, you no longer need the Aircall Desktop app ope
 The drawer opens automatically whenever you have an active call, so mute/hold/hang-up are always reachable — the rest of the page shrinks to make room instead of being hidden behind it, so you can keep reading the lead's details while you talk.
 
 > [!IMPORTANT]
-> Always dial from the lead's own **Call** button, not the dial pad inside the drawer itself. Dialing from the drawer's own pad bypasses RCM entirely, so that call won't get attached to the right lead.
+> Always dial from the lead's own **Call** button, not the dial pad inside the drawer itself. Dialing from the drawer's own pad bypasses Alternate CRM entirely, so that call won't get attached to the right lead.
 
 Don't want to switch yet? Click **"Prefer your Aircall Desktop app instead?"** inside the drawer — this only affects your own account, and you can switch back any time by clicking the headset icon again.
 
@@ -224,13 +281,13 @@ When a lead has **more than one phone number** on file (e.g. mobile + company ph
 - **Left side** — calls the currently selected number immediately
 - **Right side (▾ arrow)** — opens a dropdown picker showing all available numbers
 
-Select a number from the dropdown to dial it. RCM remembers the last number you picked for the duration of your session.
+Select a number from the dropdown to dial it. Alternate CRM remembers the last number you picked for the duration of your session.
 
 
 
-#### RCM Dialer (Browser or Phone Bridge)
+#### Alternate Messenger Dialer (Browser or Phone Bridge)
 
-If your admin has assigned you to the RCM dialer, calls are placed directly from RCM — no external app required. There are **two call modes** to choose from each time you dial:
+If your admin has assigned you to the Alternate Messenger dialer, calls are placed directly from Alternate CRM — no external app required. There are **two call modes** to choose from each time you dial:
 
 **Step 1 — Click the 📞 Call button** on any lead detail page (or the leads list).
 
@@ -239,7 +296,7 @@ If your admin has assigned you to the RCM dialer, calls are placed directly from
 | Mode | What happens |
 |---|---|
 | **🌐 Browser Call** | Audio runs in your browser via WebRTC. Your headset or laptop mic/speakers are used. No phone needed. |
-| **📱 Phone Bridge** | RCM first calls your registered phone number. Answer your handset, then RCM dials the lead and bridges the two calls together. |
+| **📱 Phone Bridge** | Alternate Messenger first calls your registered phone number. Answer your handset, then Alternate Messenger dials the lead and bridges the two calls together. |
 
 Click **Place Call** to start.
 
@@ -248,7 +305,7 @@ Click **Place Call** to start.
 A floating widget appears in the bottom-right corner showing the lead's name and number.
 
 - **During ringing — Browser Call:** The widget shows "🎧 Lead's phone is ringing — you'll hear them when they answer." You don't need to do anything else.
-- **During ringing — Phone Bridge:** The widget shows "📱 Your phone will ring — answer it to connect." **Pick up your phone** when it rings — this connects you to RCM's bridge, and then RCM dials the lead.
+- **During ringing — Phone Bridge:** The widget shows "📱 Your phone will ring — answer it to connect." **Pick up your phone** when it rings — this connects you to Alternate Messenger's bridge, and then Alternate Messenger dials the lead.
 - **Once connected:** The timer starts and you see **Mute**, **Hold**, and **Hang Up** buttons.
 
 **Widget controls:**
@@ -270,12 +327,12 @@ A floating widget appears in the bottom-right corner showing the lead's name and
 
 **If the call fails:**
 
-- If the widget shows ⚠️ "RCM did not return audio credentials — try again or switch to Phone Bridge", the call did not go through. Tap **Try Again** or switch to Phone Bridge mode.
+- If the widget shows ⚠️ "Alternate Messenger did not return audio credentials — try again or switch to Phone Bridge", the call did not go through. Tap **Try Again** or switch to Phone Bridge mode.
 - If the widget shows ⚠️ "Browser audio failed", your browser could not open the microphone or connect to the audio server. Close the widget (it resets automatically), check your microphone permissions, and try again.
 
 **After the call:**
 
-The call is **automatically logged** with duration, recording link (if enabled), and transcript (if available). You do not need to manually log RCM calls — they appear in the **Calls** tab immediately after the widget closes.
+The call is **automatically logged** with duration, recording link (if enabled), and transcript (if available). You do not need to manually log Alternate Messenger calls — they appear in the **Calls** tab immediately after the widget closes.
 
 
 #### Calls Tab
@@ -287,18 +344,41 @@ The **Calls** tab on lead detail shows a unified view of all calls (both manual 
 - **🎙️ Call Recording** — if available, an embedded audio player lets you listen to or download the recording
 - **📄 Transcript** — if available, an expandable section shows the call transcript
 
-#### Email Tab
+**Correcting a call outcome:** any dialer-logged call (Aircall or the built-in dialer) shows an **Edit** link next to its outcome. Click it to reopen the same "Did the call connect?" question fresh — pick connect/no-connect, choose the corrected outcome, and submit. This **overwrites** that same call's outcome and notes; it does not create a second entry.
+
+> [!NOTE]
+> Edit only appears for dialer-logged calls. A call you typed in manually has no Edit link — since you're the one who entered the outcome, log a new call instead if it needs correcting.
+
+#### Emails card (new Lead Detail view)
+
+The **Emails** card, below Activity, shows every email sent to or received
+from the lead — including emails sent by a cadence or an email campaign:
+
+- **Stats at the top:** Sent, Opened, Clicked and Replied (with a percentage
+  of emails sent). Out-of-office auto-replies are not counted as replies.
+- **Each email** shows its subject, date, who sent it, and badges for
+  *Cadence* / *Campaign*, *Opened ×N* and *Clicked ×N*.
+- **Click any email** to open the full conversation right there — read the
+  thread, reply, or start a new email. You stay on the lead; nothing switches
+  to the classic view. **View all conversations** opens the same window on
+  the newest thread.
+- **Send Email** in Quick Actions opens the same window, ready to compose.
+
+Opening a lead's emails marks that lead's replies as read, which clears them
+from the reply notification bell.
+
+#### Email Tab (classic view)
 
 The **Email** tab (visible only if Email Sync is enabled and connected) shows:
 
 - **Threaded email conversations** — grouped by subject line
-- **Compose new email** — click **✉️ New Email** to compose and send directly from RCM
+- **Compose new email** — click **✉️ New Email** to compose and send directly from Alternate CRM
 - **Reply to emails** — inline reply within any thread
 - **Clean previews** — quoted text, forwarded messages, and signatures are stripped from email previews
 
 **Email Open Tracking:**
 
-Outbound emails sent from RCM automatically include a tracking pixel. When the recipient opens the email, RCM records the event:
+Outbound emails sent from Alternate CRM automatically include a tracking pixel. When the recipient opens the email, Alternate CRM records the event:
 
 - **Green "Opened" badge** — appears on outbound email bubbles when the recipient has opened the email. Shows the total view count and first-opened timestamp (e.g., "Opened · 3 views · First opened 2h ago")
 - **Gray "Sent" badge** — appears on outbound emails that have not been opened yet
@@ -312,16 +392,16 @@ Outbound emails sent from RCM automatically include a tracking pixel. When the r
 
 #### Conversations Tab — Floating Messaging Widget
 
-When a Super Admin has enabled **RCM Messaging** (Settings → Sync), SDRs can send and receive WhatsApp/SMS messages with leads using the **floating RCM widget**:
+When a Super Admin has enabled **Alternate Messenger Messaging** (Settings → Sync), SDRs can send and receive WhatsApp/SMS messages with leads using the **floating Alternate Messenger widget**:
 
-- **💬 Message button** — A green **Message** button appears in the action row at the top of every lead detail page. Click it to open the floating RCM widget with the lead's name and phone number pre-loaded — no page reload required.
+- **💬 Message button** — A green **Message** button appears in the action row at the top of every lead detail page. Click it to open the floating Alternate Messenger widget with the lead's name and phone number pre-loaded — no page reload required.
 - **Floating widget surface** — the widget floats over the page so you can message while still viewing the lead detail. It is the only messaging interface — there is no embedded iframe.
 - **Active call awareness** — if a call is in progress, the widget shows the live call timer and a Hang Up button alongside messaging controls.
 - **No-phone guard** — if the lead has no phone number, the widget shows a clear "No phone number" notice instead of a blank compose area. Assign a phone number to the lead first.
 - **Phone-based matching** — the lead's primary phone number is used. If primary is missing, the secondary phone is used automatically.
 
 > [!NOTE]
-> The Conversations widget requires admin configuration — a Super Admin must enable **RCM Messaging** in **Settings → Sync** for the Message button and widget to appear. SDRs without this enabled see no UI change.
+> The Conversations widget requires admin configuration — a Super Admin must enable **Alternate Messenger Messaging** in **Settings → Sync** for the Message button and widget to appear. SDRs without this enabled see no UI change.
 
 #### Notes
 - Type in the notes box and click **Save Note** to add a note
@@ -399,14 +479,14 @@ When the poll detects **new** tasks since the last check, a soft two-tone chime 
 
 #### Browser Push Notifications
 
-RCM also sends **native browser push notifications** when new tasks become due:
+Alternate CRM also sends **native browser push notifications** when new tasks become due:
 
 1. The first time the system detects a due task, your browser will show a **"Allow Notifications?"** prompt
 2. Click **Allow** to enable push notifications
-3. From that point on, a system-level notification will pop up each time new tasks are detected — even if RCM is not the active tab
+3. From that point on, a system-level notification will pop up each time new tasks are detected — even if Alternate CRM is not the active tab
 
 The push notification shows:
-- **Title:** RCM — Task Reminder
+- **Title:** Alternate CRM — Task Reminder
 - **Body:** "You have X pending task(s) due now."
 
 If you click **Block** on the browser prompt, push notifications will be silenced. You can re-enable them from your browser's site settings (usually via the 🔒 lock icon in the address bar → Notifications → Allow).
@@ -455,10 +535,10 @@ Click **⚙️ Settings** in the sidebar to manage your integrations.
 
 #### Email Sync Card
 
-Connect your email to send and receive emails directly from RCM:
+Connect your email to send and receive emails directly from Alternate CRM:
 
 1. Click **🔗 Connect Email** — you'll be redirected to Google/Microsoft OAuth
-2. Authorize RCM to access your mailbox
+2. Authorize Alternate CRM to access your mailbox
 3. After successful connection, you'll be redirected back to Settings with a **✅ success toast**
 4. The card will now show **"Connected as your@email.com"** with a Disconnect option
 
@@ -514,6 +594,26 @@ A horizontal bar chart showing the distribution of the SDR's leads across all pi
 
 #### Time Period Filters
 Switch between **Today**, **This Week**, **This Month**, and **All Time** to view performance for specific periods.
+
+---
+
+### Analytics Hub
+
+Click **Analytics Hub** in the sidebar. This is separate from the SDR Performance Analytics and Leaderboard above — it's a dedicated dashboard, and **what you see in it depends on your role**:
+
+| Role | Scope |
+|---|---|
+| **Super Admin / Pod Admin** | Full org (or pod) view — every SDR/AE, all pods, cross-team comparisons |
+| **AE** | Your own leads, calls, and funnel only — no pod-wide or other-rep data |
+| **SDR** | Same as AE — your own leads, calls, and funnel only |
+
+**Dashboard tab** — funnel (Assigned → Calling → Meeting → Disqualified), key metrics (calls made, connect rate, meetings booked), and an activity trend chart. If you're an AE or SDR, the pod/team-wide controls (pod picker, cross-rep table) are hidden since there's nothing to switch between — you're only ever looking at your own numbers.
+
+> [!NOTE]
+> **Ask AI** and **Reports** tabs are Admin-only and won't appear for AE/SDR — natural-language querying and scheduled email reports aren't self-scoped yet, so they're kept to roles that already see org-wide data.
+
+> [!TIP]
+> This has quietly been available to AEs for a while without ever being documented — if you're an AE and this is the first you're hearing of it, that's on us, not you.
 
 ---
 
@@ -625,6 +725,30 @@ Click **📥 Export CSV** to download all filtered activities as a spreadsheet �
 > [!NOTE]
 > A "Call" step in a cadence never places an automated call — it creates a **Task** reminding the assigned SDR to call, same as a manually-created task. A human always makes the call.
 
+#### Cadence tasks you work by hand
+
+Some cadence steps are for you to do — **research the lead**, **send a LinkedIn
+connection request**, **send a LinkedIn message**, or anything else done by hand.
+They appear in **My Tasks** and in the lead's **Tasks** card, prefixed with the
+cadence name:
+
+- The task shows the **message or instructions** the cadence prepared (with the
+  lead's name and research already filled in). Click **Copy**, paste it into
+  LinkedIn, and send it.
+- If the task asks what happened (e.g. **Accepted** / **Not accepted**), click
+  the matching button. That completes the task **and moves the cadence on** —
+  e.g. the "thanks for connecting" message only comes to you if you picked
+  *Accepted*.
+- The cadence waits for you, but not forever: each task has a deadline (usually
+  a day). If it passes, the cadence carries on without you and the task is
+  taken off your list.
+
+When a lead **replies** (email, SMS or WhatsApp) or **books a meeting**, most
+cadences stop for that lead on their own, and any cadence tasks still open for
+them are cleared. Newer cadences also send their emails and texts **from you** —
+the lead's assigned rep — so connect your email under **⚙️ Settings → Email Sync → 🔗 Connect Email**.
+If you haven't, it goes out from the cadence owner instead.
+
 ---
 
 ## For Pod Admins
@@ -712,11 +836,12 @@ Pod Admins see a tabbed Settings page with:
    | Step | What it does |
    |---|---|
    | **Trigger** | Defines how a lead enters — either "status changed to X" or "SDR/AE receives an email from the lead." Every cadence needs exactly one. |
-   | **Email** | Sends an email (subject + body required). Personalize it with merge fields — click a field chip below the body to insert it, or type it directly: `{{first_name}}`, `{{last_name}}`, `{{company}}`, `{{title}}`, `{{email}}`, `{{phone}}`. Any lead that's missing a field just sends with that part blank. |
-   | **SMS** | Sends a text message via your RCM connection (Settings → SMS must be enabled and configured first). Same merge fields as Email; 1600-character limit with a live segment-count estimate. |
-   | **Wait** | Pauses before continuing — enter it as hours, minutes, and seconds. |
-   | **Condition** | Branches on a timeout or a real event (e.g. the lead replied, an auto-reply/out-of-office came back instead, or a call was answered). |
-   | **Call** | Creates a Task reminding the assigned SDR to call — **not** an automated call. |
+   | **Email** | Sends an email (subject + body required). Personalize it with merge fields — click a field chip to insert it, or type it directly: `{{first_name}}`, `{{last_name}}`, `{{company}}`, `{{title}}`, `{{email}}`, `{{phone}}`, `{{research_hook}}` and `{{research_opening}}` (from the lead's AI research), `{{rep_name}}` (the lead's rep) and `{{sender_name}}` (whoever the email goes out from). A lead missing a field sends with that part blank. Tick **Formatted email** for bold, links and **tables** — paste a table straight from a Google Doc, or insert one. |
+   | **SMS** | Sends a text message via your Alternate Messenger connection (Settings → SMS must be enabled and configured first). Same merge fields as Email; 1600-character limit with a live segment-count estimate. A lead with no phone number simply skips this step. |
+   | **Wait** | Pauses before continuing — enter it in days, hours, minutes and seconds. |
+   | **Condition** | Branches on **something the lead does** (replied by email/SMS/WhatsApp, an out-of-office came back, a call was answered) with a timeout — or on **a lead field**, decided instantly: e.g. *Job title contains any of "marketing, growth"* → one step, otherwise another; or *Phone is filled in*. |
+   | **Call** | Creates a Task reminding the assigned SDR to call — **not** an automated call. The cadence doesn't wait for it. Put the call script (opener, hook, question, close) in the step; merge fields work there. |
+   | **Task** | A manual step the rep does by hand: **Research**, **LinkedIn connection request**, **LinkedIn message**, or other. Write the instructions or the exact message (merge fields work). The cadence **waits** for the rep until the deadline. Add **outcomes** (a LinkedIn connection step starts with *Accepted* / *Not accepted*) and pick where each one goes next. |
 
 3. Drag from one step to the next to connect them. Click a step to open its settings panel on the right.
 4. **On an Email step**, click **Generate with AI** and describe what the email should be about (e.g. "Follow-up after a demo no-show") to draft a subject + body. You can edit the result before saving.
@@ -734,6 +859,51 @@ Pod Admins see a tabbed Settings page with:
 
 The **clock icon** in the builder header (next to the pod selector) controls the cadence's send window — off by default (sends go out as soon as a step is due). Turn it on to restrict automated Email/SMS sends to business hours, specific weekdays, and a chosen timezone. A step that becomes due outside the window just waits until the next valid time — nothing is skipped or lost. This doesn't affect Wait/Condition timing or Call task creation.
 
+#### Cadence Rules
+
+The **shield icon** in the builder header opens **Cadence Rules** — how a lead
+leaves the cadence and who messages go out as. New cadences start with the first
+two and "assigned rep" switched on; older cadences keep their original behaviour
+until you change them here.
+
+- **Stop when they reply** — any email, SMS or WhatsApp reply ends the cadence
+  for that lead, wherever they are in it (out-of-office replies don't count).
+- **Stop when a meeting is booked** — the lead reaching *Meeting Scheduled* or
+  later ends it.
+- **Maximum length** — e.g. 15 days: every lead's cadence ends that many days
+  after they joined, whatever happened.
+- **Re-engagement follow-up** — when a lead's cadence ends and they replied or
+  opened at least N emails (default 2), their rep gets a "Re-engage" task that
+  many days later (e.g. 60). Not when a meeting was booked.
+- **Emails and texts go out as** — the lead's assigned rep (falls back to you if
+  they haven't connected a mailbox), or you, the cadence owner.
+
+#### Copying a Cadence
+
+Click the **copy icon** on any cadence in the list to duplicate it — every step
+and rule, as a new draft you own. Use it to build a variant, e.g. a
+Salesforce-aware version of a generic cadence, then edit the copy.
+
+#### Example: a research-led 15-day cadence
+
+A typical research → email → LinkedIn → call → text sequence, built with the steps
+above:
+
+1. **Task — Research** ("Find one recent post, news item or hiring push").
+2. **Condition — Job title** contains *marketing, growth, demand* → **Email 1
+   (Marketing)**, otherwise → **Email 1 (Ops)**. Both then go to:
+3. **Task — LinkedIn connection request** with outcomes *Accepted / Not
+   accepted*; *Accepted* → **Wait 3 days** → **Task — LinkedIn message**.
+4. **Wait 1 day** → **Call** (with the Day 2 script) → **Wait 3 days** → **SMS**
+   (skipped automatically for leads with no number) → … and so on to the
+   Day 15 breakup email.
+5. **Cadence Rules**: stop on reply, stop on meeting, maximum length 15 days,
+   re-engagement after 60 days if 2+ opens or a reply.
+
+To run a second version for a different list (e.g. accounts known to use
+Salesforce), **copy** the cadence, change its emails, and enroll that list into
+the copy.
+
 #### Enrolling Leads
 
 - From the **Leads** page: select leads → bulk-action bar → **Enroll in Cadence** → pick a published cadence → confirm. Enrolling more than 200 leads at once isn't supported from this screen — use a filter first to narrow the selection.
@@ -745,7 +915,7 @@ The **clock icon** in the builder header (next to the pod selector) controls the
 
 Open a published cadence — the header shows its live status (**Active** / **Paused** / **Archived**, hover for what each means). Below the canvas, a **failed enrollments** panel lists any lead that got stuck or was blocked (e.g. suppressed, send failed, exceeded max steps), with **Retry** and **Skip** actions per lead. An empty panel means nothing has failed.
 
-Right below that, an **Engagement** panel shows open/click/reply rates — overall, and per email step (with a per-variant breakdown if that step is A/B tested). It only appears once at least one send has gone out.
+Right below that, an **Engagement** panel shows open/click/reply rates — overall, and per email step (with a per-variant breakdown if that step is A/B tested). It also lists every **Task, Call and SMS step**: how many were created or sent, how many tasks reps completed or missed, how often each outcome was picked (e.g. *Accepted: 12*), how many texts were skipped for having no number — and how many leads **ended early** because they replied, booked a meeting or hit the time limit.
 
 Click **Activity** in the header for a chronological, unified feed of every email and SMS this cadence has sent, plus every reply — one timeline instead of checking email and SMS history separately.
 
@@ -814,6 +984,11 @@ Click the toggle button to switch between ON (green) and OFF (gray). Changes tak
 2. Enter name, email, and role (Super Admin, Pod Admin, or SDR)
 3. Optionally assign to a POD
 4. Click **Add User**
+
+#### Deleting a User
+Click the 🗑️ icon on a user's row and confirm. This is permanent.
+
+If the user is a **Pod Admin**, the confirmation dialog names every POD they administer and warns that only a Super Admin can manage those PODs until a new Pod Admin is assigned — deleting them doesn't touch the POD or its members, just its admin.
 
 #### Bulk SDR Upload via CSV
 Click **📤 Upload CSV** in the SDRs tab.
@@ -1041,4 +1216,4 @@ Click **+ New Lead** in the top bar, fill in the details, and click **Save**. Ma
 
 ---
 
-*RCM · Phase 4 · v5.6.0 · Last updated 4 May 2026*
+*Alternate CRM · Phase 4 · v5.6.0 · Last updated 4 May 2026*

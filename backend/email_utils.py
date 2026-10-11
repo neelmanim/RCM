@@ -113,3 +113,33 @@ def is_auto_reply(headers: list, subject: str) -> bool:
         if name in ("x-autoreply", "x-autorespond"):
             return True
     return bool(_AUTO_REPLY_SUBJECT_RE.search(subject or ""))
+
+
+# Mail the lead's system sends on its own: read/delivery receipts, calendar responses,
+# bounces and no-reply notices. They come from the lead's address (a read receipt arrives
+# exactly when the lead OPENS the mail), so without this filter an open looked like a reply.
+_SYSTEM_SENDER_RE = _re.compile(r"^(mailer-daemon|postmaster|no-?reply|do-?not-?reply|bounces?)@", _re.I)
+_SYSTEM_SUBJECT_RE = _re.compile(
+    r"^\s*(?:(?:read|not read|delivered|accepted|declined|tentative|canceled|cancelled|updated invitation)\s*:"
+    r"|undeliverable\b|delivery status notification|mail delivery (?:failed|subsystem)|returned mail)", _re.I)
+
+
+def is_system_message(sender: str, subject: str) -> bool:
+    return bool(_SYSTEM_SENDER_RE.search(sender or "") or _SYSTEM_SUBJECT_RE.search(subject or ""))
+
+
+_PUBLIC_MAIL = {"gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "proton.me", "protonmail.com"}
+
+
+def internal_domains(db):
+    """Our company domain(s): shared by two or more connected mailboxes and not a public mail provider (a rep on
+    gmail.com must never make every Gmail lead 'internal'). Mail from a colleague is not a lead reply."""
+    import models
+    from collections import Counter
+    seen = Counter(r[0].rsplit("@", 1)[-1].lower() for r in db.query(models.UserMailbox.email_address).filter(
+        models.UserMailbox.status == "connected") if r[0] and "@" in r[0])
+    return {d for d, n in seen.items() if n >= 2 and d not in _PUBLIC_MAIL}
+
+
+def is_internal_sender(sender: str, domains) -> bool:
+    return "@" in (sender or "") and sender.rsplit("@", 1)[-1].lower() in domains

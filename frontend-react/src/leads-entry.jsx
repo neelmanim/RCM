@@ -1,9 +1,8 @@
 /**
  * leads-entry.jsx
  *
- * Mount/unmount contract between the Vanilla JS shell and the React Leads
- * Hub. Mirrors calendar-entry.jsx exactly. Exposes window.LeadsHub.mount,
- * .navigate, .unmount, .isMounted.
+ * The React Leads Hub, exposed to the Vanilla JS shell as window.LeadsHub
+ * (see hub-entry.jsx for the mount contract).
  *
  * Props accepted from Vanilla JS:
  *   token     {string}  JWT from localStorage('crm_token')
@@ -12,14 +11,10 @@
  *   onSwitchToClassic {function} flips the legacy/beta toggle back
  *   onOpenLead {function} navigates to the Lead Detail page for a lead
  */
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import { LeadsHub as LeadsHubComponent } from './features/leads-hub/LeadsHub';
+import { LeadsHub } from './features/leads-hub/LeadsHub';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import './leads-tailwind.css';
-
-let _root = null;
-let _mounted = false;
+import { registerHub } from './hub-entry';
 
 // A render-time crash (unexpected API shape, a bad localStorage value) left
 // the whole content area blank with no way back — this fallback keeps the
@@ -42,42 +37,8 @@ function renderCrashFallback(props) {
   );
 }
 
-window.LeadsHub = {
-  mount(container, props = {}) {
-    if (_mounted) {
-      console.warn('[LeadsHub] Already mounted — skipping double mount');
-      return;
-    }
-    if (props.apiBase) {
-      window.__CRM_API_BASE__ = props.apiBase;
-    }
-    _root = createRoot(container);
-    _root.render(
-      <ErrorBoundary fallback={renderCrashFallback(props)}>
-        <LeadsHubComponent {...props} />
-      </ErrorBoundary>
-    );
-    _mounted = true;
-  },
-
-  navigate(container, props = {}) {
-    if (!_mounted || !_root) {
-      this.mount(container, props);
-      return;
-    }
-    _root.render(
-      <ErrorBoundary fallback={renderCrashFallback(props)}>
-        <LeadsHubComponent {...props} />
-      </ErrorBoundary>
-    );
-  },
-
-  unmount() {
-    if (!_root) return;
-    _root.unmount();
-    _root = null;
-    _mounted = false;
-  },
-
-  get isMounted() { return _mounted; },
-};
+registerHub('LeadsHub', (props) => (
+  <ErrorBoundary fallback={renderCrashFallback(props)}>
+    <LeadsHub {...props} />
+  </ErrorBoundary>
+));

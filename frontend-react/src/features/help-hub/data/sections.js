@@ -7,7 +7,7 @@ export const SECTIONS = [
   {
     id: "section-0",
     title: '🚀 Getting Started',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    roles: ['sdr', 'ae', 'csm', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <h4>Logging In</h4>
             <ol>
@@ -32,7 +32,10 @@ export const SECTIONS = [
   {
     id: "section-1",
     title: '📊 Dashboard',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    // Excludes CSM (2026-09-16): the CSM role landed on this SDR/AE-shaped
+    // Dashboard by default until that was fixed to route them to CSM
+    // Portal instead — the nav item itself is now hidden from CSM too.
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => role === 'super_admin' ? `
             <div style="margin-bottom:16px;"><img src="img/guide/dashboard.png" alt="Dashboard" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
             <p>Your org-wide command centre shows:</p>
@@ -60,9 +63,33 @@ export const SECTIONS = [
         `,
   },
   {
+    id: "section-23",
+    title: '📅 Calendar',
+    roles: ['sdr', 'ae', 'csm', 'pod_admin', 'super_admin'],
+    content: (role, roleName) => `
+            <p>Calendar shows every scheduled meeting on your leads in one place. It's read-only — meetings land here automatically, there's no drag-to-reschedule.</p>
+
+            <h4>Views</h4>
+            <ul>
+                <li><strong>Day / Week / Month</strong> range toggle, plus a <strong>List</strong> display for a flat chronological view</li>
+                <li>Use the arrows to move to the previous/next period, or jump back to <strong>Today</strong></li>
+                <li>${role === 'super_admin' ? 'You see meetings across the whole org.' : role === 'pod_admin' ? "You see your POD's meetings by default." : 'You see only meetings on leads assigned to you.'}</li>
+            </ul>
+
+            <h4>Meeting Cards</h4>
+            <p>Click any meeting to open its detail panel — lead name and company, phone number, meeting time, event title, and agenda (if one was set). <strong>Go to lead</strong> jumps straight to that lead's detail page.</p>
+
+            <h4>How Meetings Get Here</h4>
+            <p>You don't create calendar entries manually. When a call outcome is logged as <strong>Meeting Scheduled</strong> or <strong>Meeting Confirmed</strong>, a real calendar invite is created automatically and shows up here — no separate scheduling step.</p>
+            <div class="guide-note">If a meeting doesn't appear after logging that outcome, check that a calendar mailbox is connected — the invite can't be created without one.</div>
+        `,
+  },
+  {
     id: "section-2",
     title: '📋 Leads',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    // Excludes CSM (2026-09-16) — CSM works accounts, not leads; the Leads
+    // nav item is now hidden from them.
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <div style="margin-bottom:16px;"><img src="img/guide/leads.png" alt="Leads Table" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
             <p>${role === 'sdr' ? 'Click <strong>Leads</strong> in the sidebar to see all leads assigned to you.' : 'Click <strong>Leads</strong> to see all leads across your ' + (role === 'super_admin' ? 'organization' : 'POD') + '.'}</p>
@@ -98,12 +125,23 @@ export const SECTIONS = [
                 <li><strong>Unassign single:</strong> Click <strong>Unassign</strong> next to any SDR name</li>
             </ul>
             ` : ''}
+
+            <h4>The New Leads Experience</h4>
+            <p>A newer version of this page is rolling out alongside the one described above — you may already be on it. Here's what's different:</p>
+            <ul>
+                <li><strong>🏢 Company grouping is on automatically</strong> — leads from the same company are clustered under one heading, even while sorted by priority (your default view). Leads with no company on file always group under <strong>⚠️ No Company</strong> at the <em>bottom</em> of the list, never mixed in at the top.</li>
+                <li><strong>Select Leads</strong> — a lighter checkbox mode (no admin access needed) to add leads to a <strong>Call List</strong> for the Power Dialer.</li>
+                <li><strong>Saved views</strong> — save your current filters as a named tab you can jump back to.</li>
+                <li><strong>Columns</strong> — reorder, resize, or hide columns; your layout is remembered next time.</li>
+                <li><strong>Switch to classic view</strong> — a link at the top of the page always lets you go back to the table described above, if you ever prefer it.</li>
+            </ul>
+            <div class="guide-note">Both versions show the same leads and the same data — this is a different table, not a different dataset. If something looks different between the two, that's expected; if a lead itself looks wrong or missing, that's worth reporting.</div>
         `,
   },
   {
     id: "section-3",
     title: '👤 Lead Detail',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <div style="margin-bottom:16px;"><img src="img/guide/lead_detail.png" alt="Lead Detail" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
             <h4>Pipeline Stepper</h4>
@@ -150,6 +188,10 @@ export const SECTIONS = [
             <div class="guide-tip"><strong>Tip:</strong> Selecting "Meeting Confirmed" moves the lead to Meeting Scheduled and triggers the qualification pipeline.</div>
             <div class="guide-warning"><strong>Unreachable detection:</strong> After multiple No Answer/Voicemail attempts, an "Unreachable" option appears. Use it to remove leads from your active pipeline when they can't be reached.</div>
 
+            <h4>Correcting a Call Outcome</h4>
+            <p>Any dialer-logged call (Aircall or the built-in dialer) shows an <strong>Edit</strong> link next to its outcome on the Calls tab. Click it to reopen the same "Did the call connect?" question fresh — pick connect/no-connect, choose the corrected outcome, and submit. This <strong>overwrites</strong> that same call's outcome and notes; it does not create a second entry.</p>
+            <div class="guide-note">Edit only appears for dialer-logged calls. A call you typed in manually has no Edit link — since you're the one who entered the outcome, log a new call instead if it needs correcting.</div>
+
             <h4>Notes & Tasks</h4>
             <ul>
                 <li><strong>Notes:</strong> Type → Save Note. Time-stamped and attributed to you.</li>
@@ -161,7 +203,7 @@ export const SECTIONS = [
   {
     id: "section-4",
     title: '🔔 Task Notifications',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    roles: ['sdr', 'ae', 'csm', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <h4>What is the Notification Bell?</h4>
             <p>The <strong>🔔 bell icon</strong> in the top-right of every page shows how many tasks are due right now. Click it to open the <strong>Notification Panel</strong>.</p>
@@ -192,7 +234,9 @@ export const SECTIONS = [
   {
     id: "section-6",
     title: '🏆 Leaderboard & SDR Performance',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    // Excludes CSM (2026-09-16) — a meetings-booked competition doesn't
+    // apply to CSM's account-portfolio work; the nav item is now hidden.
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <div style="margin-bottom:16px;"><img src="img/guide/leaderboard.png" alt="Leaderboard" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
             <h4>Leaderboard</h4>
@@ -219,10 +263,55 @@ export const SECTIONS = [
         `,
   },
   {
+    id: "section-23",
+    title: '🎛️ Control Center',
+    roles: ['super_admin'],
+    content: (role, roleName) => `
+                <p>A single home for org configuration, replacing five separate pages — <strong>Settings, Admin, Upload Center, System Logs, and POD Management's assignment tools</strong> — with one Super-Admin-only surface, organized into 5 tabs. Use the search box at the top to jump straight to a setting instead of hunting through tabs.</p>
+
+                <h4>🔌 Integrations</h4>
+                <ul>
+                    <li><strong>Salesforce</strong> — connection status, connect/disconnect, last sync time and record count, and the full CRM Sync settings: sync direction (push-only / two-way), lead sync limit, which pipeline stage triggers a push, which SF record types sync, whether Declined/Unreachable leads push to SF, the daily Auto-Sync schedule (UTC time), and Call Outcomes (add/edit/reorder disposition codes)</li>
+                    <li><strong>Nylas Email</strong> — connect and test your mailbox integration</li>
+                    <li><strong>Aircall</strong> and <strong>Alternate Messenger</strong> dialer configuration</li>
+                    <li><strong>Public API</strong> — generate/rotate the key external systems use to push leads in</li>
+                    <li><strong>POD Settings</strong> and <strong>Call & Pipeline Settings</strong> — active lead cap, max call attempts, unreachable threshold, terminal-lead cooldown, and the minimum conversation length that counts as a real connect</li>
+                </ul>
+
+                <h4>👥 Team & Access</h4>
+                <ul>
+                    <li><strong>Users & PODs</strong> — role changes, POD reassignment, revoke/restore login access, delete users, View As, and Add User (single form or bulk CSV upload)</li>
+                    <li><strong>User Access</strong> — per-SDR calling/messaging capability grid: grant or revoke Calling, SMS, and WhatsApp, and assign a Alternate Messenger agent ID</li>
+                </ul>
+
+                <h4>🤖 AI & Automation</h4>
+                <ul>
+                    <li><strong>AI Research Configuration</strong> — LLM provider, API key, and model</li>
+                    <li><strong>Research Prompt Editor</strong> — the prompt template used for AI lead research</li>
+                    <li><strong>Sales Cadence send-window settings</strong></li>
+                </ul>
+
+                <h4>💾 Data</h4>
+                <ul>
+                    <li><strong>Sandbox Data Refresh</strong> — clone production data into the sandbox environment</li>
+                    <li><strong>Upload Center</strong> — CSV or Google Sheet lead import, with column mapping and a result summary</li>
+                    <li><strong>Upload History</strong> — every past upload with created/updated/skipped/error counts, a per-SDR assignment breakdown, and <strong>Rollback</strong> for eligible batches (deletes leads that haven't progressed or been called; anything further along is protected automatically)</li>
+                    <li><strong>Export Leads</strong> — download one SDR's full lead data as CSV</li>
+                </ul>
+
+                <h4>📋 Monitoring</h4>
+                <p>Read-only parity with the old System Logs page, across 6 tabs: <strong>Audit Log, Login History, Feedback, Salesforce Sync Log</strong> (with a stats row, CSV export, and 30-second auto-refresh), <strong>Error Logs</strong>, and <strong>Perf Health</strong>.</p>
+
+                <div class="guide-note"><strong>Role visibility:</strong> Control Center is Super Admin only for now. Pod Admins keep using the existing Settings and Admin pages — nothing changes for that role.</div>
+                <div class="guide-tip"><strong>Tip:</strong> Settings, Admin, Upload Center, and System Logs still exist and work exactly as before if you ever need them — Control Center is additive, not a replacement you're forced onto.</div>
+            `,
+  },
+  {
     id: "section-7",
     title: '🛡️ Admin Panel',
     roles: ['pod_admin', 'super_admin'],
     content: (role, roleName) => `
+                ${role === 'super_admin' ? '<div class="guide-note"><strong>Super Admins:</strong> this is now covered by Control Center\'s Team & Access tab — see that guide section. This page still works if you need it.</div>' : ''}
                 <div style="margin-bottom:16px;"><img src="img/guide/admin.png" alt="Admin Panel" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
                 <p>${role === 'super_admin' ? 'See <strong>all users</strong> across all PODs, organized by role tabs (Super Admins / Pod Admins / SDRs).' : 'See your <strong>POD\'s users</strong> only.'}</p>
 
@@ -270,23 +359,36 @@ export const SECTIONS = [
   {
     id: "section-8",
     title: '👥 POD Management',
-    roles: ['super_admin'],
+    roles: ['pod_admin', 'super_admin'],
     content: (role, roleName) => `
-                <h4>Creating a POD</h4>
+                <p>POD Management has two tabs: <strong>Team Roster</strong> and <strong>Manage Pods</strong>.</p>
+
+                <h4>Team Roster</h4>
+                <p>One row per SDR/AE ${role === 'super_admin' ? 'across every POD' : 'in your POD'}, showing their active lead count and how many of those leads have sat untouched for over 24 hours or over 72 hours. Sorted worst-first by default, so whoever needs a nudge shows up at the top.</p>
+                <ul>
+                    <li>Click a column header to re-sort by that column</li>
+                    <li>Click a rep's row to jump straight to their leads in the Leads view, pre-filtered to just them</li>
+                </ul>
+
+                ${role === 'super_admin' ? `
+                <h4>Manage Pods — Creating a POD</h4>
                 <ol>
                     <li>Click <strong>+ Create POD</strong></li>
                     <li>Enter name and select a Pod Admin</li>
                     <li>Click <strong>Create</strong></li>
                 </ol>
-                <h4>Managing Members</h4>
+                ` : ''}
+                <h4>Manage Pods — Managing Members</h4>
                 <ul>
-                    <li>Each POD card shows admin, members, lead counts</li>
-                    <li><strong>Add SDR</strong> dropdown to add team members</li>
-                    <li><strong>Remove</strong> to take an SDR out</li>
-                    <li><strong>🗑️</strong> to delete a POD entirely</li>
+                    <li>Each POD card shows admins, members, and their all-time assigned-lead counts</li>
+                    <li><strong>Add SDR / AE</strong> dropdown to add team members</li>
+                    <li><strong>Remove</strong> to take a member out</li>
+                    ${role === 'super_admin' ? '<li><strong>🗑️</strong> to delete a POD entirely</li>' : ''}
                 </ul>
+                ${role === 'super_admin' ? `
                 <h4>Timezone</h4>
                 <p>Set a <strong>Timezone</strong> on each POD (defaults to UTC if left unset) — Analytics Hub uses it to bucket that team's date-range filter by their own local day instead of a shared UTC day, so a team working late into the night doesn't have its calls split across the wrong on-screen date.</p>
+                ` : ''}
             `,
   },
   {
@@ -294,6 +396,7 @@ export const SECTIONS = [
     title: '🔒 Audit Logs',
     roles: ['super_admin'],
     content: (role, roleName) => `
+                <div class="guide-note"><strong>Now in Control Center:</strong> this page's tabs (Activity, Login History, Feedback, SF Logs, Error Logs, Perf Health) live under Control Center's Monitoring tab — see that guide section. This page still works if you need it.</div>
                 <p>A unified view for all system logs and feedback, organized into <strong>4 tabs</strong>.</p>
 
                 <h4>📋 Activity Log</h4>
@@ -344,7 +447,7 @@ export const SECTIONS = [
   {
     id: "section-10",
     title: '💬 Send Feedback',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    roles: ['sdr', 'ae', 'csm', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <p>Click the <strong>💬 Send Feedback</strong> button in the sidebar to report bugs, suggest features, or share general feedback.</p>
             <ol>
@@ -379,10 +482,10 @@ export const SECTIONS = [
   {
     id: "section-12",
     title: '📞 Aircall Dialer',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <h4>What is it?</h4>
-            <p>Aircall integration lets SDRs make calls directly from RCM with <strong>one click</strong>. Calls are tracked automatically — no manual logging needed.</p>
+            <p>Aircall integration lets SDRs make calls directly from Alternate CRM with <strong>one click</strong>. Calls are tracked automatically — no manual logging needed.</p>
 
             <h4>Setup (Super Admin)</h4>
             <ol>
@@ -424,12 +527,12 @@ export const SECTIONS = [
   },
   {
     id: "section-13",
-    title: '📞 RCM Dialer (Browser Calling)',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    title: '📞 Alternate Messenger Dialer (Browser Calling)',
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <h4>What is it?</h4>
-            <p>The RCM Contact Center integration lets SDRs make calls <strong>directly in the browser</strong> using WebRTC — no external app required. A floating call widget appears on screen with real-time controls.</p>
-            <div class="guide-note"><strong>Note:</strong> Your admin assigns each SDR to either Aircall or RCM. You'll use whichever is assigned to you — the Call button works the same way regardless.</div>
+            <p>The Alternate Messenger Contact Center integration lets SDRs make calls <strong>directly in the browser</strong> using WebRTC — no external app required. A floating call widget appears on screen with real-time controls.</p>
+            <div class="guide-note"><strong>Note:</strong> Your admin assigns each SDR to either Aircall or Alternate Messenger. You'll use whichever is assigned to you — the Call button works the same way regardless.</div>
 
             <h4>Call Mode Selector</h4>
             <p>Before each call, a <strong>"How would you like to call?"</strong> dialog lets you choose your preferred method:</p>
@@ -466,7 +569,7 @@ export const SECTIONS = [
             </ul>
 
             <h4>Calls Tab</h4>
-            <p>Calls made via RCM appear in the <strong>Calls</strong> tab with a <strong>"via RCM"</strong> badge. You can:</p>
+            <p>Calls made via Alternate Messenger appear in the <strong>Calls</strong> tab with a <strong>"via Alternate Messenger"</strong> badge. You can:</p>
             <ul>
                 <li>Listen to call recordings (if enabled)</li>
                 <li>View call transcripts</li>
@@ -477,7 +580,7 @@ export const SECTIONS = [
             <p>Super Admins can assign each SDR to a dialer provider:</p>
             <ul>
                 <li><strong>Aircall (default):</strong> Calls go through the Aircall app</li>
-                <li><strong>RCM:</strong> Calls happen in the browser via the floating widget</li>
+                <li><strong>Alternate Messenger:</strong> Calls happen in the browser via the floating widget</li>
             </ul>
             <div class="guide-warning"><strong>Important:</strong> Changing an SDR's dialer assignment takes effect immediately. The SDR's next call will use the new provider.</div>
         `,
@@ -501,44 +604,39 @@ export const SECTIONS = [
   },
   {
     id: "section-15",
-    title: '📡 Activity Feed',
+    title: '📡 Activity Monitor',
     roles: ['pod_admin', 'super_admin'],
     content: (role, roleName) => `
-                <p>Click <strong>📡 Activity Feed</strong> in the sidebar to see a unified view of all SDR interactions — calls, emails, status changes, and research — in one place.</p>
-                <div class="guide-note"><strong>Purpose:</strong> Understand what happened, how the customer was connected, what's pending, and what was gathered — without opening individual leads.</div>
+                <p>Click <strong>📡 Activity Monitor</strong> in the sidebar to see exactly what your SDRs/AEs are doing across every outreach channel — calls, emails, and SMS/WhatsApp messages — in one place, without opening individual leads.</p>
+                <div class="guide-note"><strong>Purpose:</strong> Spot-check that outreach is actually happening and working — not a KPI dashboard (that's Analytics Hub). ${role === 'super_admin' ? 'You see activity org-wide.' : "You see your POD's activity."}</div>
 
-                <h4>Stats & Filters</h4>
-                <ul>
-                    <li><strong>Stats Cards:</strong> Total Activities, Meetings Booked, Call Connect Rate, Emails</li>
-                    <li><strong>Type Tabs:</strong> All, Calls, Emails, Status, Research — each with a count badge</li>
-                    <li><strong>Filters:</strong> POD, SDR, Outcome, Date Range, and Search</li>
-                    <li><strong>Smart Search:</strong> Searching by lead or company automatically bypasses date filters to search across all time</li>
-                </ul>
-
-                <h4>Table Columns</h4>
+                <h4>Three Tabs</h4>
                 <table class="guide-table">
-                    <tr><td><strong>Type</strong></td><td>📞 Call · 📧 Email · 🔄 Status · 🔬 Research</td></tr>
-                    <tr><td><strong>Lead</strong></td><td>Click to navigate to lead detail</td></tr>
-                    <tr><td><strong>Outcome / Action</strong></td><td>Call outcome, status transition, or email direction. Green <strong>REC</strong> badge if recording available</td></tr>
-                    <tr><td><strong>Notes / Summary</strong></td><td>Preview of call notes, email subject, or strategy context</td></tr>
+                    <tr><th>Tab</th><th>Stat tiles</th></tr>
+                    <tr><td><strong>📞 Calls</strong></td><td>Total Calls, Avg Duration, Connected %, Failed</td></tr>
+                    <tr><td><strong>📧 Email</strong></td><td>Sent, Opened, Open Rate, Reply Rate</td></tr>
+                    <tr><td><strong>💬 Messages</strong></td><td>Sent, Delivered, Failed, WhatsApp count (SMS and WhatsApp both show here, split by a channel badge on each row)</td></tr>
                 </table>
 
-                <h4>Expanded Call Detail</h4>
+                <h4>Filtering</h4>
                 <ul>
-                    <li><strong>🎯 Call Strategy:</strong> Personalization angle and research hypothesis</li>
-                    <li><strong>📝 Call Notes:</strong> What happened, outcome, and duration</li>
-                    <li><strong>🎙️ Recording:</strong> Click to play call recording (if available)</li>
-                    <li><strong>📃 Transcript:</strong> Scrollable call transcript (if available)</li>
+                    <li><strong>SDR</strong> — a searchable dropdown; type to filter a long team list instead of scrolling</li>
+                    <li><strong>Channel-specific filters</strong> — Provider/Direction/Outcome on Calls, Direction on Email, Channel/Status/Direction on Messages</li>
+                    <li><strong>Date range</strong> — click to open a calendar and pick a start/end day</li>
+                    <li><strong>Search</strong> — by lead name or company; press Enter or click <strong>Apply</strong></li>
+                    <li>Filters reset when you switch tabs, so a Calls-only filter (like Provider) never silently carries over to Email</li>
                 </ul>
 
-                <h4>Email & Status Details</h4>
+                <h4>Row Detail</h4>
+                <p>Click any row to expand it in place:</p>
                 <ul>
-                    <li><strong>Email:</strong> Subject, direction, body preview, and open tracking stats</li>
-                    <li><strong>Status:</strong> Visual from → to badge transition</li>
+                    <li><strong>Calls:</strong> transcript (if available), notes/error detail, ring time, and an <strong>Open Lead</strong> link. A recording, if present, can be played or downloaded directly from the row.</li>
+                    <li><strong>Email:</strong> subject, full body preview, first-opened time, and an auto-reply flag if the message was an out-of-office</li>
+                    <li><strong>Messages:</strong> full message text, failure reason if the send failed, and the phone number/thread</li>
                 </ul>
 
-                <div class="guide-tip"><strong>Deduplication:</strong> Only the latest activity per lead per type is shown — 5 calls to one lead produce only 1 row.</div>
-                <div class="guide-tip"><strong>Export:</strong> Click <strong>📥 Export CSV</strong> to download all filtered activities as a spreadsheet.</div>
+                <div class="guide-tip"><strong>Auto-refresh:</strong> The <strong>Auto-refresh: ON/OFF</strong> toggle re-polls every 30 seconds. It's automatically paused while a call recording is playing so the row doesn't reset mid-listen.</div>
+                <div class="guide-tip"><strong>Export:</strong> Click <strong>Export CSV</strong> to download up to 2,000 rows matching your current filters.</div>
             `,
   },
   {
@@ -546,6 +644,7 @@ export const SECTIONS = [
     title: '⚙️ Settings',
     roles: ['pod_admin', 'super_admin'],
     content: (role, roleName) => `
+                ${role === 'super_admin' ? '<div class="guide-note"><strong>Super Admins:</strong> this is now covered by Control Center\'s Integrations, AI & Automation, and Data tabs — see that guide section. This page still works if you need it.</div>' : ''}
                 <div style="margin-bottom:16px;"><img src="img/guide/settings.png" alt="Settings" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
                 <p>Settings uses a <strong>2-tab layout</strong>:</p>
                 <h4>🔌 Connection Tab</h4>
@@ -567,7 +666,7 @@ export const SECTIONS = [
     title: '🔌 APIs',
     roles: ['super_admin'],
     content: (role, roleName) => `
-                <p>RCM exposes a secure <strong>Public API</strong> that lets external tools (like the Contract Management Tool) look up Salesforce Account or Lead records using RCM's configured SF connection — without sharing Salesforce credentials.</p>
+                <p>Alternate CRM exposes a secure <strong>Public API</strong> that lets external tools (like the Contract Management Tool) look up Salesforce Account or Lead records using Alternate CRM's configured SF connection — without sharing Salesforce credentials.</p>
 
                 <div style="margin:16px 0;padding:14px 18px;background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:12px;display:flex;align-items:center;gap:14px;">
                     <div style="font-size:2rem;">🔌</div>
@@ -579,7 +678,7 @@ export const SECTIONS = [
 
                 <h4>🔑 Authentication</h4>
                 <p>Every request must include the <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">X-API-Key</code> header. Generate the key from <strong>Settings → 🔌 Public API</strong>.</p>
-                <pre style="background:#1e293b;color:#e2e8f0;padding:14px 16px;border-radius:10px;font-size:0.78rem;overflow-x:auto;line-height:1.6;">X-API-Key: rcm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
+                <pre style="background:#1e293b;color:#e2e8f0;padding:14px 16px;border-radius:10px;font-size:0.78rem;overflow-x:auto;line-height:1.6;">X-API-Key: alternatecrm_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</pre>
                 <div class="guide-warning">Treat the key like a password — anyone with it can query your Salesforce data. Use <strong>Revoke</strong> in Settings to instantly disable access.</div>
 
                 <h4>📋 Endpoint</h4>
@@ -594,19 +693,19 @@ export const SECTIONS = [
                 <h4>📥 Query Parameters</h4>
                 <table class="guide-table">
                     <tr><th>Parameter</th><th>Required</th><th>Description</th></tr>
-                    <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">rcm_messaging_id</code></td><td>Conditional*</td><td>RCM Messaging Account ID (exact match on <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">RCMMessaging_AccountId__c</code> in SF)</td></tr>
+                    <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">messaging_provider_id</code></td><td>Conditional*</td><td>SMS Magic Account ID (exact match on <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">messaging_provider_AccountId__c</code> in SF)</td></tr>
                     <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">company_name</code></td><td>Conditional*</td><td>Salesforce Account Name — exact first, then LIKE fallback</td></tr>
                 </table>
-                <p style="font-size:0.82rem;color:#64748b;">* At least one of the two must be provided. If both are sent, <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">rcm_messaging_id</code> takes precedence.</p>
+                <p style="font-size:0.82rem;color:#64748b;">* At least one of the two must be provided. If both are sent, <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">messaging_provider_id</code> takes precedence.</p>
 
                 <h4>🔍 Lookup Logic</h4>
                 <ol style="font-size:0.85rem;line-height:1.8;">
-                    <li>Query <strong>Salesforce Account</strong> — exact match on <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">RCMMessaging_AccountId__c</code> or <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">Name</code></li>
+                    <li>Query <strong>Salesforce Account</strong> — exact match on <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">messaging_provider_AccountId__c</code> or <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">Name</code></li>
                     <li>If no exact match → try <strong>LIKE search</strong> on Account Name</li>
                     <li>If still nothing → fall back to <strong>Salesforce Lead</strong> (same order)</li>
                     <li>If nothing found → returns <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">found: false</code></li>
                 </ol>
-                <div class="guide-note">The API always uses the SF org currently configured in RCM — no separate SF setup is needed in CMT.</div>
+                <div class="guide-note">The API always uses the SF org currently configured in Alternate CRM — no separate SF setup is needed in CMT.</div>
 
                 <h4>📤 Example Responses</h4>
                 <p><strong>Account found:</strong></p>
@@ -615,8 +714,8 @@ export const SECTIONS = [
   "type": "Account",
   "sf_account_id": "001G0000010sn3FIAQ",
   "account_name": "Acme Corporation",
-  "sf_url": "https://rcm-messaging.lightning.force.com/lightning/r/Account/001G0000010sn3FIAQ/view",
-  "matched_by": "rcm_messaging_id",
+  "sf_url": "https://messaging_provider.lightning.force.com/lightning/r/Account/001G0000010sn3FIAQ/view",
+  "matched_by": "messaging_provider_id",
   "confidence": "exact"
 }</pre>
 
@@ -627,7 +726,7 @@ export const SECTIONS = [
   "sf_lead_id": "00QG000000abcXYZ",
   "lead_name": "John Smith",
   "company": "Acme Corp",
-  "sf_url": "https://rcm-messaging.lightning.force.com/lightning/r/Lead/00QG000000abcXYZ/view",
+  "sf_url": "https://messaging_provider.lightning.force.com/lightning/r/Lead/00QG000000abcXYZ/view",
   "note": "No Account record found. Returning matching Lead."
 }</pre>
 
@@ -639,7 +738,7 @@ export const SECTIONS = [
                     <tr><th>HTTP</th><th>Cause</th></tr>
                     <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">400</code></td><td>Neither parameter provided</td></tr>
                     <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">401</code></td><td>Missing or invalid API key</td></tr>
-                    <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">503</code></td><td>Salesforce not connected in RCM</td></tr>
+                    <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">503</code></td><td>Salesforce not connected in Alternate CRM</td></tr>
                 </table>
 
                 <h4>🛠️ Managing the API Key</h4>
@@ -658,7 +757,7 @@ export const SECTIONS = [
   {
     id: "section-18",
     title: '🔄 Pipeline Statuses',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <table class="guide-table">
                 <tr><th>Status</th><th>Meaning</th></tr>
@@ -691,7 +790,7 @@ export const SECTIONS = [
   {
     id: "section-20",
     title: '📞 Power Dialer',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
             <p>Power Dialer is where you work through your assigned leads and dial them one after another, with today's call history right alongside the queue.</p>
 
@@ -713,25 +812,35 @@ export const SECTIONS = [
             </ul>
 
             <div class="guide-note">A lead that isn't matched to a real contact shows the dialed phone number instead of "Unknown" — that's expected for numbers not yet in the CRM.</div>
+
+            <h4>Call Lists</h4>
+            <p>A Call List is a named group of leads you build yourself, separate from your normal assigned-leads queue — anyone (SDR, AE, or Admin) can create one, and every list is visible to everyone.</p>
+            <ul>
+                <li><strong>Bulk-select</strong> leads on the Leads page and click <strong>Add to Call List</strong> in the action bar — pick an existing list or create a new one on the spot.</li>
+                <li><strong>Save your current filter</strong>: apply any filters on the Leads page, then click <strong>Save as Call List</strong> to add every matching lead — not just the current page — after confirming the exact count.</li>
+                <li>Pick a list from the new <strong>Call List</strong> dropdown here in Power Dialer to dial only from it. It still combines with the normal callable-status rules, so a lead that's since closed out won't show up just because it's still in the list.</li>
+            </ul>
+            <div class="guide-note">If someone deletes a Call List while you have it selected, your queue falls back to "All leads" the next time you hit Refresh, with a notice explaining why. Anyone can add leads to any list; deleting a whole list is limited to its creator or a Pod Admin/Super Admin.</div>
         `,
   },
   {
     id: "section-21",
     title: '📊 Analytics Hub',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => role === 'sdr' ? `
-            <p>As an AE, Analytics Hub shows <strong>your own</strong> numbers only — leads, calls, emails, and meetings you're personally working. There's no pod-wide view here; the dashboard is automatically scoped to you.</p>
+            <p>As an SDR or AE, Analytics Hub shows <strong>your own</strong> numbers only — leads, calls, emails, and meetings you're personally working. There's no pod-wide view here; the dashboard is automatically scoped to you.</p>
             <ul>
                 <li>Pick a date range (7D / 30D / 90D / All / Custom) to see your funnel, trend chart, and email breakdown for that period.</li>
                 <li><strong>Leads Assigned</strong> counts leads created in the selected range, not leads you're actively working — the subtitle under the number spells this out.</li>
             </ul>
+            <div class="guide-note"><strong>Ask AI</strong> and <strong>Reports</strong> tabs are Admin-only and won't appear here — natural-language querying and scheduled email reports aren't self-scoped yet, so they're kept to roles that already see org-wide data.</div>
         ` : `
             <p>Analytics Hub gives a full breakdown of pipeline activity — funnel stages, call/email trends, per-SDR performance, and batch comparisons.</p>
             <ul>
                 <li>Filter by <strong>POD</strong>, date range, and lead batch/source to scope what you're looking at.</li>
                 <li>The <strong>SDR Performance table</strong> can be sorted by calls, emails, meetings, or connect rate, and searched by name.</li>
                 <li><strong>Conversations</strong> counts calls over 30 seconds that weren't a no-answer, wrong number, or voicemail — a quicker read on real talk-time than Calls Made alone.</li>
-                <li><strong>AEs now have their own Analytics Hub</strong>, automatically scoped to just their own leads/calls — they don't see pod-wide numbers, so nothing needs to be configured per-AE.</li>
+                <li><strong>SDRs and AEs now have their own Analytics Hub</strong>, automatically scoped to just their own leads/calls — they don't see pod-wide numbers, so nothing needs to be configured per-rep.</li>
                 <li>Export the SDR table to CSV from the toolbar for reporting outside the app.</li>
             </ul>
             <div class="guide-note">A custom date range is bucketed using each SDR's own POD timezone (set in POD Management), not one shared UTC day — a US team's late-night calls land on their own local date, not wherever that instant happens to fall in UTC. A POD with no timezone set defaults to UTC.</div>
@@ -739,15 +848,46 @@ export const SECTIONS = [
   },
   {
     id: "section-22",
-    title: '🔁 Sales Cadences',
-    roles: ['pod_admin', 'super_admin'],
+    title: '🛠️ Sales Tools',
+    // Excludes CSM (2026-09-16) — Cadence/Campaigns operate on leads a rep
+    // selects themselves; CSM has none, and the nav item is now hidden.
+    roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
     content: (role, roleName) => `
-            <p>Sales Cadences (find it in the sidebar) let you build a multi-step outreach sequence — email, SMS, wait, branch on an event, and even auto-create a call task — that runs automatically once a lead is enrolled.</p>
+            <p><strong>Sales Tools</strong> (sidebar — formerly "Sales Cadences") is the home for reaching out to leads at scale. It has two tabs: <strong>Cadence</strong> and <strong>Campaigns</strong>.</p>
+            <div class="guide-tip"><strong>Tip:</strong> First time here? A short guided walkthrough points out the New Campaign button, the Performance/Templates tabs, and campaign filtering the first time you open Sales Tools — click "Got it"/"Skip tour" to dismiss it, it won't show again.</div>
+            ${role === 'sdr' ? '<div class="guide-note">The Cadence tab is only visible to Pod Admins and Super Admins — you land on the Campaigns tab directly.</div>' : ''}
+
+            <h4>Campaigns tab — sending a one-off bulk email</h4>
+            <p>Use this when you want to email a whole list of leads right now, rather than enroll them in a multi-day cadence. Two ways to start one:</p>
+            <ol>
+                <li><strong>From Sales Tools directly</strong> — click <strong>New Campaign</strong>, then search, filter (status, upload file, date ingested), and check off up to 200 leads — or click "Select all N matching" to grab everyone your search/filters match at once.</li>
+                <li><strong>From Leads Hub</strong> — select leads there (checkboxes, or "select all matching filter"), then click <strong>Send Email Campaign</strong> in the bulk action bar.</li>
+            </ol>
+            <p>Either way, you land on the same compose step:</p>
+            <ol>
+                <li>Write a subject and a rich-text body (bold/italic, bullet/numbered lists, links), or load a saved template. Merge fields like {{first_name}}, {{last_name}}, {{company}}, {{title}}, {{email}}, and {{phone}} are filled in per-lead automatically — a field with nothing on that lead just renders blank.</li>
+                <li>Optionally check <strong>save as template</strong> to reuse this subject/body later — templates are shared across your whole team, like Call Lists.</li>
+                <li>Pick when it goes out: <strong>Send now</strong>, <strong>Schedule for later</strong> (a one-time future date/time), or <strong>Repeat</strong> (daily/weekly/monthly, at a time you set).</li>
+                <li>Confirm — the button reads "Send", "Schedule Campaign", or "Save & Repeat" depending on which you picked, so it's always clear nothing sends immediately unless it says Send. The campaign appears in the <strong>Campaigns tab</strong> list, with live sent/failed/skipped counts as it goes out (or "scheduled" until its time comes).</li>
+            </ol>
+            <div class="guide-note">A single campaign supports up to <strong>200 leads</strong> — split a larger list into more than one send. Requires your own mailbox connected in Settings; sends go out from your address, one at a time, so a lead's reply comes straight to your inbox.</div>
+            <div class="guide-tip"><strong>Tip:</strong> Click any row in the Campaigns list to see the exact status of every recipient — sent, failed (with the reason), or skipped (no email on file, or the lead had already unsubscribed/opted out). Filter the list by status and page through your history using the controls above the table.</div>
+            <p>Every campaign email includes an unsubscribe link automatically — a lead who clicks it is marked opted-out and is skipped by every future campaign (existing Do Not Contact leads are already skipped the same way).</p>
+
+            <h4>Performance tab</h4>
+            <p>An at-a-glance donut chart of delivery outcomes (sent/failed/skipped) across all your campaigns, or drill into just one by clicking its row in the "By campaign" table.</p>
+
+            <h4>Templates tab</h4>
+            <p>Save, edit, and delete reusable subject/body pairs with the same rich-text editor as compose. Templates are shared across your team — editing one updates it for everyone going forward, but a campaign already sent from it keeps the wording it was sent with.</p>
+
+            ${role === 'sdr' ? '' : `
+            <h4>Cadence tab</h4>
+            <p>Build and manage multi-step, multi-day outreach sequences — unchanged from before, just moved here. See 🧪 Cadence/Messaging Sandbox above to test one safely before publishing it.</p>
 
             <h4>Building a Cadence</h4>
             <ul>
                 <li><strong>New Cadence</strong> starts a blank canvas with a Trigger node — configure it to fire when a lead reaches a given status, or when the SDR/AE receives an email from the lead. Click the cadence's name at the top of the builder any time to rename it.</li>
-                <li>Add <strong>Email</strong> nodes for automated sends (with merge fields like {{first_name}}), <strong>SMS</strong> nodes for text messages (via your RCM connection), <strong>Wait</strong> nodes for delays, and <strong>Condition</strong> nodes to branch based on what happens.</li>
+                <li>Add <strong>Email</strong> nodes for automated sends (with merge fields like {{first_name}}), <strong>SMS</strong> nodes for text messages (via your Alternate Messenger connection), <strong>Wait</strong> nodes for delays, and <strong>Condition</strong> nodes to branch based on what happens.</li>
                 <li>On an Email node, click <strong>Generate with AI</strong> and describe the email in a sentence to get a drafted subject + body — edit it before saving.</li>
                 <li>Check <strong>Split test this email</strong> on an Email node to A/B test two subject/body variants — leads are split evenly, and results are tracked per variant.</li>
                 <li>A cadence must be <strong>Published</strong> before it can enroll real leads — Draft cadences are for building/testing only.</li>
@@ -774,13 +914,13 @@ export const SECTIONS = [
                 <li>Select the checkbox on one or more cadences to <strong>delete them in bulk</strong>, or use the trash icon on a single row.</li>
                 <li>Deleting a cadence with leads still enrolled shows you exactly how many will be exited before you confirm — nothing is silently dropped.</li>
             </ul>
-
+            `}
         `,
   },
   {
     id: "section-19",
     title: '💡 Tips & Best Practices',
-    roles: ['sdr', 'pod_admin', 'super_admin'],
+    roles: ['sdr', 'ae', 'csm', 'pod_admin', 'super_admin'],
     content: (role, roleName) => role === 'sdr' ? `
             <ul>
                 <li><strong>Start your day</strong> on Dashboard → work through New Leads and Research Pending first</li>
@@ -804,6 +944,72 @@ export const SECTIONS = [
                 <li><strong>Review terminal leads</strong> — adjust cooldown period based on team needs</li>
                 <li><strong>Use POD Management</strong> to organize teams effectively</li>
             </ul>
+        `,
+  },
+  {
+    id: "section-24",
+    title: '💼 AE Pipeline',
+    roles: ['ae', 'pod_admin', 'super_admin'],
+    content: (role, roleName) => `
+            <p>AE Pipeline is your own working view of Salesforce Opportunities — synced in read-only, alongside the one write action that matters: closing a deal.${role === 'super_admin' ? ' As a Super Admin you reach this under <strong>AE Pipeline &amp; CSM Portal</strong> in the nav, on its AE Pipeline tab.' : ''}</p>
+
+            <h4>The Opportunity Table</h4>
+            <ul>
+                <li>Shows every Opportunity you own, open and closed — the donut chart above the table always reflects your <strong>whole</strong> pipeline, not just what's currently filtered or visible on the page.</li>
+                <li><strong>Search</strong> by account name, and filter by <strong>Stage</strong> (All / Open / Closed Won / Closed Lost)${role === 'pod_admin' || role === 'super_admin' ? ' — an admin viewing every AE\'s deals also gets a <strong>Filter by AE</strong> picker once more than one AE shows up in the list' : ''}.</li>
+                <li>On a busy pipeline, the table pages automatically (15 deals per page) instead of one long scroll.</li>
+                <li>Click any row to open the deal drawer with full detail, call history, and the close-deal action.</li>
+            </ul>
+
+            <h4>Closing a Deal</h4>
+            <p>Toggle <strong>Won</strong> or leave it as <strong>Lost</strong>, set the close date, and submit. A few things worth knowing:</p>
+            <ul>
+                <li>A <strong>Won</strong> close asks for a short handover brief (champion name/role/contact, promises made, handover notes) — this is what a CSM sees the moment the account lands in their portfolio, so a few honest sentences here save them a cold start.</li>
+                <li>If the Opportunity is synced to Salesforce, closing it (Won <em>or</em> Lost) also requires <strong>Standard Product(s)</strong> and an <strong>Invoice Number</strong> — this org's own Salesforce validation rules reject a Closed-stage push without them. A <strong>Lost</strong> close additionally requires a <strong>Lost Reason</strong>, picked from Salesforce's real picklist. All three fields only appear, and are only required, when the deal will actually push to Salesforce.</li>
+                <li>If the push to Salesforce fails after you close locally, a warning icon shows on that row — the deal still closes in Alternate CRM either way; only the SF sync failed and can be retried.</li>
+            </ul>
+
+            <h4>Logging a Call Against a Deal</h4>
+            <p>The <strong>Log a call</strong> action on an open deal ties a call outcome directly to that Opportunity, separate from your regular lead-calling activity — this is what builds the deal's own call history, shown right in the drawer.</p>
+
+            <div class="guide-note">${role === 'pod_admin' || role === 'super_admin' ? 'As an admin, you see every AE\'s pipeline for oversight, but the write actions (close deal, log a call) only show on a deal you personally own — a deal owned by an active AE stays read-only for you, same boundary as the rest of the app.' : 'You only ever see your own Opportunities here — an Opportunity with no owner (e.g. a departed AE\'s deal reassigned by an admin) still shows its write actions to you if you\'re viewing it, since someone has to be able to close it out.'}</div>
+        `,
+  },
+  {
+    id: "section-25",
+    title: '❤️ CSM Portal',
+    roles: ['csm', 'super_admin'],
+    content: (role, roleName) => `
+            <p>CSM Portal is your account portfolio — health, renewals, and the four playbooks worth acting on today.${role === 'csm' ? ' Inbox, Portfolio, Playbooks, and Digest are their own items in your left nav — Inbox is what you land on by default.' : ' As a Super Admin you reach this under <strong>AE Pipeline &amp; CSM Portal</strong>, on its CSM Portal tab, with all four as tabs inside for browsing the whole org’s accounts in one place.'}</p>
+
+            <h4>Inbox</h4>
+            <p>Your at-a-glance triage view: every account you own, sorted by health so the ones needing attention surface first, plus an estimated "time saved this week" tally from the playbooks you've run.</p>
+
+            <h4>Portfolio</h4>
+            <ul>
+                <li>The full account list, with a health-tier donut (Critical / At Risk / Healthy) above it summarizing your <strong>whole</strong> portfolio, independent of any filter applied below.</li>
+                <li><strong>Search</strong> by account name, and filter by <strong>health tier</strong>${role === 'super_admin' ? ' — as an admin you also get a <strong>Filter by CSM</strong> picker, plus row checkboxes and an "Assign to CSM" action for onboarding a CSM\'s first accounts' : ''}.</li>
+                <li>Pages automatically (15 accounts per page) once your portfolio grows past one screenful.</li>
+            </ul>
+
+            <h4>Playbooks</h4>
+            <p>Four triggers, each surfacing exactly the accounts that need it right now:</p>
+            <ul>
+                <li><strong>Zero-Form Handover</strong> — a newly Closed-Won account with the AE's handover brief carried over automatically; nothing to fill in, just review and log your first touch.</li>
+                <li><strong>Renewal Countdown</strong> — open renewal Opportunities closing within 60 days.</li>
+                <li><strong>Silent Account</strong> — no logged touch in 30+ days.</li>
+                <li><strong>Champion Departure</strong> — manual only, no auto-detection exists yet: open an account and use "Champion departed" the moment you learn one has left.</li>
+            </ul>
+
+            <h4>Account 360</h4>
+            <p>Click any account (from Inbox, Portfolio, a Playbook card, or a <strong>global search</strong> result) to open its full detail: health score with a footnote naming which factors it's actually based on, the open renewal Opportunity, the handover summary, call history, and the full activity timeline. From here you can <strong>Log a touch</strong>, <strong>Log a call</strong> against one of the account's Opportunities, mark a <strong>Champion departed</strong>, or start a <strong>New renewal opp</strong>.</p>
+            <div class="guide-note">The health score is currently based on <strong>Commercial + Relationship</strong> only — Usage/Support/Payment/Sentiment aren't available yet (no integration provides that data today), and the score footnote says so honestly rather than pretending otherwise. If a computed score is misleading for a specific account, use <strong>Override</strong> next to it to set the tier manually — the real computed score stays visible alongside your override, not hidden by it.</div>
+
+            <h4>Digest</h4>
+            <p>A weekly rollup: total accounts, Critical/At Risk counts, playbooks run, and the same estimated time-saved figure as the Inbox banner — useful for a quick self-check or a manager conversation.</p>
+
+            <h4>Closing an Opportunity</h4>
+            <p>Same Salesforce requirements as an AE closing a deal: a synced Opportunity needs <strong>Standard Product(s)</strong> and an <strong>Invoice Number</strong> on any Closed-stage push, plus a <strong>Lost Reason</strong> specifically on a Lost close — all three only required, and only shown, when the push will actually happen.</p>
         `,
   }
 ];

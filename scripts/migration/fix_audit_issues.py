@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, text
 
-DB_URL = "postgresql://rcm_db_prod_user:Ut07ADTDCQY1tR9lOWxyVPS8UQyaB1ZC@dpg-d6ncblh5pdvs73aacnhg-a.ohio-postgres.render.com/rcm_db_prod"
+DB_URL = "postgresql://messenger_db_prod_user:Ut07ADTDCQY1tR9lOWxyVPS8UQyaB1ZC@dpg-d6ncblh5pdvs73aacnhg-a.ohio-postgres.render.com/messenger_db_prod"
 
 def normalize_e164(phone):
     """Normalize phone to E.164 format (+1XXXXXXXXXX for US numbers)."""

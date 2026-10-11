@@ -1,8 +1,9 @@
 // ── views/lead_detail.js — Lead detail page (stepper, research, notes, tasks) ─
 import { isAdmin, isPodAdmin, isSuperAdmin, isSDR, currentUser, emailSyncEnabled, API_BASE, authHeaders } from '../auth.js';
 import * as api from '../api.js';
-import { statusBadgeClass, displayStatus, fmtDate, fmtDateTime, fullName, timeInStatus, showToast, CALL_OUTCOME_ICON, ensureUTC } from '../utils.js';
-import { openNoShowModal } from './modals.js';
+import { statusBadgeClass, displayStatus, fmtDate, fmtDateTime, fullName, timeInStatus, showToast, CALL_OUTCOME_ICON, ensureUTC, escapeHtml } from '../utils.js';
+import { openNoShowModal, runLeadStageAction, openDemoFailedModal } from './modals.js';
+import { confirmModal } from './confirm_modal.js';
 import { getNavLeads as getListNavLeads } from './lead_list.js';
 import { canModifyLead, renderSourceBadge } from './lead_helpers.js';
 import { loadCallsTab } from './lead_calls_tab.js';
@@ -11,13 +12,96 @@ import { loadMessagingTab } from './lead_messaging_tab.js';
 import { renderPhoneLocalTime, initPhoneTimeBadges } from '../phone_timezone.js'; // ENH-01
 import { mp } from '../mp.js';
 
+// AGENT_PROTOCOL.md §13 rule 5: significant new UI needs an in-app walkthrough,
+// not just written docs — reuses the same "highlight the real element, a short
+// card, shown once via localStorage" pattern as frontend-react's GuidedTour +
+// seenFlag (this is a vanilla-JS view, so it's a same-convention mini version
+// rather than the literal React component). One target, one step — no
+// Next/Skip tour machinery needed for a single button.
+const _OPT_OUT_HINT_KEY = 'crm_seen_optout_hint';
+function _showOptOutHintOnce(btn) {
+    try { if (localStorage.getItem(_OPT_OUT_HINT_KEY) === '1') return; } catch { return; }
+
+    const ring = document.createElement('div');
+    ring.style.cssText = `position:fixed;z-index:998;pointer-events:none;border-radius:22px;
+        box-shadow:0 0 0 3px #3b82f6;`;
+    const card = document.createElement('div');
+    card.style.cssText = `position:fixed;z-index:999;width:260px;background:#fff;border-radius:12px;
+        box-shadow:0 10px 25px rgba(0,0,0,0.15);padding:14px;font-size:0.82rem;color:#334155;`;
+    card.innerHTML = `<b style="display:block;margin-bottom:6px;">New: mark a lead opted out</b>
+        Stops all future calls, texts, and journey emails to this lead — the one opt-out
+        marker in the CRM.
+        <button class="btn btn-primary btn-sm" style="margin-top:10px;">Got it</button>`;
+
+    // RCA 2026-08-25: `position:fixed` elements built from a one-time
+    // getBoundingClientRect() snapshot never track the button again — the
+    // button scrolls with #view-container's own scroll (not the window), so
+    // the ring/card stayed frozen at the original viewport coords while the
+    // real button moved out from under them. Reposition on every scroll
+    // (both the inner container and the window, since either can move the
+    // button) until dismissed.
+    const reposition = () => {
+        const rect = btn.getBoundingClientRect();
+        ring.style.top = `${rect.top - 4}px`;
+        ring.style.left = `${rect.left - 4}px`;
+        ring.style.width = `${rect.width + 8}px`;
+        ring.style.height = `${rect.height + 8}px`;
+        card.style.top = `${rect.bottom + 10}px`;
+        card.style.left = `${Math.min(window.innerWidth - 276, rect.left)}px`;
+    };
+    const viewContainer = document.getElementById('view-container');
+    const dismiss = () => {
+        try { localStorage.setItem(_OPT_OUT_HINT_KEY, '1'); } catch { /* hint just reappears next visit */ }
+        window.removeEventListener('scroll', reposition, true);
+        viewContainer?.removeEventListener('scroll', reposition);
+        window.removeEventListener('resize', reposition);
+        ring.remove(); card.remove();
+    };
+    card.querySelector('button').addEventListener('click', dismiss);
+    window.addEventListener('scroll', reposition, true);
+    viewContainer?.addEventListener('scroll', reposition);
+    window.addEventListener('resize', reposition);
+
+    reposition();
+    document.body.appendChild(ring);
+    document.body.appendChild(card);
+}
+
+// Human-readable labels for LeadFieldHistory.field_name (see backend/models.py::_LEAD_HISTORY_FIELDS)
+const _FIELD_HISTORY_LABELS = {
+    first_name: 'First Name', last_name: 'Last Name', email: 'Email',
+    phone: 'Phone', phone_secondary: 'Secondary Phone', company: 'Company',
+    title: 'Title', linkedin_url: 'LinkedIn', person_linkedin: 'Contact LinkedIn',
+    pod_id: 'Pod Assignment',
+};
+
+// Salesforce deep-link markup — shared by the header pills and the
+// Opportunity Outcome card, which both render "View ... in Salesforce" links.
+function _sfLinkHtml(url, label, extraStyle = '') {
+    if (!url) return '';
+    return `<a href="${url}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:4px;color:#0176d3;font-weight:600;text-decoration:none;${extraStyle}">☁️ ${label}</a>`;
+}
+
 // ── Lead Detail ───────────────────────────────────────────────────────────────
 export async function renderLeadDetail(container, leadId, openCallModal, loadView, backView = 'leads') {
     // ── Phase 1: Only fetch the lead itself (critical for shell render) ──
     // Notes, tasks, calls, statusHistory load progressively after the shell.
     const _shimmer = (w, h) => `<div class="analytics-shimmer" style="width:${w}px;height:${h}px;border-radius:6px;"></div>`;
 
-    const lead = await api.fetchLead(leadId);
+    // RCA 2026-08-20: fetchLead() previously swallowed non-ok/401 responses
+    // and rendered the error body as if it were lead data (blank fields, no
+    // indication anything failed). Now that it throws, show an explicit
+    // error instead of leaving the page stuck on the loading shimmer.
+    let lead;
+    try {
+        lead = await api.fetchLead(leadId);
+    } catch (err) {
+        container.innerHTML = `<div class="fade-in" style="padding:60px 20px;text-align:center;color:var(--text-muted);">
+            <p style="font-size:1.1rem;">⚠️ Couldn't load this lead.</p>
+            <p style="font-size:0.85rem;">${escapeHtml(err.message || 'Please try reloading the page.')}</p>
+        </div>`;
+        return;
+    }
 
     // ── Mixpanel: Lead Viewed ─────────────────────────────────────────────────
     mp.track('Lead Viewed', {
@@ -27,16 +111,16 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
         role:    currentUser?.role || '',
     });
 
-    // ── RCM Widget context sync ────────────────────────────────────────
+    // ── Alternate Messenger Widget context sync ────────────────────────────────────────
     // Always set the lead context on the widget so the FAB opens with the right
     // lead pre-loaded (Call tab shows lead info, Message tab is ready to use).
     // This is a pure state write — no network call, no UI change if widget is closed.
-    // Guard: _rcmWidgetReady is only true for RCM SDRs after init().
+    // Guard: _messengerWidgetReady is only true for Alternate Messenger SDRs after init().
     window._currentLead = lead;  // exposed for app.js navigation cleanup
-    if (window._rcmWidgetReady && typeof RCMWidget !== 'undefined') {
+    if (window._messengerWidgetReady && typeof MessengerWidget !== 'undefined') {
         const _syncPhone = lead.phone || lead.phone_secondary || lead.company_phone || '';
         const _syncName  = fullName(lead);
-        RCMWidget.setLead(lead.id, _syncPhone, _syncName);
+        MessengerWidget.setLead(lead.id, _syncPhone, _syncName);
     }
 
     let notes = [];
@@ -77,13 +161,29 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
 
     function renderTasks(taskList) {
         if (!taskList.length) return `<p style="color:var(--text-muted);font-size:0.9rem;" id="empty-tasks">No tasks yet.</p>`;
-        return taskList.map(t => `
+        return taskList.map(t => {
+            // v13.1.0/feedback#15: a kind="email_approval"/"sms_approval" task's
+            // checkbox isn't "mark done" — ticking it sends the parked draft
+            // as-is (no review, no edit). This legacy page has no draft editor
+            // (that lives in the React LeadDetailHub/My Tasks), so the checkbox
+            // must not be offered here at all — a rep could tick it thinking
+            // it's an ordinary task and silently fire an unreviewed send. Same
+            // exclusion already applied to TasksPanel.jsx/MyTasksHub.jsx.
+            if ((t.kind === 'email_approval' || t.kind === 'sms_approval') && t.done !== 'true') {
+                return `
+            <div class="task-item" data-task-id="${t.id}">
+                <span>${t.title}</span>
+                <small style="color:var(--text-muted);font-size:0.75rem;">Review &amp; send from My Tasks</small>
+            </div>`;
+            }
+            return `
             <div class="task-item ${t.done === 'true' ? 'done' : ''}" data-task-id="${t.id}">
                 <input type="checkbox" ${t.done === 'true' ? 'checked' : ''} class="task-check">
                 <span>${t.title}</span>
                 ${t.due_date ? `<small style="color:var(--text-muted);font-size:0.75rem;">${t.due_date}</small>` : ''}
                 <button class="btn-icon task-del" title="Delete">✕</button>
-            </div>`).join('');
+            </div>`;
+        }).join('');
     }
 
     // ── Sales Journey status (docs/SALES_JOURNEY_ARCHITECTURE.md, Phase 3) ──
@@ -107,16 +207,21 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
         exceeded_max_node_passes: 'Exceeded max steps — likely a loop',
         send_failed: 'Send failed',
         manually_skipped: 'Manually skipped',
+        manually_removed: 'Manually removed from the cadence',
         unexpected_error: 'Unexpected error',
         cooldown_stalled: 'Blocked by another cadence for too long',
         node_not_found: 'Internal error — step no longer exists',
         unknown_node_type: 'Internal error — unsupported step type',
+        replied: 'The lead replied — cadence stopped',
+        meeting_booked: 'A meeting was booked — cadence stopped',
+        max_duration: "Reached the cadence's time limit",
     };
     const JOURNEY_PENDING_LABEL = {
         waiting: 'Waiting for its scheduled time',
         cooldown_blocked: 'Briefly paused — another cadence recently contacted this lead',
         domain_cadence_blocked: "Briefly paused — sending domain's rate limit",
         retry_pending: 'A previous send failed — retrying automatically',
+        awaiting_rep: 'Waiting for the rep to complete a manual step',
         processing: 'Being processed right now',
         unknown: 'Status unclear — check back shortly',
     };
@@ -132,8 +237,41 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                 </div>
                 ${e.status === 'active' ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">Currently at: ${e.current_node_label || e.current_node_id}</div>` : ''}
                 ${e.status === 'active' && e.pending_status ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:1px;">${JOURNEY_PENDING_LABEL[e.pending_status.reason] || e.pending_status.detail || ''}</div>` : ''}
-                ${e.exited_reason ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">Reason: ${JOURNEY_REASON_LABEL[e.exited_reason] || e.exited_reason.replace(/_/g, ' ')}</div>` : ''}
+                ${e.exited_reason ? `<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">Reason: ${JOURNEY_REASON_LABEL[e.exited_reason] || e.exited_reason.replace(/_/g, ' ')}${e.last_error ? ` — <span title="${e.last_error.replace(/"/g, '&quot;')}" style="text-decoration:underline dotted;cursor:help;">details</span>` : ''}</div>` : ''}
+                ${e.status === 'active' ? `<button type="button" class="journey-enrollment-remove" data-enrollment-id="${e.enrollment_id}" style="margin-top:6px;font-size:0.72rem;font-weight:600;color:#b91c1c;background:none;border:none;padding:0;cursor:pointer;">Remove from cadence</button>` : ''}
             </div>`).join('');
+    }
+
+    // Re-fetches and re-renders the Journey Status card, then re-binds the
+    // Remove buttons — shared by initial load and post-removal refresh.
+    function loadJourneyEnrollments() {
+        api.fetchLeadJourneyEnrollments(leadId).then(enrollments => {
+            const card = document.getElementById('journey-status-card');
+            const list = document.getElementById('journey-status-list');
+            if (!card || !list) return;
+            if (enrollments.length) {
+                list.innerHTML = renderJourneyEnrollments(enrollments);
+                card.style.display = '';
+                list.querySelectorAll('.journey-enrollment-remove').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        if (!confirm('Remove this lead from the cadence? It will stop receiving any further steps.')) return;
+                        btn.disabled = true;
+                        btn.textContent = 'Removing…';
+                        try {
+                            await api.removeJourneyEnrollment(btn.dataset.enrollmentId);
+                            loadJourneyEnrollments();
+                        } catch (e) {
+                            console.error('[LeadDetail] Enrollment removal failed:', e);
+                            alert('Failed to remove from cadence — please try again.');
+                            btn.disabled = false;
+                            btn.textContent = 'Remove from cadence';
+                        }
+                    });
+                });
+            } else {
+                card.style.display = 'none';
+            }
+        }).catch(e => console.error('[LeadDetail] Journey enrollments load failed:', e));
     }
 
     function makeField(label, key, value) {
@@ -443,7 +581,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
             <button class="btn btn-outline" id="close-lead-btn" style="font-size:0.8rem;padding:6px 14px;color:#ef4444;border-color:#ef4444;">
                 ✕ Disqualify Lead
             </button>
-            ${(isAdmin || isPodAdmin) ? `<button class="btn btn-outline" id="delete-lead-btn" style="font-size:0.8rem;padding:6px 14px;color:#6b7280;border-color:#d1d5db;" title="Permanently delete this lead">
+            ${(isAdmin || isPodAdmin) ? `<button class="btn btn-outline" id="delete-lead-btn" style="font-size:0.8rem;padding:6px 14px;color:#6b7280;border-color:#d1d5db;" title="Delete this lead">
                 🗑 Delete Lead
             </button>` : ''}
         </div>`;
@@ -451,7 +589,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
         // Show delete button for admin on non-active statuses
         closeLeadBtnHTML = `
         <div style="margin-top:12px;display:flex;gap:10px;justify-content:flex-end;align-items:center;">
-            <button class="btn btn-outline" id="delete-lead-btn" style="font-size:0.8rem;padding:6px 14px;color:#6b7280;border-color:#d1d5db;" title="Permanently delete this lead">
+            <button class="btn btn-outline" id="delete-lead-btn" style="font-size:0.8rem;padding:6px 14px;color:#6b7280;border-color:#d1d5db;" title="Delete this lead">
                 🗑 Delete Lead
             </button>
         </div>`;
@@ -597,6 +735,12 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                 <div class="lead-nav-controls" id="lead-nav-controls"></div>
             </div>
 
+            <div class="priority-info-banner" id="lead-detail-beta-banner" style="display:flex;align-items:center;gap:8px;">
+                <span class="pi-icon">✨</span>
+                <span>You're viewing the classic Lead Details experience.</span>
+                <button type="button" id="lead-detail-beta-btn" style="margin-left:auto;font-weight:600;background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;">Switch to the new experience</button>
+            </div>
+
             <!-- ── Header ── -->
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
                 <div>
@@ -605,6 +749,9 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                         ${lead.company ? `<span style="font-weight:600;color:var(--text-primary);">${lead.company}</span>` : ''}
                         ${lead.title ? `<span>· ${lead.title}</span>` : ''}
                         ${sourceTag}
+                        ${lead.do_not_contact ? `<span class="badge" style="background:#fee2e2;color:#991b1b;">🚫 Opted Out</span>` : ''}
+                        ${_sfLinkHtml(lead.sf_lead_url, 'View in Salesforce')}
+                        ${_sfLinkHtml(lead.sf_opportunity_url, 'View Opportunity in Salesforce')}
                     </div>
                     ${(lead.assigned_to && lead.assigned_to.length > 0) ? `
                     <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:0.82rem;color:var(--text-muted);">
@@ -618,7 +765,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                 </div>
                 <div style="display:flex;gap:8px;">
                     ${(() => {
-                        // RCM dialer users: both call + message handled by the
+                        // Alternate Messenger dialer users: both call + message handled by the
                         // floating dialer widget — don't render redundant buttons here.
                         if (!_canModify || !(lead.phone || lead.phone_secondary || lead.company_phone) || !['Calling', 'Meeting Scheduled', '1st Discovery Meeting', 'Discovery Complete', 'Demo Scheduled'].includes(lead.status)) return '';
                         const _dc = window._dialerConfig || {};
@@ -626,8 +773,8 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                         const _isActive = !!_dc.active;
                         const _hasCredentials = _dc.has_credentials;
 
-                        // RCM users: widget handles calling + messaging — hide both buttons
-                        if (_isActive && _hasCredentials && _p === 'rcm') return '';
+                        // Alternate Messenger users: widget handles calling + messaging — hide both buttons
+                        if (_isActive && _hasCredentials && _p === 'messenger') return '';
 
                         // Provider-specific label & colour
                         let _callLabel = 'Log Call';
@@ -646,8 +793,13 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                         const _primaryPhone = _phones[0]?.num || '';
                         const _phoneIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>`;
 
-                        // Message button (Aircall users who also have RCM messaging)
-                        const _msgBtn = window._rcmWidgetReady
+                        // v11.10.0: gate on the SDR's granted messaging channels
+                        // rather than on _messengerWidgetReady. That flag is
+                        // really "did the widget mount", which was true for any
+                        // Alternate Messenger *dialer* user — so SDRs with no messaging
+                        // access saw a Message button, and Aircall callers who
+                        // did have WhatsApp saw none.
+                        const _msgBtn = window._canMessageLeads?.()
                             ? `<button class="btn btn-outline" id="send-message-btn" data-lead-id="${lead.id}" style="border-radius:20px;padding:8px 18px;font-size:0.82rem;display:inline-flex;align-items:center;gap:6px;border-color:#25d366;color:#25d366;" title="Open Conversations"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg> Message</button>`
                             : '';
 
@@ -661,6 +813,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                             <div class="phone-picker-popover" id="phone-picker-popover" style="display:none;">${_dropdownItems}</div>
                         </div>${_msgBtn}`;
                     })()}
+                    ${_canModify && !lead.do_not_contact ? `<button class="btn btn-outline" id="opt-out-btn" title="Stop all calls, texts, and journey emails to this lead" style="border-radius:20px;padding:8px 14px;font-size:0.82rem;color:#991b1b;border-color:#991b1b;">🚫 Mark Opted Out</button>` : ''}
                 </div>
             </div>
 
@@ -715,7 +868,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                                 const _dc2 = window._dialerConfig || {};
                                 const _dialerOn = !!_dc2.active && !!_dc2.has_credentials && (_dc2.provider || 'none') !== 'none';
                                 const _p2 = (_dc2.provider || 'none').toLowerCase();
-                                const _btnBg = _p2 === 'aircall' ? '#00b388' : _p2 === 'rcm' ? '#6d28d9' : '';
+                                const _btnBg = _p2 === 'aircall' ? '#00b388' : _p2 === 'messenger' ? '#6d28d9' : '';
                                 const _btnStyle = _btnBg ? `background:${_btnBg};border-color:${_btnBg};` : '';
                                 const _callBtnHtml = (num, fieldId) => {
                                     if (!num || num === '—' || !canViewPhones || !_dialerOn || !_canModify) return '';
@@ -723,13 +876,14 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                                 };
                                 const _phoneLocked = (num) => canViewPhones ? '' : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> Hidden (Complete Research)`;
                                 return `
-                            <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Phone</div><div style="font-size:0.9rem;display:flex;align-items:center;flex-wrap:wrap;gap:2px;${(!canViewPhones && lead.phone) ? 'color:#b45309;font-weight:600;background:#fffbeb;padding:2px 8px;border-radius:6px;width:fit-content;' : ''}" ${(!canViewPhones && lead.phone) ? '' : 'data-key="phone" class="editable-field"'}>${(!canViewPhones && lead.phone) ? _phoneLocked(lead.phone) : (lead.phone || '\u2014')}${canViewPhones && lead.phone ? renderPhoneLocalTime(lead.phone) : ''}${_callBtnHtml(lead.phone, 'phone')}</div></div>
-                            <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Secondary Phone</div><div style="font-size:0.9rem;display:flex;align-items:center;flex-wrap:wrap;gap:2px;${(!canViewPhones && lead.phone_secondary) ? 'color:#b45309;font-weight:600;background:#fffbeb;padding:2px 8px;border-radius:6px;width:fit-content;' : ''}" ${(!canViewPhones && lead.phone_secondary) ? '' : 'data-key="phone_secondary" class="editable-field"'}>${(!canViewPhones && lead.phone_secondary) ? _phoneLocked(lead.phone_secondary) : (lead.phone_secondary || '\u2014')}${canViewPhones && lead.phone_secondary ? renderPhoneLocalTime(lead.phone_secondary) : ''}${_callBtnHtml(lead.phone_secondary, 'phone_secondary')}</div></div>
-                            <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Company Phone</div><div style="font-size:0.9rem;display:flex;align-items:center;flex-wrap:wrap;gap:2px;${(!canViewPhones && lead.company_phone) ? 'color:#b45309;font-weight:600;background:#fffbeb;padding:2px 8px;border-radius:6px;width:fit-content;' : ''}" ${(!canViewPhones && lead.company_phone) ? '' : 'data-key="company_phone" class="editable-field"'}>${(!canViewPhones && lead.company_phone) ? _phoneLocked(lead.company_phone) : (lead.company_phone || '\u2014')}${canViewPhones && lead.company_phone ? renderPhoneLocalTime(lead.company_phone) : ''}${_callBtnHtml(lead.company_phone, 'company_phone')}</div></div>`;
+                            <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Phone</div><div style="font-size:0.9rem;display:flex;align-items:center;flex-wrap:wrap;gap:2px;${(!canViewPhones && lead.phone) ? 'color:#b45309;font-weight:600;background:#fffbeb;padding:2px 8px;border-radius:6px;width:fit-content;' : ''}" ${(!canViewPhones && lead.phone) ? '' : 'data-key="phone" class="editable-field"'}>${(!canViewPhones && lead.phone) ? _phoneLocked(lead.phone) : (lead.phone || '\u2014')}${canViewPhones && lead.phone ? renderPhoneLocalTime(lead.phone, lead.country || lead.company_country) : ''}${_callBtnHtml(lead.phone, 'phone')}</div></div>
+                            <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Secondary Phone</div><div style="font-size:0.9rem;display:flex;align-items:center;flex-wrap:wrap;gap:2px;${(!canViewPhones && lead.phone_secondary) ? 'color:#b45309;font-weight:600;background:#fffbeb;padding:2px 8px;border-radius:6px;width:fit-content;' : ''}" ${(!canViewPhones && lead.phone_secondary) ? '' : 'data-key="phone_secondary" class="editable-field"'}>${(!canViewPhones && lead.phone_secondary) ? _phoneLocked(lead.phone_secondary) : (lead.phone_secondary || '\u2014')}${canViewPhones && lead.phone_secondary ? renderPhoneLocalTime(lead.phone_secondary, lead.country || lead.company_country) : ''}${_callBtnHtml(lead.phone_secondary, 'phone_secondary')}</div></div>
+                            <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Company Phone</div><div style="font-size:0.9rem;display:flex;align-items:center;flex-wrap:wrap;gap:2px;${(!canViewPhones && lead.company_phone) ? 'color:#b45309;font-weight:600;background:#fffbeb;padding:2px 8px;border-radius:6px;width:fit-content;' : ''}" ${(!canViewPhones && lead.company_phone) ? '' : 'data-key="company_phone" class="editable-field"'}>${(!canViewPhones && lead.company_phone) ? _phoneLocked(lead.company_phone) : (lead.company_phone || '\u2014')}${canViewPhones && lead.company_phone ? renderPhoneLocalTime(lead.company_phone, lead.company_country || lead.country) : ''}${_callBtnHtml(lead.company_phone, 'company_phone')}</div></div>`;
                             })()
                             }
                             <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Company</div><div style="font-size:0.9rem;" data-key="company" class="editable-field">${lead.company || '—'}</div></div>
                             <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Job Title</div><div style="font-size:0.9rem;" data-key="title" class="editable-field">${lead.title || '—'}</div></div>
+                            <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Vertical</div><div style="font-size:0.9rem;" data-key="vertical" class="editable-field" title="Used to warn before enrolling into a cadence tagged for a different vertical">${lead.vertical || '—'}</div></div>
                             <div><div style="font-size:0.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">LinkedIn</div><div style="font-size:0.9rem;">${(lead.linkedin_url || lead.person_linkedin) ? `<a href="${lead.linkedin_url || lead.person_linkedin}" target="_blank" rel="noopener" style="color:#0a66c2;text-decoration:none;display:inline-flex;align-items:center;gap:4px;font-weight:500;"><svg width="14" height="14" viewBox="0 0 24 24" fill="#0a66c2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg> View Profile</a>` : '—'}</div></div>
                         </div>
                     </div>
@@ -827,6 +981,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                     ${['Meeting Scheduled', '1st Discovery Meeting', 'Discovery Complete', 'Demo Scheduled', 'Demo Done', 'Completed', 'Disqualified'].includes(lead.status) ? `
                     <div class="info-card" style="border-left:4px solid ${lead.opportunity_status === 'Won' ? 'var(--status-won)' : lead.opportunity_status === 'Lost' ? '#ef4444' : '#f59e0b'};">
                         <div class="info-card-title">🏷️ Opportunity Outcome</div>
+                        ${_sfLinkHtml(lead.sf_opportunity_url, 'View Opportunity in Salesforce', 'font-size:0.8rem;margin-bottom:8px;')}
                         ${lead.opportunity_status ? `
                             <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
                                 <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 16px;border-radius:20px;font-weight:700;font-size:0.95rem;
@@ -947,6 +1102,15 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
 
     document.getElementById('back-to-leads').addEventListener('click', () => loadView(backView || 'leads'));
 
+    // Dual-view toggle — mirrors lead_list.js's 'leads-beta-btn' pattern. No
+    // reload needed (unlike Leads Hub): we already know the lead id here, so
+    // just re-invoke loadView for it — app.js's 'lead-detail' branch reads
+    // the flag and mounts LeadDetailHub instead of re-rendering this page.
+    document.getElementById('lead-detail-beta-btn')?.addEventListener('click', () => {
+        localStorage.setItem('leadDetailHub', 'on');
+        loadView('lead-detail', lead.id, backView);
+    });
+
     // ── Prev/Next navigation bar ────────────────────────────────────────────
     (function _initNavBar() {
         // 'my-calls' (Power Dialer) no longer has its own nav-list data source
@@ -1025,8 +1189,19 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
         });
     });
 
+    // Deep-link support: the Lead Detail Hub's Email/SMS quick actions switch
+    // to classic and request a specific tab via sessionStorage — there's no
+    // other mechanism to jump straight to a tab from outside this render.
+    const _pendingTab = sessionStorage.getItem('leadDetailPendingTab');
+    const _pendingTabLeadId = sessionStorage.getItem('leadDetailPendingTabLeadId');
+    if (_pendingTab && _pendingTabLeadId === leadId) {
+        sessionStorage.removeItem('leadDetailPendingTab');
+        sessionStorage.removeItem('leadDetailPendingTabLeadId');
+        container.querySelector(`[data-tab="${_pendingTab}"]`)?.click();
+    }
+
     // ── Expose calls-tab refresh for post-call reload ─────────────────────
-    // Called by app.js rcm:call-ended handler after outcome is logged
+    // Called by app.js alternate:call-ended handler after outcome is logged
     // so the Calls tab shows the new DialerCall immediately without a page reload.
     window._refreshCallsTab = (forLeadId) => {
         if (forLeadId && forLeadId !== lead.id) return; // wrong lead
@@ -1060,6 +1235,21 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
     const logCallBtn = document.getElementById('log-call-btn');
     if (logCallBtn) logCallBtn.addEventListener('click', () => openCallModal(lead.id, fullName(lead), logCallBtn.dataset.phone || lead.phone || lead.phone_secondary || lead.company_phone, lead));
 
+    const optOutBtn = document.getElementById('opt-out-btn');
+    if (optOutBtn) {
+        optOutBtn.addEventListener('click', async () => {
+            const ok = await confirmModal(
+                `Mark ${fullName(lead)} as opted out? This stops all future calls, texts, and journey emails to this lead.`,
+                { title: 'Mark as opted out', confirmLabel: 'Mark Opted Out', danger: true },
+            );
+            if (!ok) return;
+            await api.patchLead(leadId, { do_not_contact: true }).catch(() => {});
+            showToast('Lead marked as opted out', 'success');
+            renderLeadDetail(container, leadId, openCallModal, loadView, backView);
+        });
+        _showOptOutHintOnce(optOutBtn);
+    }
+
     // BUG-02/03: Inline call buttons next to each phone field — each carries the exact number
     container.querySelectorAll('.inline-call-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -1089,7 +1279,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
         document.addEventListener('click', () => { picker.style.display = 'none'; }, { once: false });
     }
 
-    // 💬 Header 'Message' button → open RCMWidget for this lead
+    // 💬 Header 'Message' button → open MessengerWidget for this lead
     const sendMsgBtn = document.getElementById('send-message-btn');
     if (sendMsgBtn) sendMsgBtn.addEventListener('click', () => {
         if (typeof window._openMessagingWidget === 'function') {
@@ -1502,12 +1692,12 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
                     <div style="text-align:center;margin-bottom:16px;">
                         <span style="font-size:2.5rem;">⚠️</span>
                     </div>
-                    <h3 style="margin:0 0 12px;font-size:1.1rem;font-weight:700;text-align:center;color:#1a202c;">Delete Lead Permanently?</h3>
+                    <h3 style="margin:0 0 12px;font-size:1.1rem;font-weight:700;text-align:center;color:#1a202c;">Delete Lead?</h3>
                     <p style="font-size:0.88rem;color:#4a5568;line-height:1.5;margin:0 0 16px;text-align:center;">
-                        Are you sure you want to delete <strong>${fullName(lead)}</strong>? This action cannot be undone. All associated calls, notes, tasks, and emails will be permanently removed.
+                        Are you sure you want to delete <strong>${fullName(lead)}</strong>? It will be removed from Leads, Kanban, and reports immediately. Its calls, notes, and emails are kept, not destroyed.
                     </p>
                     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:0.82rem;color:#991b1b;text-align:center;">
-                        ⚠️ This is irreversible
+                        ⚠️ This lead will no longer appear anywhere in the app
                     </div>
                     <div style="display:flex;gap:10px;justify-content:flex-end;">
                         <button class="btn btn-outline" id="delete-lead-cancel" style="font-size:0.85rem;padding:8px 18px;">Cancel</button>
@@ -1555,16 +1745,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
             demoSuccessBtn.disabled = true;
             demoSuccessBtn.textContent = '⏳ Processing...';
             try {
-                const res = await api.updateLeadStatus(leadId, 'Demo Done');
-                // updateLeadStatus returns raw fetch Response
-                if (res && !res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    showToast(err.detail || 'Failed to mark demo as done', 'error');
-                    demoSuccessBtn.disabled = false;
-                    demoSuccessBtn.textContent = '✅ Demo Successful';
-                    return;
-                }
-                showToast('🎉 Demo marked as successful! Lead will be pushed to Salesforce.', 'success', 5000);
+                await runLeadStageAction(leadId, 'demoSuccess');
                 setTimeout(() => renderLeadDetail(container, leadId, openCallModal, loadView), 500);
             } catch (e) {
                 showToast('Error: ' + (e.message || e), 'error');
@@ -1578,64 +1759,11 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
     const demoFailedBtn = document.getElementById('demo-failed-btn');
     if (demoFailedBtn) {
         demoFailedBtn.addEventListener('click', () => {
-            const modal = document.createElement('div');
-            modal.id = 'demo-failed-modal';
-            modal.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease;';
-            modal.innerHTML = `
-                <div style="background:white;border-radius:16px;padding:32px;width:480px;max-width:90vw;box-shadow:0 20px 40px rgba(0,0,0,0.18);">
-                    <div style="text-align:center;margin-bottom:16px;">
-                        <span style="font-size:2.5rem;">❌</span>
-                    </div>
-                    <h3 style="margin:0 0 12px;font-size:1.1rem;font-weight:700;text-align:center;color:#1a202c;">Demo Failed / Customer No-Show</h3>
-                    <p style="font-size:0.85rem;color:#4a5568;line-height:1.5;margin:0 0 16px;text-align:center;">
-                        This lead will be sent to <strong>Pending Review</strong>. Your Pod Admin will decide next steps.
-                    </p>
-                    <div style="margin-bottom:16px;">
-                        <label style="font-weight:600;font-size:0.82rem;display:block;margin-bottom:6px;">Failure Reason</label>
-                        <select id="demo-fail-reason" class="filter-select" style="width:100%;padding:10px 14px;border:1px solid #e4e4e7;border-radius:10px;font-size:0.88rem;">
-                            <option value="Customer No-Show">Customer No-Show</option>
-                            <option value="Customer Not Ready">Customer Not Ready</option>
-                            <option value="Technical Issues">Technical Issues</option>
-                            <option value="Rescheduled">Rescheduled</option>
-                            <option value="Lost Interest">Lost Interest</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
-                    <div style="margin-bottom:16px;">
-                        <label style="font-weight:600;font-size:0.82rem;display:block;margin-bottom:6px;">Notes (optional)</label>
-                        <textarea id="demo-fail-notes" rows="2" style="width:100%;padding:10px 14px;border:1px solid #e4e4e7;border-radius:10px;font-size:0.85rem;resize:vertical;box-sizing:border-box;" placeholder="Any additional context..."></textarea>
-                    </div>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;">
-                        <button class="btn btn-outline" id="demo-fail-cancel" style="font-size:0.85rem;padding:8px 18px;">Cancel</button>
-                        <button class="btn btn-primary" id="demo-fail-confirm" style="font-size:0.85rem;padding:8px 18px;background:#ef4444;border-color:#ef4444;">Confirm Failure</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
-            document.getElementById('demo-fail-cancel').addEventListener('click', () => modal.remove());
-            document.getElementById('demo-fail-confirm').addEventListener('click', async () => {
-                const reason = document.getElementById('demo-fail-reason').value;
-                const notes = document.getElementById('demo-fail-notes').value;
-                const confirmBtn = document.getElementById('demo-fail-confirm');
-                confirmBtn.disabled = true;
-                confirmBtn.textContent = '⏳ Processing...';
-                try {
-                    // BUG-10: Log 'Demo Failed' outcome — backend handles Pending Review routing
-                    const phone = lead.phone || lead.phone_secondary || lead.company_phone || '';
-                    await api.logCall(leadId, {
-                        outcome: 'Demo Failed',
-                        notes: notes ? `[${reason}] ${notes}` : `[${reason}]`,
-                        phone
-                    });
-                    showToast(`Demo failure recorded: ${reason}. Lead sent to Pending Review.`, 'warning', 5000);
-                    modal.remove();
+            openDemoFailedModal(leadId, lead, {
+                onResolved: () => {
+                    if (window.LeadDetailHub?.isMounted) return;
                     setTimeout(() => renderLeadDetail(container, leadId, openCallModal, loadView), 500);
-                } catch (e) {
-                    showToast('Error: ' + (e.message || e), 'error');
-                    confirmBtn.disabled = false;
-                    confirmBtn.textContent = 'Confirm Failure';
-                }
+                },
             });
         });
     }
@@ -1647,13 +1775,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
             meetingCompleteBtn.disabled = true;
             meetingCompleteBtn.textContent = '⏳ Processing...';
             try {
-                const phone = lead.phone || lead.phone_secondary || lead.company_phone || '';
-                await api.logCall(leadId, {
-                    outcome: 'Meeting Complete',
-                    notes: '',
-                    phone
-                });
-                showToast('✅ Meeting confirmed! Lead advanced to Discovery stage.', 'success', 4000);
+                await runLeadStageAction(leadId, 'meetingComplete');
                 setTimeout(() => renderLeadDetail(container, leadId, openCallModal, loadView), 500);
             } catch (e) {
                 showToast('Error: ' + (e.message || e), 'error');
@@ -1670,8 +1792,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
             addDiscoveryBtn.disabled = true;
             addDiscoveryBtn.textContent = '⏳ Logging...';
             try {
-                await api.addDiscoveryMeeting(leadId);
-                showToast('Discovery meeting logged!', 'success');
+                await runLeadStageAction(leadId, 'addDiscovery');
                 setTimeout(() => renderLeadDetail(container, leadId, openCallModal, loadView), 500);
             } catch (e) {
                 showToast('Error: ' + (e.message || e), 'error');
@@ -1697,16 +1818,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
             completeDiscoveryBtn.disabled = true;
             completeDiscoveryBtn.textContent = '⏳ Completing...';
             try {
-                const res = await api.updateLeadStatus(leadId, 'Discovery Complete');
-                // updateLeadStatus returns raw fetch Response
-                if (res && !res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    showToast(err.detail || 'Failed to complete discovery', 'error');
-                    completeDiscoveryBtn.disabled = false;
-                    completeDiscoveryBtn.textContent = '✓ Complete Discovery';
-                    return;
-                }
-                showToast('Discovery marked complete!', 'success');
+                await runLeadStageAction(leadId, 'completeDiscovery');
                 setTimeout(() => renderLeadDetail(container, leadId, openCallModal, loadView), 500);
             } catch (e) {
                 showToast('Error: ' + (e.message || e), 'error');
@@ -1723,15 +1835,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
             scheduleDemoBtn.disabled = true;
             scheduleDemoBtn.textContent = '⏳ Scheduling...';
             try {
-                const res = await api.updateLeadStatus(leadId, 'Demo Scheduled');
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    showToast(err.detail || 'Failed to schedule demo', 'error');
-                    scheduleDemoBtn.disabled = false;
-                    scheduleDemoBtn.textContent = '🎬 Schedule Demo';
-                    return;
-                }
-                showToast('Demo scheduled!', 'success');
+                await runLeadStageAction(leadId, 'scheduleDemo');
                 setTimeout(() => renderLeadDetail(container, leadId, openCallModal, loadView), 500);
             } catch (e) {
                 showToast('Error: ' + (e.message || e), 'error');
@@ -1881,7 +1985,13 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
     document.getElementById('add-note-btn').addEventListener('click', async () => {
         const ta = document.getElementById('note-textarea');
         const content = ta.value.trim(); if (!content) return;
-        const note = await api.addLeadNote(leadId, content, currentUser.name || 'You');
+        let note;
+        try {
+            note = await api.addLeadNote(leadId, content, currentUser.name || 'You');
+        } catch (err) {
+            showToast(err.message || 'Failed to add note. Please try again.', 'error', 5000);
+            return;
+        }
         mp.track('Note Added', { lead_id: leadId, note_length: content.length, role: currentUser?.role || '' });
         ta.value = '';
         const nl = document.getElementById('notes-list');
@@ -2046,14 +2156,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
     }).catch(e => console.error('[LeadDetail] Tasks load failed:', e));
 
     // 2b-2. Load Sales Journey enrollments (card stays hidden if there are none)
-    api.fetchLeadJourneyEnrollments(leadId).then(enrollments => {
-        const card = document.getElementById('journey-status-card');
-        const list = document.getElementById('journey-status-list');
-        if (card && list && enrollments.length) {
-            list.innerHTML = renderJourneyEnrollments(enrollments);
-            card.style.display = '';
-        }
-    }).catch(e => console.error('[LeadDetail] Journey enrollments load failed:', e));
+    loadJourneyEnrollments();
 
     // 2c. Load Calls (overview tab preview)
     api.fetchLeadCalls(leadId).then(callsData => {
@@ -2085,24 +2188,41 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
         }
     }).catch(e => console.error('[LeadDetail] Calls load failed:', e));
 
-    // 2d. Load Status History (timeline in right panel)
-    api.fetchLeadStatusHistory(leadId).then(histData => {
+    // 2d. Load Status History + Field-Change History (merged timeline in right panel)
+    Promise.all([
+        api.fetchLeadStatusHistory(leadId),
+        api.fetchLeadFieldHistory(leadId).catch(() => []),  // non-fatal — don't break the status timeline if this fails
+    ]).then(([histData, fieldData]) => {
         statusHistory = histData || [];
+        const fieldHistory = fieldData || [];
+        const combined = [
+            ...statusHistory.map(s => ({ kind: 'status', ts: s.changed_at, ...s })),
+            ...fieldHistory.map(f => ({ kind: 'field', ts: f.changed_at, ...f })),
+        ].sort((a, b) => new Date(b.ts) - new Date(a.ts));
+
         const timeline = container.querySelector('.timeline');
-        if (timeline && statusHistory.length > 0) {
+        if (timeline && combined.length > 0) {
             // Rebuild timeline HTML (preserve the source entry at the bottom)
             const sourceEntry = timeline.querySelector('.timeline-item:last-child');
             const sourceHTML = sourceEntry ? sourceEntry.outerHTML : '';
-            timeline.innerHTML = statusHistory.map(s => `
+            timeline.innerHTML = combined.map(entry => entry.kind === 'status' ? `
                 <div class="timeline-item">
                     <div class="timeline-dot">📊</div>
                     <div class="timeline-content">
                         <p>
-                            <span class="badge ${statusBadgeClass(s.from_status)}" style="font-size:0.68rem;">${s.from_status || '—'}</span>
+                            <span class="badge ${statusBadgeClass(entry.from_status)}" style="font-size:0.68rem;">${entry.from_status || '—'}</span>
                             <span style="margin:0 4px;">→</span>
-                            <span class="badge ${statusBadgeClass(s.to_status)}" style="font-size:0.68rem;">${s.to_status}</span>
+                            <span class="badge ${statusBadgeClass(entry.to_status)}" style="font-size:0.68rem;">${entry.to_status}</span>
                         </p>
-                        <span>${s.changed_by || 'System'} · ${fmtDateTime(s.changed_at)}</span>
+                        <span>${escapeHtml(entry.changed_by || 'System')} · ${fmtDateTime(entry.changed_at)}</span>
+                    </div>
+                </div>` : `
+                <div class="timeline-item">
+                    <div class="timeline-dot">✏️</div>
+                    <div class="timeline-content">
+                        <p>${escapeHtml(_FIELD_HISTORY_LABELS[entry.field_name] || entry.field_name)}:
+                            <em>${escapeHtml(entry.old_value ?? '—')}</em> → <em>${escapeHtml(entry.new_value ?? '—')}</em></p>
+                        <span>${escapeHtml(entry.changed_by || 'System')} · ${fmtDateTime(entry.changed_at)}</span>
                     </div>
                 </div>`).join('') + sourceHTML;
         }

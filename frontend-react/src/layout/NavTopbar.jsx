@@ -7,11 +7,22 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { AircallEverywhereDrawer } from '../features/aircall-everywhere/AircallEverywhereDrawer';
 import { useAircallEverywhere } from '../features/aircall-everywhere/useAircallEverywhere';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/Popover';
+import { SearchInput } from '../components/ui/SearchInput';
+import { Spinner } from '../components/ui/Spinner';
+import { isAdminRole } from '../utils/roles';
+import { Bell, Check, CheckCircle2, Clock, Compass, X } from 'lucide-react';
+import { Avatar } from '../components/ui/Avatar';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { EmptyState } from '../components/ui/EmptyState';
+import { IconButton } from '../components/ui/IconButton';
+import { describeDue, isApproval, splitTitle, taskKind } from '../components/tasks/taskMeta';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
-const SearchIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+const MenuIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
   </svg>
 );
 
@@ -53,25 +64,6 @@ const CloseIcon = () => (
   </svg>
 );
 
-const BellIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-  </svg>
-);
-
-const ClockIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-  </svg>
-);
-
-const CheckIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
-  </svg>
-);
-
 // RCA-2026-05-29: 60s (not 30s) — halved poll frequency to reduce burst DB
 // connections under load. Carried over from the vanilla-JS bell this replaces.
 const TASK_POLL_MS = 60_000;
@@ -87,102 +79,177 @@ function _fmtRelative(ts) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** One notification: the main area is a real button that opens it; the
+ *  small icon actions sit beside it (not inside), so Enter/Space on an action
+ *  never also opens the item. */
+function BellItem({ item, kindLabel, when, onOpen, actions }) {
+  const { title } = splitTitle(item.title);
+  return (
+    <div className="flex items-start gap-1 pr-3 hover:bg-slate-50 focus-within:bg-slate-50">
+      <button type="button" onClick={onOpen}
+        className="flex flex-1 min-w-0 items-start gap-3 pl-4 py-3 text-left bg-transparent border-0 cursor-pointer font-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 rounded-lg">
+        <Avatar name={item.lead_name || '?'} size={30} className="mt-0.5 shrink-0" />
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-medium text-slate-800 truncate">{title}</span>
+          <span className="block mt-0.5 text-xs text-slate-500 truncate">
+            {kindLabel && <span className="text-slate-600">{kindLabel} · </span>}
+            {item.lead_name}{item.lead_company ? ` · ${item.lead_company}` : ''}
+          </span>
+          {when && <span className="block mt-0.5 text-[11px] text-slate-400">{when}</span>}
+        </span>
+      </button>
+      {actions && <div className="flex items-center gap-0.5 pt-3">{actions}</div>}
+    </div>
+  );
+}
+
+function BellSection({ label, count, children }) {
+  return (
+    <div className="border-t border-slate-100 first:border-t-0">
+      <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+        <span className="text-xs font-semibold text-slate-500">{label}</span>
+        <Badge>{count}</Badge>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** v13.7.0 bell: what needs the rep now — approvals the cadence is paused on,
+ *  unread prospect replies, and due task reminders. Every item opens where
+ *  the rep acts on it (My Tasks for approvals, the lead otherwise). */
+// "Guide": replays the guided tour of the page you are on. Pages with a tour announce it (alternate:tours-changed); pages without one
+// show no button. The tour itself lives in components/ui/GuidedTour.jsx.
+function PageGuideButton() {
+  const [has, setHas] = useState(() => Object.keys(window.__CRM_TOURS__ || {}).length > 0);
+  useEffect(() => {
+    const sync = () => setHas(Object.keys(window.__CRM_TOURS__ || {}).length > 0);
+    window.addEventListener('alternate:tours-changed', sync);
+    sync();
+    return () => window.removeEventListener('alternate:tours-changed', sync);
+  }, []);
+  if (!has) return null;
+  return (
+    <button type="button" className="nh-bell__btn" id="nh-page-guide-btn" title="Show me around this page" aria-label="Show me around this page"
+      onClick={() => window.dispatchEvent(new CustomEvent('alternate:start-tour'))}>
+      <Compass size={16} strokeWidth={2} />
+    </button>
+  );
+}
+
 function NotificationBell() {
   const [tasks, setTasks] = useState([]);
+  const [replies, setReplies] = useState([]);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState(false);
-  const panelRef = useRef(null);
 
   const fetchTasks = useCallback(async () => {
-    if (!window._fetchPendingTasks) return;
-    try {
-      const data = await window._fetchPendingTasks();
-      setTasks(data || []);
-      setError(false);
-    } catch (err) {
-      console.error('[NotificationBell] failed to fetch pending tasks', err);
-      setError(true);
+    const results = await Promise.allSettled([
+      window._fetchPendingTasks?.(),
+      window._fetchPendingReplies?.(),
+    ]);
+    const [taskResult, replyResult] = results;
+    if (taskResult.status === 'fulfilled') {
+      setTasks(taskResult.value || []);
+      // The sidebar's My Tasks badge listens for this (one poll, two consumers).
+      window.dispatchEvent(new CustomEvent('alternate:task-counts', {
+        detail: { approvals: (taskResult.value || []).filter(isApproval).length },
+      }));
     }
+    if (replyResult.status === 'fulfilled') setReplies(replyResult.value || []);
+    const failed = results.some(r => r.status === 'rejected');
+    if (failed) console.error('[NotificationBell] failed to fetch pending notifications', results);
+    setError(failed);
   }, []);
 
   useEffect(() => {
     fetchTasks();
     const id = setInterval(fetchTasks, TASK_POLL_MS);
-    return () => clearInterval(id);
+    window.addEventListener('alternate:tasks-changed', fetchTasks);
+    return () => { clearInterval(id); window.removeEventListener('alternate:tasks-changed', fetchTasks); };
   }, [fetchTasks]);
 
-  useEffect(() => {
-    const h = (e) => {
-      if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false);
-    };
-    if (open) document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [open]);
+  const go = (view, extra) => { setOpen(false); window._loadView?.(view, extra); };
 
-  const handleSnooze = async (taskId, minutes) => {
-    try {
-      await window._snoozeTask?.(taskId, minutes);
-      setTasks(prev => prev.filter(t => t.id !== taskId));
-    } catch { /* keep it in the list — user can retry */ }
+  const drop = (setter, id) => setter(prev => prev.filter(x => x.id !== id));
+  const handleSnooze = async (taskId) => {
+    try { await window._snoozeTask?.(taskId, 60); drop(setTasks, taskId); } catch { /* keep it — user can retry */ }
   };
-
   const handleDismiss = async (taskId) => {
-    try {
-      await window._dismissTask?.(taskId);
-      setTasks(prev => prev.filter(t => t.id !== taskId));
-    } catch { /* keep it in the list — user can retry */ }
+    try { await window._dismissTask?.(taskId); drop(setTasks, taskId); } catch { /* keep it — user can retry */ }
+  };
+  const handleDismissReply = async (activityId) => {
+    try { await window._dismissReply?.(activityId); drop(setReplies, activityId); } catch { /* keep it — user can retry */ }
   };
 
-  const count = tasks.length;
+  const approvals = tasks.filter(isApproval);
+  const reminders = tasks.filter(t => !isApproval(t));
+  const count = tasks.length + replies.length;
 
   return (
-    <div className="nh-bell" ref={panelRef}>
-      <button
-        className="nh-bell__btn"
-        onClick={() => setOpen(v => !v)}
-        title="Task Reminders"
-        aria-label="Task Reminders"
-        id="nh-notification-bell-btn"
-      >
-        <BellIcon />
-        {count > 0 && (
-          <span className="nh-bell__badge">{count > 9 ? '9+' : count}</span>
-        )}
-        {error && count === 0 && <span className="nh-bell__error-dot" title="Couldn't load notifications" />}
-      </button>
-
-      {open && (
-        <div className="nh-bell__panel" role="dialog" aria-label="Task Reminders">
-          <div className="nh-bell__header">
-            <span>Task Reminders</span>
-            {count > 0 && <span className="nh-bell__count">{count} pending</span>}
+    <div className="nh-bell">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            className="nh-bell__btn"
+            title="Notifications"
+            aria-label={count ? `Notifications — ${count} waiting` : 'Notifications'}
+            id="nh-notification-bell-btn"
+          >
+            <Bell size={16} strokeWidth={2} />
+            {count > 0 && (
+              <span className="nh-bell__badge">{count > 9 ? '9+' : count}</span>
+            )}
+            {error && count === 0 && <span className="nh-bell__error-dot" title="Couldn't load notifications" />}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" sideOffset={8}
+          className="nh-feedback-portal w-[380px] max-w-[calc(100vw-24px)] p-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <span className="text-sm font-semibold text-slate-800">Notifications</span>
+            {count > 0 && <Badge variant="primary">{count} waiting</Badge>}
           </div>
-          <div className="nh-bell__body">
-            {tasks.length === 0 ? (
-              <div className="nh-bell__empty">All caught up! 🎉</div>
+          <div className="max-h-[420px] overflow-y-auto">
+            {count === 0 ? (
+              <EmptyState icon={CheckCircle2} title="You're all caught up" message="Approvals, replies and due tasks show up here." className="py-8" />
             ) : (
-              tasks.map(t => (
-                <div key={t.id} className="nh-bell__item">
-                  <div className="nh-bell__item-top">
-                    <span className="nh-bell__item-title">{t.title}</span>
-                    <span className="nh-bell__item-time">{_fmtRelative(t.due_time)}</span>
-                  </div>
-                  {t.lead_name && (
-                    <div className="nh-bell__item-lead">
-                      {t.lead_name}{t.lead_company ? ` · ${t.lead_company}` : ''}
-                    </div>
-                  )}
-                  <div className="nh-bell__item-actions">
-                    <button onClick={() => handleSnooze(t.id, 15)} title="Snooze 15 min"><ClockIcon /> 15m</button>
-                    <button onClick={() => handleSnooze(t.id, 60)} title="Snooze 1 hour"><ClockIcon /> 1h</button>
-                    <button onClick={() => handleDismiss(t.id)} title="Dismiss"><CheckIcon /></button>
-                  </div>
-                </div>
-              ))
+              <>
+                {approvals.length > 0 && (
+                  <BellSection label="Approvals waiting" count={approvals.length}>
+                    {approvals.map(t => (
+                      <BellItem key={t.id} item={t} onOpen={() => go('my-tasks', 'approvals')}
+                        kindLabel={taskKind(t)?.label}
+                        when={describeDue(t)?.text} />
+                    ))}
+                  </BellSection>
+                )}
+                {replies.length > 0 && (
+                  <BellSection label="Replies" count={replies.length}>
+                    {replies.map(r => (
+                      <BellItem key={r.id} item={r} onOpen={() => go('lead-detail', r.lead_id)} when={_fmtRelative(r.due_time)}
+                        actions={<IconButton onClick={() => handleDismissReply(r.id)} title="Mark as read" aria-label="Mark reply as read"><Check size={14} /></IconButton>} />
+                    ))}
+                  </BellSection>
+                )}
+                {reminders.length > 0 && (
+                  <BellSection label="Due tasks" count={reminders.length}>
+                    {reminders.map(t => (
+                      <BellItem key={t.id} item={t} onOpen={() => go('lead-detail', t.lead_id)} when={describeDue(t)?.text}
+                        actions={<>
+                          <IconButton onClick={() => handleSnooze(t.id)} title="Snooze 1 hour" aria-label="Snooze 1 hour"><Clock size={14} /></IconButton>
+                          <IconButton onClick={() => handleDismiss(t.id)} title="Dismiss reminder (the task stays open)" aria-label="Dismiss reminder"><X size={14} /></IconButton>
+                        </>} />
+                    ))}
+                  </BellSection>
+                )}
+              </>
             )}
           </div>
-        </div>
-      )}
+          <div className="border-t border-slate-100 px-2 py-2">
+            <Button variant="ghost" size="sm" className="w-full" onClick={() => go('my-tasks')}>Open My Tasks</Button>
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -193,8 +260,9 @@ export function NavTopbar({
   userName = '',
   onNavigate,
   onAction,
-  onSearch,
   onFocusSearchRef,
+  mobileNavOpen = false,
+  onToggleMobileNav,
 }) {
   // ── Search state ─────────────────────────────────────────────────────────
   const [searchVal,  setSearchVal]  = useState('');
@@ -211,7 +279,6 @@ export function NavTopbar({
   const [aiHasResult, setAiHasResult] = useState(false); // show/hide result container + footer
   const [aiError,    setAiError]    = useState(null);    // string | null
   const aiInputRef   = useRef(null);
-  const aiOverlayRef = useRef(null);
   const aiResultRef  = useRef(null); // REAL DOM node passed to runAiQuery()
 
   // ── Other ─────────────────────────────────────────────────────────────────
@@ -223,8 +290,9 @@ export function NavTopbar({
   const { status: aircallStatus, callActive: aircallCallActive } = useAircallEverywhere();
   const aircallEverywhereActive = ['loading', 'ready', 'notready'].includes(aircallStatus);
 
-  const isAdmin      = ['super admin', 'admin', 'pod admin'].includes((userRole || '').toLowerCase());
+  const isAdmin      = isAdminRole(userRole);
   const isSuperAdmin = ['super admin', 'admin'].includes((userRole || '').toLowerCase());
+  const isCSM        = (userRole || '').toLowerCase() === 'csm';
 
   // ── Register focus fn for NavHub.focusSearch() ────────────────────────────
   useEffect(() => {
@@ -253,10 +321,9 @@ export function NavTopbar({
         e.preventDefault();
         if (isAdmin) setAiOpen(v => !v);
       }
-      // Escape closes both
+      // Escape closes search (Ask AI's Popover handles its own Escape close)
       if (e.key === 'Escape') {
         setSearchRes(null);
-        setAiOpen(false);
       }
     };
     document.addEventListener('keydown', h);
@@ -268,9 +335,6 @@ export function NavTopbar({
     const h = (e) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
         setSearchRes(null);
-      }
-      if (aiOverlayRef.current && !aiOverlayRef.current.contains(e.target)) {
-        setAiOpen(false);
       }
     };
     document.addEventListener('mousedown', h);
@@ -291,39 +355,62 @@ export function NavTopbar({
     }
   }, [aiOpen]);
 
-  // ── Live search on every keystroke ───────────────────────────────────────
+  // ── Live search ──────────────────────────────────────────────────────────
+  // One request per pause in typing, never a pile-up: the previous request is cancelled when a new one starts, a late
+  // answer for an older query is ignored, identical recent queries come from a small in-memory cache (backspacing is
+  // instant), and the old results stay on screen (dimmed) while the next ones load instead of flashing empty.
+  const searchSeq   = useRef(0);
+  const searchAbort = useRef(null);
+  const searchCache = useRef(new Map());                 // query -> { at, data }, max 20 entries, 15 s
+  const runSearch = useCallback(async (q) => {
+    const hit = searchCache.current.get(q);
+    if (hit && Date.now() - hit.at < 15000) {
+      setSearchRes(hit.data);
+      setSearching(false);
+      return;
+    }
+    searchAbort.current?.abort();
+    const ctl = new AbortController();
+    searchAbort.current = ctl;
+    const seq = ++searchSeq.current;
+    try {
+      const data = await window._globalSearchFn?.(q, ctl.signal);
+      if (seq !== searchSeq.current) return;             // a newer query already took over
+      const res = { leads: data?.leads || [], users: data?.users || [], accounts: data?.accounts || [] };
+      searchCache.current.set(q, { at: Date.now(), data: res });
+      if (searchCache.current.size > 20) searchCache.current.delete(searchCache.current.keys().next().value);
+      setSearchRes(res);
+    } catch (err) {
+      if (err?.name === 'AbortError' || seq !== searchSeq.current) return;
+      setSearchRes({ leads: [], users: [], accounts: [] });
+    } finally {
+      if (seq === searchSeq.current) setSearching(false);
+    }
+  }, []);
+
   const handleSearchChange = useCallback((e) => {
     const q = e.target.value;
     setSearchVal(q);
-    onSearch?.(q.trim());
-
     clearTimeout(searchTimer.current);
-
-    // BUG FIX: always clear searching state when input is too short
     if (!q || q.trim().length < 2) {
-      setSearching(false);  // ← was missing: spinner stuck on clear
+      searchSeq.current += 1;                            // drop anything still in flight
+      searchAbort.current?.abort();
+      setSearching(false);
       setSearchRes(null);
       return;
     }
-
     setSearching(true);
-    searchTimer.current = setTimeout(async () => {
-      try {
-        const data = await window._globalSearchFn?.(q.trim());
-        if (data) {
-          setSearchRes({ leads: data.leads || [], users: data.users || [] });
-        }
-      } catch {
-        setSearchRes({ leads: [], users: [] });
-      } finally {
-        setSearching(false);  // always stop spinner
-      }
-    }, 300);
-  }, [onSearch]);
+    setSearchRes((prev) => prev ?? { leads: [], users: [], accounts: [] });   // open the dropdown now, no dead wait
+    searchTimer.current = setTimeout(() => runSearch(q.trim()), 250);
+  }, [runSearch]);
 
   // ── Enter → navigate to leads ─────────────────────────────────────────────
   const handleSearchKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && searchVal.trim()) {
+    // No "view all results" destination applies to a CSM — their search is
+    // scoped to accounts/users, not leads, and there's no all-accounts
+    // search results page (Portfolio's own filter is a separate, local
+    // search box). Individual account results are still directly clickable.
+    if (e.key === 'Enter' && searchVal.trim() && !isCSM) {
       sessionStorage.setItem('leads_search_query', searchVal.trim());
       onNavigate?.('leads');
       setSearchVal('');
@@ -335,7 +422,7 @@ export function NavTopbar({
       setSearching(false);
       searchRef.current?.blur();
     }
-  }, [searchVal, onNavigate]);
+  }, [searchVal, onNavigate, isCSM]);
 
   // ── Ask AI submit ─────────────────────────────────────────────────────────
   const handleAiSubmit = useCallback(async () => {
@@ -381,36 +468,47 @@ export function NavTopbar({
     setTimeout(() => setSyncing(false), 3000);
   }, [syncing, onAction]);
 
-  const hasResults = searchRes && (searchRes.leads.length > 0 || searchRes.users.length > 0);
+  const hasResults = searchRes && (searchRes.leads.length > 0 || searchRes.users.length > 0 || searchRes.accounts?.length > 0);
 
   return (
     <header className="nh-topbar">
 
+      {/* ── Mobile nav toggle — hidden on desktop, see NavHub.css breakpoint ── */}
+      <button
+        type="button"
+        className="nh-mobile-menu-btn"
+        onClick={onToggleMobileNav}
+        aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+        aria-expanded={mobileNavOpen}
+      >
+        <MenuIcon />
+      </button>
+
       {/* ── Search ────────────────────────────────────────────────────────── */}
       <div className="nh-search" ref={wrapperRef}>
-        <span className="nh-search__icon"><SearchIcon /></span>
-        <input
+        <SearchInput
           ref={searchRef}
           id="nh-search-input"
-          type="text"
-          className="nh-search__input"
-          placeholder="Search leads, phone, SDRs..."
+          placeholder={isCSM ? 'Search accounts...' : 'Search leads, phone, SDRs...'}
           value={searchVal}
           onChange={handleSearchChange}
           onKeyDown={handleSearchKeyDown}
           aria-label="Search"
           autoComplete="off"
+          className="w-full"
+          inputClassName="pr-9"
         />
         {searching
-          ? <span className="nh-search__spinner" aria-hidden="true" />
+          ? <Spinner size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2" />
           : <kbd className="nh-search__kbd">⌘K</kbd>
         }
 
         {/* Inline results dropdown */}
         {searchRes !== null && (
-          <div className="nh-search__results" role="listbox" aria-label="Search results">
+          <div className="nh-search__results" role="listbox" aria-label="Search results" aria-busy={searching}
+               style={searching && hasResults ? { opacity: 0.6, transition: 'opacity 120ms' } : undefined}>
             {!hasResults && (
-              <div className="nh-search__empty">No results found.</div>
+              <div className="nh-search__empty">{searching ? 'Searching…' : 'No results found.'}</div>
             )}
             {searchRes.leads?.length > 0 && (
               <>
@@ -427,7 +525,7 @@ export function NavTopbar({
                     }}
                   >
                     <div className="nh-search__result-name">{l.first_name || ''} {l.last_name || ''}</div>
-                    <div className="nh-search__result-sub">{l.company || ''}{l.email ? ` · ${l.email}` : ''}{l.phone ? ` · 📞 ${l.phone}` : ''}</div>
+                    <div className="nh-search__result-sub">{l.company || ''}{l.email ? ` · ${l.email}` : ''}{(l.phone || l.phone_secondary || l.company_phone) ? ` · 📞 ${l.phone || l.phone_secondary || l.company_phone}` : ''}</div>
                   </div>
                 ))}
               </>
@@ -443,7 +541,31 @@ export function NavTopbar({
                 ))}
               </>
             )}
-            {hasResults && (
+            {searchRes.accounts?.length > 0 && (
+              <>
+                <div className="nh-search__group-label">Accounts</div>
+                {searchRes.accounts.map(a => (
+                  <div
+                    key={a.id}
+                    className="nh-search__result"
+                    role="option"
+                    onClick={() => {
+                      setSearchRes(null);
+                      setSearchVal('');
+                      // CSM's own flat Portfolio nav item, or Super Admin's
+                      // merged Pipeline hub (opens straight on its CSM
+                      // Portal tab) — 'csm-portal' itself no longer exists
+                      // as a route (2026-09-16 nav restructuring).
+                      window._loadView?.(isSuperAdmin ? 'pipeline-hub' : 'csm-portfolio', a.id);
+                    }}
+                  >
+                    <div className="nh-search__result-name">{a.name}</div>
+                    {a.industry && <div className="nh-search__result-sub">{a.industry}</div>}
+                  </div>
+                ))}
+              </>
+            )}
+            {hasResults && !isCSM && (
               <div className="nh-search__footer" onClick={() => {
                 sessionStorage.setItem('leads_search_query', searchVal.trim());
                 onNavigate?.('leads');
@@ -457,107 +579,107 @@ export function NavTopbar({
         )}
       </div>
 
-      {/* ── Ask AI button (admins only) ───────────────────────────────────── */}
+      {/* ── Ask AI button + overlay panel (admins only) ─────────────────────── */}
       {isAdmin && (
-        <button
-          className={`nh-btn nh-btn--ai${aiOpen ? ' nh-btn--ai-active' : ''}`}
-          onClick={() => setAiOpen(v => !v)}
-          title="Ask AI (⌘/)"
-          aria-label="Ask AI"
-          id="nh-ask-ai-btn"
-        >
-          <SparkleIcon />
-          <span>Ask AI</span>
-        </button>
-      )}
-
-      {/* ── Ask AI overlay panel ──────────────────────────────────────────── */}
-      {isAdmin && aiOpen && (
-        <div className="nh-ai-overlay" ref={aiOverlayRef} role="dialog" aria-label="Ask AI">
-          <div className="nh-overlay-header nh-ai-overlay__header">
-            <div className="nh-ai-overlay__title">
+        <Popover open={aiOpen} onOpenChange={setAiOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className={`nh-btn nh-btn--ai${aiOpen ? ' nh-btn--ai-active' : ''}`}
+              title="Ask AI (⌘/)"
+              aria-label="Ask AI"
+              id="nh-ask-ai-btn"
+            >
               <SparkleIcon />
               <span>Ask AI</span>
-            </div>
-            <button className="nh-overlay-close" onClick={() => setAiOpen(false)} aria-label="Close">
-              <CloseIcon />
             </button>
-          </div>
-
-          <div className="nh-ai-overlay__body">
-            <div className="nh-ai-overlay__input-row">
-              <input
-                ref={aiInputRef}
-                type="text"
-                className="nh-ai-overlay__input"
-                placeholder="e.g. How many calls did pod 2 make this week?"
-                value={aiQuery}
-                onChange={e => setAiQuery(e.target.value)}
-                onKeyDown={handleAiKeyDown}
-                disabled={aiLoading}
-                aria-label="AI query"
-              />
-              <button
-                className="nh-ai-overlay__submit"
-                onClick={handleAiSubmit}
-                disabled={aiLoading || !aiQuery.trim()}
-                aria-label="Submit query"
-              >
-                {aiLoading
-                  ? <span className="nh-search__spinner" style={{width:13,height:13}} />
-                  : <SendIcon />
-                }
+          </PopoverTrigger>
+          <PopoverContent className="nh-ai-overlay" align="center" sideOffset={8}>
+            <div className="nh-overlay-header nh-ai-overlay__header">
+              <div className="nh-ai-overlay__title">
+                <SparkleIcon />
+                <span>Ask AI</span>
+              </div>
+              <button className="nh-overlay-close" onClick={() => setAiOpen(false)} aria-label="Close">
+                <CloseIcon />
               </button>
             </div>
 
-            {/* Error state */}
-            {aiError && (
-              <div className="nh-ai-overlay__result nh-ai-overlay__result--error">
-                ⚠️ {aiError}
+            <div className="nh-ai-overlay__body">
+              <div className="nh-ai-overlay__input-row">
+                <input
+                  ref={aiInputRef}
+                  type="text"
+                  className="nh-ai-overlay__input"
+                  placeholder="e.g. How many calls did pod 2 make this week?"
+                  value={aiQuery}
+                  onChange={e => setAiQuery(e.target.value)}
+                  onKeyDown={handleAiKeyDown}
+                  disabled={aiLoading}
+                  aria-label="AI query"
+                />
+                <button
+                  className="nh-ai-overlay__submit"
+                  onClick={handleAiSubmit}
+                  disabled={aiLoading || !aiQuery.trim()}
+                  aria-label="Submit query"
+                >
+                  {aiLoading
+                    ? <Spinner size={13} tone="light" />
+                    : <SendIcon />
+                  }
+                </button>
               </div>
-            )}
 
-            {/* Real DOM result container — runAiQuery writes directly into this node */}
-            <div
-              ref={aiResultRef}
-              className="nh-ai-overlay__result"
-              style={{ display: aiHasResult && !aiError ? 'block' : 'none' }}
-            />
+              {/* Error state */}
+              {aiError && (
+                <div className="nh-ai-overlay__result nh-ai-overlay__result--error">
+                  ⚠️ {aiError}
+                </div>
+              )}
 
-            {/* Analytics Hub link — shown after a successful query */}
-            {aiHasResult && !aiError && !aiLoading && (
-              <button
-                className="nh-ai-overlay__analytics-link"
-                onClick={() => {
-                  sessionStorage.setItem('ls_ai_pending_query', aiQuery);
-                  setAiOpen(false);
-                  onNavigate?.('analytics');
-                }}
-              >
-                📊 Open full Analytics Hub →
-              </button>
-            )}
+              {/* Real DOM result container — runAiQuery writes directly into this node */}
+              <div
+                ref={aiResultRef}
+                className="nh-ai-overlay__result"
+                style={{ display: aiHasResult && !aiError ? 'block' : 'none' }}
+              />
 
-            {/* Hint chips — shown before first query */}
-            {!aiHasResult && !aiLoading && !aiError && (
-              <div className="nh-ai-overlay__hints">
-                {['Calls this week by SDR', 'Top performing pod this month', 'Leads contacted today'].map(hint => (
-                  <button key={hint} className="nh-ai-overlay__hint" onClick={() => {
-                    setAiQuery(hint);
-                    setTimeout(() => aiInputRef.current?.focus(), 10);
-                  }}>
-                    {hint}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+              {/* Analytics Hub link — shown after a successful query */}
+              {aiHasResult && !aiError && !aiLoading && (
+                <button
+                  className="nh-ai-overlay__analytics-link"
+                  onClick={() => {
+                    sessionStorage.setItem('ls_ai_pending_query', aiQuery);
+                    setAiOpen(false);
+                    onNavigate?.('analytics');
+                  }}
+                >
+                  📊 Open full Analytics Hub →
+                </button>
+              )}
+
+              {/* Hint chips — shown before first query */}
+              {!aiHasResult && !aiLoading && !aiError && (
+                <div className="nh-ai-overlay__hints">
+                  {['Calls this week by SDR', 'Top performing pod this month', 'Leads contacted today'].map(hint => (
+                    <button key={hint} className="nh-ai-overlay__hint" onClick={() => {
+                      setAiQuery(hint);
+                      setTimeout(() => aiInputRef.current?.focus(), 10);
+                    }}>
+                      {hint}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
       )}
 
       {/* ── Right-side actions ────────────────────────────────────────────── */}
       <div className="nh-topbar__actions">
 
+        <PageGuideButton />
         <NotificationBell />
 
         {isSuperAdmin && (
@@ -598,7 +720,7 @@ export function NavTopbar({
           className="nh-btn nh-btn--live"
           id="nh-active-call-indicator"
           style={{ display: 'none' }}
-          onClick={() => window.RCMWidget?.openPanel?.()}
+          onClick={() => window.MessengerWidget?.openPanel?.()}
           title="Active call in progress — click to manage"
           aria-live="polite"
         >
@@ -606,16 +728,20 @@ export function NavTopbar({
           🔴 Live Call
         </button>
 
-        <button
-          className="nh-btn nh-btn--primary"
-          onClick={() => onAction?.('newLead')}
-          title="Create a new lead"
-          aria-label="New Lead"
-          id="nh-new-lead-btn"
-        >
-          <PlusIcon />
-          <span>New Lead</span>
-        </button>
+        {/* CSM works accounts, not leads — a CSM creating a "lead" has
+            nowhere sensible for it to go in their own workflow. */}
+        {!isCSM && (
+          <button
+            className="nh-btn nh-btn--primary"
+            onClick={() => onAction?.('newLead')}
+            title="Create a new lead"
+            aria-label="New Lead"
+            id="nh-new-lead-btn"
+          >
+            <PlusIcon />
+            <span>New Lead</span>
+          </button>
+        )}
 
       </div>
     </header>

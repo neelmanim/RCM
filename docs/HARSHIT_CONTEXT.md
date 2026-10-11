@@ -1,7 +1,7 @@
-# RCM Project Context
+# Alternate CRM Project Context
 
 ## :rocket: Project Overview
-**RCM** is a state-of-the-art, AI-powered CRM Intelligence platform designed for high-velocity sales teams. It bridges the gap between static Salesforce data and active outreach intelligence via automated AI research and multi-channel communication pipelines.
+**Alternate CRM** is a state-of-the-art, AI-powered CRM Intelligence platform designed for high-velocity sales teams. It bridges the gap between static Salesforce data and active outreach intelligence via automated AI research and multi-channel communication pipelines.
 
 ### Core Objectives:
 1.  **Modernization**: Refactoring the legacy Vanilla JS and HTML/CSS codebase into a robust, component-driven React architecture.
@@ -25,7 +25,7 @@ We are currently refactoring the UI from legacy structures to a modern frontend 
 ---
 
 ## :art: Global Design System
-The new RCM aesthetic follows a **Premium Light Theme**:
+The new Alternate CRM aesthetic follows a **Premium Light Theme**:
 -   **Aesthetics**: Glassmorphism accents, high-contrast text (`slate-900`), and subtle shadows for depth.
 -   **Spatiality**: Improved button padding (`px-6 py-3.5`) and softened corners (`rounded-xl`) to fix legacy "thin" and cramped UI issues.
 -   **Consistency**: Shared UI components (Button, Input, Card, Badge) ensure a uniform look across all newly migrated pages.
@@ -54,7 +54,7 @@ The new RCM aesthetic follows a **Premium Light Theme**:
 
 ## :arrows_counterclockwise: Re-verified State (Post-Audit)
 - **Target Technology**: Full transition to **React + Tailwind** is ~65% complete.
-- **Staging URL**: `https://rcm-crm-react-staging.onrender.com`.
+- **Staging URL**: `https://messenger-crm-react-staging.onrender.com`.
 - **Current Milestone**: All Lead-related visibility and architectural issues are **Resolved**.
 
 ---

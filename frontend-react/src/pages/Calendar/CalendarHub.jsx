@@ -17,6 +17,11 @@
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../services/api';
+import { Select } from '../../components/ui/Select';
+import { Modal } from '../../components/ui/Modal';
+import { Checkbox } from '../../components/ui/Checkbox';
+import { SearchInput } from '../../components/ui/SearchInput';
+import { EmptyState } from '../../components/ui/EmptyState';
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -48,11 +53,6 @@ const ClockIcon = () => (
     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
   </svg>
 );
-const CloseIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-  </svg>
-);
 const ArrowRightIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
     <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
@@ -68,12 +68,6 @@ const PhoneIcon = () => (
     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
   </svg>
 );
-const SearchIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-  </svg>
-);
-
 function _buildMonthGrid(year, month) {
   const firstOfMonth = new Date(year, month, 1);
   const startOffset = firstOfMonth.getDay(); // 0=Sun
@@ -221,12 +215,7 @@ function MeetingList({ meetings, onSelect, emptyLabel }) {
   }, [meetings]);
 
   if (grouped.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 py-14 text-slate-400">
-        <div className="w-11 h-11 rounded-full bg-slate-50 flex items-center justify-center text-slate-300"><CalendarIcon /></div>
-        <p className="text-sm font-medium">{emptyLabel}</p>
-      </div>
-    );
+    return <EmptyState icon={CalendarIcon} message={emptyLabel} />;
   }
 
   return (
@@ -322,25 +311,11 @@ function CallHistorySection({ leadId }) {
 }
 
 function MeetingDetailPanel({ meeting, onClose, onGoToLead }) {
-  if (!meeting) return null;
-  const c = _chipColor(meeting.lead_id);
+  const c = meeting ? _chipColor(meeting.lead_id) : null;
   return (
-    <div className="fixed inset-0 z-[100]" onClick={onClose}>
-      <div className="absolute inset-0 bg-slate-900/20" />
-      <div
-        className="calhub-card absolute top-0 right-0 h-full w-full max-w-sm rounded-none rounded-l-2xl flex flex-col"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Meeting Details</span>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-          ><CloseIcon /></button>
-        </div>
-
-        <div className="px-5 py-5 flex-1 overflow-y-auto">
+    <Modal open={!!meeting} onClose={onClose} title="Meeting Details" position="right">
+      {meeting && (
+        <>
           <div className="flex items-center gap-2 mb-1">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: c.dot }} />
             <h2 className="text-base font-bold text-slate-800">{meeting.lead_name || 'Unnamed lead'}</h2>
@@ -377,18 +352,18 @@ function MeetingDetailPanel({ meeting, onClose, onGoToLead }) {
           </div>
 
           <CallHistorySection leadId={meeting.lead_id} />
-        </div>
 
-        <div className="px-5 py-4 border-t border-slate-100">
-          <button
-            onClick={() => onGoToLead(meeting.lead_id)}
-            className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg py-2.5 transition-colors"
-          >
-            Go to lead <ArrowRightIcon />
-          </button>
-        </div>
-      </div>
-    </div>
+          <div className="pt-4 mt-4 border-t border-slate-100">
+            <button
+              onClick={() => onGoToLead(meeting.lead_id)}
+              className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg py-2.5 transition-colors"
+            >
+              Go to lead <ArrowRightIcon />
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -479,7 +454,7 @@ export function CalendarHub({ userRole = '', onLeadClick }) {
       map.get(key).push(m);
     }
     return map;
-  }, [meetingsWithTime]);
+  }, [filteredMeetings]);
 
   const isToday = _isSameDay(cursor, today);
   const totalCount = filteredMeetings.length;
@@ -505,15 +480,12 @@ export function CalendarHub({ userRole = '', onLeadClick }) {
 
         <div className="flex items-center gap-2 flex-wrap">
           {isPodAdmin && (
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mr-1 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={globalView}
-                onChange={e => setGlobalView(e.target.checked)}
-                className="accent-indigo-600 w-3.5 h-3.5"
-              />
-              All pods
-            </label>
+            <Checkbox
+              checked={globalView}
+              onChange={e => setGlobalView(e.target.checked)}
+              label="All pods"
+              className="mr-1 text-xs font-semibold text-slate-500"
+            />
           )}
 
           {/* Day / Week / Month segmented control */}
@@ -578,31 +550,21 @@ export function CalendarHub({ userRole = '', onLeadClick }) {
           fetched meetings, so no extra API round trip. SDR dropdown only shows
           when the range actually has more than one assignee to filter by. */}
       <div className="calhub-card flex items-center gap-2 mb-5 px-4 py-2.5 flex-wrap">
-        <div className="relative flex-1 min-w-[180px]">
-          {/* inset-y-0 + flex/items-center spans the input's full height and
-              centers the icon within it -- avoids the top-1/2/-translate-y-1/2
-              trick, whose centering math depends on the span's own box height
-              (line-height, inherited font metrics) rather than the input's. */}
-          <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-slate-300 pointer-events-none">
-            <SearchIcon />
-          </span>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by lead or company…"
-            className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-indigo-300"
-          />
-        </div>
+        <SearchInput
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search by lead or company…"
+          className="flex-1 min-w-[180px] py-0"
+          inputClassName="text-xs py-1.5"
+        />
         {sdrOptions.length > 1 && (
-          <select
+          <Select
             value={sdrFilter}
-            onChange={e => setSdrFilter(e.target.value)}
-            className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 bg-white focus:outline-none focus:border-indigo-300"
-          >
-            <option value="">All SDRs/AEs</option>
-            {sdrOptions.map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
+            onChange={setSdrFilter}
+            options={[{ value: '', label: 'All SDRs/AEs' }, ...sdrOptions.map(name => ({ value: name, label: name }))]}
+            placeholder="All SDRs/AEs"
+            className="text-xs font-medium px-2.5 py-1.5 text-slate-600"
+          />
         )}
       </div>
 
@@ -724,12 +686,10 @@ export function CalendarHub({ userRole = '', onLeadClick }) {
       )}
 
       {!loading && !error && !asList && totalCount === 0 && (
-        <div className="flex flex-col items-center justify-center gap-2 py-14 text-slate-400">
-          <div className="w-11 h-11 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
-            <CalendarIcon />
-          </div>
-          <p className="text-sm font-medium">No meetings scheduled{rangeMode === 'week' ? ' this week' : ' this month'}.</p>
-        </div>
+        <EmptyState
+          icon={CalendarIcon}
+          message={`No meetings scheduled${rangeMode === 'week' ? ' this week' : ' this month'}.`}
+        />
       )}
 
       <MeetingDetailPanel

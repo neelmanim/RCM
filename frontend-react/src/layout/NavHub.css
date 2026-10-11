@@ -134,11 +134,37 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 
 .nh-nav__label {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ── "New feature" hint — clears itself after first visit (seenFlag) ───────── */
+.nh-nav__badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #fff;
+  background: #7c3aed;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.nh-nav__dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7c3aed;
+  border: 1.5px solid var(--nh-sidebar-bg, #1f2333);
 }
 
 /* Collapsed — center icons */
@@ -391,102 +417,6 @@
   background: #94a3b8;
   border: 1px solid white;
 }
-
-.nh-bell__panel {
-  position: absolute;
-  right: 0;
-  top: 44px;
-  width: 320px;
-  max-height: 380px;
-  display: flex;
-  flex-direction: column;
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.12);
-  overflow: hidden;
-  z-index: 60;
-}
-
-.nh-bell__header {
-  padding: 12px 14px;
-  border-bottom: 1px solid #f1f5f9;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.nh-bell__count {
-  font-size: 0.65rem;
-  font-weight: 700;
-  background: #eef2ff;
-  color: #4f46e5;
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-.nh-bell__body { overflow-y: auto; }
-
-.nh-bell__empty {
-  padding: 32px 16px;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 0.82rem;
-}
-
-.nh-bell__item {
-  padding: 10px 14px;
-  border-bottom: 1px solid #f8fafc;
-}
-.nh-bell__item:hover { background: #f8fafc; }
-
-.nh-bell__item-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.nh-bell__item-title {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.nh-bell__item-time {
-  font-size: 0.65rem;
-  color: #94a3b8;
-  white-space: nowrap;
-}
-
-.nh-bell__item-lead {
-  font-size: 0.72rem;
-  color: #64748b;
-  margin-top: 2px;
-}
-
-.nh-bell__item-actions {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-}
-.nh-bell__item-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: #64748b;
-  background: transparent;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 3px 7px;
-  cursor: pointer;
-}
-.nh-bell__item-actions button:hover { background: #f1f5f9; }
 
 .nh-btn {
   display: inline-flex;
@@ -852,7 +782,7 @@
 .nh-aircall-optout:hover { color: #64748b; }
 
 /* Footer strip, not a glued-on afterthought under the embed — separated the
-   same way .nh-bell__item already uses this border color elsewhere. */
+   with the same border color the rest of the nav uses. */
 .nh-aircall-optout {
   margin-top: 4px;
   padding-top: 10px;
@@ -937,4 +867,66 @@
 
 @media (prefers-reduced-motion: reduce) {
   .nh-aircall-tour { animation: none; }
+}
+
+/* ── Mobile nav drawer ───────────────────────────────────────────────────────
+   RCA 2026-08-26: the sidebar migrated from vanilla JS (which had a real
+   @media(max-width:768px) responsive layout, now dead — it targeted classes
+   this component doesn't use) to React with NO mobile handling at all: a
+   fixed 220px (or 72px collapsed) column, always in-flow, permanently eating
+   over half of a phone-width viewport. Below the breakpoint the sidebar
+   becomes an off-canvas drawer instead — hidden by default, slid in via the
+   topbar's hamburger button, with a backdrop to dismiss it. */
+.nh-mobile-menu-btn {
+  display: none; /* shown only under the breakpoint below */
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nh-sidebar-bg, #1a2035);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.nh-mobile-menu-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.nh-mobile-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .nh-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: var(--nh-sidebar-width) !important;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 200;
+  }
+  .nh-sidebar--mobile-open {
+    transform: translateX(0);
+  }
+  /* Collapse-to-icons is a desktop-only affordance — the mobile drawer
+     always shows full labels, closing is the "collapse" equivalent. */
+  .nh-collapse-btn {
+    display: none;
+  }
+
+  .nh-mobile-menu-btn {
+    display: flex;
+  }
+
+  .nh-mobile-backdrop.nh-mobile-backdrop--open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 199;
+  }
 }

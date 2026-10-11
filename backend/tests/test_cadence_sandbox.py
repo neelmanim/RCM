@@ -35,15 +35,13 @@ class TestDestinationOverrideGuard:
             models.JourneyExecutionQueue.enrollment_id == enrollment.id
         ).first()
 
-        fake_result = SendMessageResult(success=True, provider="rcm", channel="whatsapp", message_id="wa-1")
-        with patch("journey_engine.channels.whatsapp_channel.get_messaging_provider_for_org") as mock_get:
-            mock_provider = MagicMock()
-            mock_provider.send.return_value = fake_result
-            mock_get.return_value = mock_provider
+        fake_result = SendMessageResult(success=True, provider="messenger", channel="whatsapp", message_id="wa-1")
+        with patch("messaging_provider_provider.AlternateMessenger.send",
+                    return_value=fake_result) as mock_send:
             je._handle_channel_node(db, enrollment, journey, queue_row, WHATSAPP_GRAPH, "whatsapp", WHATSAPP_GRAPH["nodes"][1]["data"])
             db.commit()
 
-        call_kwargs = mock_provider.send.call_args.kwargs
+        call_kwargs = mock_send.call_args.kwargs
         assert call_kwargs["phone"] == "911111111111"
         assert call_kwargs["phone"] != lead.phone
 
@@ -61,11 +59,11 @@ class TestDestinationOverrideGuard:
             models.JourneyExecutionQueue.enrollment_id == enrollment.id
         ).first()
 
-        with patch("journey_engine.channels.whatsapp_channel.get_messaging_provider_for_org") as mock_get:
+        with patch("messaging_provider_provider.AlternateMessenger.send") as mock_send:
             je._handle_channel_node(db, enrollment, journey, queue_row, WHATSAPP_GRAPH, "whatsapp", WHATSAPP_GRAPH["nodes"][1]["data"])
             db.commit()
 
-        mock_get.assert_not_called()
+        mock_send.assert_not_called()
         assert queue_row.status == "failed"
 
     def test_sms_send_to_test_lead_targets_sandbox_number_not_lead_phone(self, db):
@@ -88,12 +86,15 @@ class TestDestinationOverrideGuard:
             models.JourneyExecutionQueue.enrollment_id == enrollment.id
         ).first()
 
-        with patch("journey_engine.channels.sms_channel.sms_service.send_sms") as mock_send:
-            mock_send.return_value = {"success": True, "message_id": "sms-1"}
+        from messaging_provider import SendMessageResult
+        with patch("messaging_provider_provider.AlternateMessenger.send",
+                    return_value=SendMessageResult(
+                        success=True, provider="messenger", channel="sms", message_id="sms-1",
+                    )) as mock_send:
             je._handle_channel_node(db, enrollment, journey, queue_row, SMS_GRAPH, "sms", SMS_GRAPH["nodes"][1]["data"])
             db.commit()
 
-        assert mock_send.call_args[0][2] == "922222222222"
+        assert mock_send.call_args.kwargs["phone"] == "922222222222"
 
 
 FORCE_STEP_GRAPH = {
@@ -183,6 +184,24 @@ class TestSandboxEndpoints:
         enrollment = db.query(models.JourneyEnrollment).filter(models.JourneyEnrollment.id == body["enrollment_id"]).first()
         assert enrollment is not None
         assert enrollment.lead_id == lead.id
+
+    def test_enroll_test_lead_sets_a_synthetic_sf_lead_id(self, client_as_pod_admin, db):
+        """RCA 2026-09-30: leads.sf_lead_id is NOT NULL in the real (Postgres)
+        database — models.py's nullable=True doesn't reflect it, and nothing
+        ever migrated the column, so this never surfaced against SQLite. Every
+        real enroll-test-lead call 500'd from v13.0.0 until this was caught by
+        an end-to-end staging run. routes/lead_routes.py's manual-create path
+        already carries the same fix (`f"manual-{uuid4().hex[:8]}"`); this is
+        that same fix applied here, not a new pattern."""
+        settings = models.SyncSettings(id=1, sandbox_test_phone_number="911111111111")
+        db.add(settings)
+        db.commit()
+
+        journey_id = self._publish(client_as_pod_admin, FORCE_STEP_GRAPH)
+        resp = client_as_pod_admin.post(f"/api/journeys/{journey_id}/sandbox/enroll-test-lead", json={})
+        assert resp.status_code == 200
+        lead = db.query(models.Lead).filter(models.Lead.id == resp.json()["lead_id"]).first()
+        assert lead.sf_lead_id and lead.sf_lead_id.startswith("manual-")
 
     def test_enroll_test_lead_ignores_any_phone_the_caller_passes(self, client_as_pod_admin, db):
         settings = models.SyncSettings(id=1, sandbox_test_phone_number="911111111111")

@@ -46,6 +46,22 @@ class TestCreateLead:
         })
         assert resp.status_code == 409
 
+    def test_a_deleted_or_sandbox_test_lead_is_not_a_duplicate(self, client, db):
+        """Creating was refused with "already exists" pointing at a deleted
+        lead (or a Cadence Sandbox test lead sharing the sandbox phone) that
+        nobody can open."""
+        from datetime import datetime, timezone
+        gone = create_test_lead(db, phone="+1 646 431 3060", email="gone@test.com")
+        gone.deleted_at = datetime.now(timezone.utc)
+        sandbox = create_test_lead(db, first_name="Sandbox", last_name="Lead", phone="+1 646 431 3061", email=None)
+        sandbox.is_test = True
+        db.commit()
+        for body in ({"first_name": "New", "last_name": "Person", "email": "gone@test.com"},
+                     {"first_name": "Re", "last_name": "Added", "phone": "16464313060"},
+                     {"first_name": "Demo", "last_name": "Lead", "phone": "16464313061"}):
+            resp = client.post("/api/leads", json=body)
+            assert resp.status_code == 200, (body, resp.json())
+
     def test_create_lead_blocks_name_company_duplicate(self, client, db):
         create_test_lead(db, first_name="Sam", last_name="Iyer", company="Beta Corp", email=None)
         resp = client.post("/api/leads", json={
@@ -60,6 +76,38 @@ class TestCreateLead:
         })
         assert resp.status_code == 200
 
+    # RCA 2026-08-14 (LIVE, prod): a call placed via Aircall to a brand-new
+    # number auto-creates a nameless placeholder Lead (first_name="",
+    # last_name="Unknown") via the webhook's _find_or_create_lead_by_phone.
+    # The SDR's next "Add Lead" for that same contact hit the phone-duplicate
+    # guard above and was hard-blocked — discarding the real name and leaving
+    # the placeholder as the only, permanently nameless record. This must
+    # enrich the placeholder in place instead of blocking it.
+    def test_create_lead_enriches_dialer_placeholder_instead_of_blocking(self, client, db):
+        placeholder = create_test_lead(
+            db, first_name="", last_name="Unknown", email=None,
+            phone="+91 84311 50795", company=None, lead_source="aircall_webhook:2026-08-14",
+        )
+        resp = client.post("/api/leads", json={
+            "first_name": "Viren", "last_name": "Baid", "phone": "8431150795", "company": "Acme"
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == placeholder.id  # same row — call history stays attached
+        assert data["first_name"] == "Viren"
+        assert data["last_name"] == "Baid"
+        assert data["company"] == "Acme"
+
+    def test_create_lead_still_blocks_a_real_duplicate(self, client, db):
+        # A placeholder-shaped last name ("Unknown") with a real first name is
+        # not a placeholder — must still be treated as a genuine duplicate.
+        create_test_lead(db, first_name="Someone", last_name="Unknown", email=None,
+                          phone="+91 90000 00001", company="Acme")
+        resp = client.post("/api/leads", json={
+            "first_name": "New", "last_name": "Person", "phone": "9000000001"
+        })
+        assert resp.status_code == 409
+
 
 # ── Get Lead Detail ──────────────────────────────────────────────────────────
 
@@ -73,6 +121,17 @@ class TestGetLead:
 
     def test_get_nonexistent_lead_404(self, client):
         resp = client.get("/api/leads/does-not-exist")
+        assert resp.status_code == 404
+
+    def test_get_soft_deleted_lead_404s(self, client, db):
+        """Bug report (2026-09-22): a soft-deleted lead (deleted_at set) still
+        rendered when opened by direct #lead-detail/<id> link, because this
+        endpoint never filtered deleted_at like the list endpoints do."""
+        from datetime import datetime, timezone
+        lead = create_test_lead(db, email="softdeleted@test.com")
+        lead.deleted_at = datetime.now(timezone.utc)
+        db.commit()
+        resp = client.get(f"/api/leads/{lead.id}")
         assert resp.status_code == 404
 
     def test_get_lead_last_call_outcome_reflects_dialer_call(self, client, db):
@@ -351,6 +410,21 @@ class TestGetLeads:
             "— a context column looks like it's deferred-loading per row"
         )
 
+    def test_get_leads_includes_instantly_interest_label(self, client, db):
+        """Instantly.ai sync (v13.2.0) writes Lead.instantly_interest_label —
+        confirm it actually reaches the leads-hub list response the frontend
+        badge (columns.jsx) reads, and that it's in SUMMARY_COLUMNS so it
+        doesn't silently N+1 per the RCA this file already guards above."""
+        lead = create_test_lead(db, email="instantly-signal@test.com")
+        lead.instantly_interest_label = "Interested"
+        create_test_lead(db, email="no-signal@test.com")
+        db.commit()
+
+        resp = client.get("/api/leads?per_page=10&sort_by=name")
+        rows = {r["email"]: r for r in resp.json()["data"]}
+        assert rows["instantly-signal@test.com"]["instantly_interest_label"] == "Interested"
+        assert rows["no-signal@test.com"]["instantly_interest_label"] is None
+
     def test_get_leads_ids_only(self, client, db):
         for i in range(5):
             create_test_lead(db, last_name=f"Ids{i}", email=f"ids{i}@test.com")
@@ -443,6 +517,82 @@ class TestGetLeads:
         resp = client.get("/api/leads?sort_by=not_a_real_column")
         assert resp.status_code == 200
 
+    # RCA 2026-08-17 (Himanshu's question — is the Power Dialer sequence
+    # contact-wise or account-wise): it was neither, pure priority_score with
+    # no company tiebreak. sort_by=account groups all contacts at the same
+    # company consecutively.
+    def test_sort_by_account_groups_same_company_leads_together(self, client, db):
+        # Two Acme contacts (one low, one high priority) should sit adjacent,
+        # ahead of/behind Zeta's single contact per alphabetical grouping —
+        # never interleaved with it regardless of priority_score.
+        acme_low = create_test_lead(db, email="acct_acme_low@t.com", company="Acme")
+        acme_low.priority_score = 25
+        acme_high = create_test_lead(db, email="acct_acme_high@t.com", company="Acme")
+        acme_high.priority_score = 100
+        zeta = create_test_lead(db, email="acct_zeta@t.com", company="Zeta")
+        zeta.priority_score = 100
+        db.commit()
+
+        resp = client.get("/api/leads?sort_by=account")
+        assert resp.status_code == 200
+        ids = [d["id"] for d in resp.json()["data"]]
+        acme_low_i, acme_high_i, zeta_i = ids.index(acme_low.id), ids.index(acme_high.id), ids.index(zeta.id)
+        # Both Acme contacts come before Zeta (alphabetical company grouping)...
+        assert acme_low_i < zeta_i and acme_high_i < zeta_i
+        # ...and the higher-priority Acme contact leads within the group.
+        assert acme_high_i < acme_low_i
+
+    # RCA 2026-08-21 (live, reported by an SDR and separately confirmed on
+    # the Power Dialer's "Account (group by company)" sequence): company-less
+    # leads sorted to the TOP under sort_by=account and the no-sort default —
+    # coalesce(company, '') then plain ASC puts an empty string before every
+    # real company name. Looked exactly like grouping was broken.
+    def test_sort_by_account_pushes_no_company_leads_to_the_bottom(self, client, db):
+        acme = create_test_lead(db, email="acct_has_company@t.com", company="Acme")
+        acme.priority_score = 25
+        no_company = create_test_lead(db, email="acct_no_company@t.com", company=None)
+        no_company.priority_score = 100  # even top priority must still sort last
+        db.commit()
+
+        resp = client.get("/api/leads?sort_by=account")
+        assert resp.status_code == 200
+        ids = [d["id"] for d in resp.json()["data"]]
+        assert ids.index(acme.id) < ids.index(no_company.id)
+
+    def test_default_sort_pushes_no_company_leads_to_the_bottom(self, client, db):
+        acme = create_test_lead(db, email="default_has_company@t.com", company="Acme")
+        no_company = create_test_lead(db, email="default_no_company@t.com", company="")
+        db.commit()
+
+        resp = client.get("/api/leads")
+        assert resp.status_code == 200
+        ids = [d["id"] for d in resp.json()["data"]]
+        assert ids.index(acme.id) < ids.index(no_company.id)
+
+    # RCA 2026-08-17: stakeholder ask — pull a cadence's actively-enrolled
+    # leads into the Power Dialer for a manual call step.
+    def test_journey_id_filters_to_actively_enrolled_leads(self, client, db):
+        from conftest import create_test_journey_enrollment
+        enrolled = create_test_lead(db, email="enrolled@t.com", status="Calling")
+        not_enrolled = create_test_lead(db, email="not_enrolled@t.com", status="Calling")
+        create_test_journey_enrollment(db, lead_id=enrolled.id, journey_id="journey-1", status="active")
+
+        resp = client.get("/api/leads?journey_id=journey-1")
+        assert resp.status_code == 200
+        ids = [d["id"] for d in resp.json()["data"]]
+        assert enrolled.id in ids
+        assert not_enrolled.id not in ids
+
+    def test_journey_id_excludes_non_active_enrollments(self, client, db):
+        from conftest import create_test_journey_enrollment
+        completed_lead = create_test_lead(db, email="completed_enrollment@t.com", status="Calling")
+        create_test_journey_enrollment(db, lead_id=completed_lead.id, journey_id="journey-2", status="completed")
+
+        resp = client.get("/api/leads?journey_id=journey-2")
+        assert resp.status_code == 200
+        ids = [d["id"] for d in resp.json()["data"]]
+        assert completed_lead.id not in ids
+
 
 # ── My Leads (SDR) ──────────────────────────────────────────────────────────
 
@@ -481,6 +631,51 @@ class TestGetMyLeads:
         assert "id" in first
         assert "email" not in first
 
+    def test_call_count_includes_dialer_only_calls(self, client_as_sdr, db):
+        # RCA 2026-08-25: a lead called via the in-app dialer gets its outcome
+        # attached directly to the DialerCall row (call_routes.log_call's
+        # attached_to_dialer branch) with no new CallLog row created — the
+        # "Calls" column used to only tally CallLog and showed 0 forever for
+        # these leads despite real calls being logged.
+        sdr = create_test_user(db, id="sdr-user-id", email="dialer_count@test.com", role="SDR")
+        lead = create_test_lead(db, email="dialeronly@t.com")
+        sdr.assigned_leads.append(lead)
+        db.commit()
+        create_test_dialer_call(db, lead.id, sdr.id, outcome="Interested")
+
+        resp = client_as_sdr.get("/api/leads/my")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data) == 1
+        assert data[0]["call_count"] == 1
+
+    def test_call_count_does_not_double_count_paired_dialer_call(self, client_as_sdr, db):
+        # A DialerCall auto-logged with a paired CallLog (dialer_call_id set)
+        # represents one physical call — must count once, not twice.
+        sdr = create_test_user(db, id="sdr-user-id", email="paired_count@test.com", role="SDR")
+        lead = create_test_lead(db, email="paired@t.com")
+        sdr.assigned_leads.append(lead)
+        db.commit()
+        dialer_call = create_test_dialer_call(db, lead.id, sdr.id, outcome="Interested")
+        call_log = models.CallLog(lead_id=lead.id, user_id=sdr.id, outcome="Interested", dialer_call_id=dialer_call.id)
+        db.add(call_log)
+        db.commit()
+
+        resp = client_as_sdr.get("/api/leads/my")
+        data = resp.json()["data"]
+        assert data[0]["call_count"] == 1
+
+    def test_call_count_excludes_failed_dialer_calls(self, client_as_sdr, db):
+        sdr = create_test_user(db, id="sdr-user-id", email="failed_count@test.com", role="SDR")
+        lead = create_test_lead(db, email="faileddial@t.com")
+        sdr.assigned_leads.append(lead)
+        db.commit()
+        create_test_dialer_call(db, lead.id, sdr.id, status="FAILED")
+
+        resp = client_as_sdr.get("/api/leads/my")
+        data = resp.json()["data"]
+        assert data[0]["call_count"] == 0
+
 
 # ── Dashboard Stats ──────────────────────────────────────────────────────────
 
@@ -499,6 +694,25 @@ class TestDashboardStats:
         assert data["status_counts"]["Calling"] == 1
         assert data["status_counts"]["Meeting Scheduled"] == 1
         assert "recent_leads" in data
+
+    def test_calls_today_does_not_double_count_auto_logged_dialer_calls(self, client, db):
+        """RCA 2026-08-20 (live prod, confirmed 27-37% overcount): dialer_service
+        ._auto_log_outcome() creates a CallLog with dialer_call_id set to the
+        DialerCall it mirrors. calls_today used to sum DialerCall rows AND
+        CallLog rows with no exclusion, double-counting every auto-tagged call."""
+        user = create_test_user(db, email="dedup@t.com")
+        lead = create_test_lead(db, email="dedup-lead@t.com", status="Calling")
+        dc = create_test_dialer_call(db, lead.id, user.id, outcome="No Answer")
+        auto_log = models.CallLog(
+            lead_id=lead.id, user_id=user.id, outcome="No Answer",
+            notes="[Auto-logged from Aircall tag: test]", dialer_call_id=dc.id,
+        )
+        db.add(auto_log)
+        db.commit()
+
+        resp = client.get("/api/leads/dashboard-stats")
+        assert resp.status_code == 200
+        assert resp.json()["calls_today"] == 1
 
 
 # ── Kanban ───────────────────────────────────────────────────────────────────
@@ -523,6 +737,33 @@ class TestUpdateLead:
         assert resp.status_code == 200
         assert resp.json()["company"] == "NewCo"
         assert resp.json()["first_name"] == "Updated"
+
+    def test_opt_out_sets_unsubscribed_at(self, client, db):
+        # RCA 2026-08-24: do_not_contact/unsubscribed_at were already enforced
+        # by the dialer and journey engine but nothing could ever set them —
+        # this is the write path that was missing entirely.
+        lead = create_test_lead(db, email="optout@t.com")
+        assert lead.do_not_contact is False
+        assert lead.unsubscribed_at is None
+        resp = client.patch(f"/api/leads/{lead.id}", json={"do_not_contact": True})
+        assert resp.status_code == 200
+        db.refresh(lead)
+        assert lead.do_not_contact is True
+        assert lead.unsubscribed_at is not None
+
+    def test_opt_out_reflected_in_detail_response(self, client, db):
+        # RCA 2026-08-24 (live, prod): the write path above was correct, but
+        # _lead_to_dict() never included do_not_contact/unsubscribed_at in
+        # its output — the frontend's "Opted Out" badge and "Mark Opted Out"
+        # button both read this field, so it stayed permanently wrong
+        # regardless of the actual DB state. A pure ORM-attribute test (like
+        # the one above) can't catch a serializer omission — only asserting
+        # on the actual JSON response can.
+        lead = create_test_lead(db, email="optoutdetail@t.com")
+        client.patch(f"/api/leads/{lead.id}", json={"do_not_contact": True})
+        detail = client.get(f"/api/leads/{lead.id}").json()
+        assert detail["do_not_contact"] is True
+        assert detail["unsubscribed_at"] is not None
 
     def test_update_status_creates_audit_log(self, client, db):
         lead = create_test_lead(db, email="audit@t.com", status="Lead Assigned")
@@ -648,6 +889,21 @@ class TestStatusHistory:
         data = resp.json()
         assert len(data) == 1
         assert data[0]["to_status"] == "Disqualified"
+
+
+class TestFieldHistory:
+
+    def test_manual_edit_via_patch_is_recorded_with_the_acting_user(self, client, db):
+        lead = create_test_lead(db, email="fieldhist@t.com", first_name="Old")
+        resp = client.patch(f"/api/leads/{lead.id}", json={"first_name": "New"})
+        assert resp.status_code == 200
+
+        resp = client.get(f"/api/leads/{lead.id}/field-history")
+        assert resp.status_code == 200
+        data = resp.json()
+        change = next(r for r in data if r["field_name"] == "first_name" and r["new_value"] == "New")
+        assert change["old_value"] == "Old"
+        assert change["changed_by"]  # attributed to the requesting test user, not "system"
 
 
 # ── Activity Feed ────────────────────────────────────────────────────────────

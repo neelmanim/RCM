@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TodayStatsPanel } from '../../features/power-dialer-hub/components/TodayStatsPanel';
 import { CallsService } from '../../services/api';
 
@@ -19,7 +20,8 @@ const statsWithoutRecording = {
 };
 
 describe('TodayStatsPanel', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
+  afterEach(() => vi.useRealTimers());
 
   it('shows a dash for a call with no recording', async () => {
     CallsService.getTodayCalls.mockResolvedValue(statsWithoutRecording);
@@ -59,37 +61,50 @@ describe('TodayStatsPanel', () => {
   });
 
   it('refetches for the picked date and shows a "Today" reset button once changed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 8, 15)); // Sep 15, 2026 — fixed "today"
     const emptyDay = { ...statsWithRecording, calls: [], summary: { ...statsWithRecording.summary, total: 0, connected: 0 } };
     CallsService.getTodayCalls
       .mockResolvedValueOnce(statsWithRecording) // initial mount, today
       .mockResolvedValueOnce(emptyDay);          // after date change
 
+    const user = userEvent.setup();
     render(<TodayStatsPanel />);
     await waitFor(() => expect(screen.getByText('Jane Doe')).toBeInTheDocument());
     expect(screen.queryByText('Today')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('Select date'), { target: { value: '2026-08-01' } });
+    // DatePicker opens a calendar popover — "today" is frozen to Sep 15, 2026
+    // above (real wall-clock date drifts and previously broke this), so go
+    // back one month to reach Aug 1, 2026, then click that day.
+    await user.click(screen.getByRole('button', { name: 'Select date' }));
+    await user.click(screen.getByRole('button', { name: 'Go to the Previous Month' }));
+    await user.click(screen.getByRole('button', { name: 'Saturday, August 1st, 2026' }));
 
     await waitFor(() => expect(CallsService.getTodayCalls).toHaveBeenLastCalledWith('2026-08-01'));
     expect(screen.getByText('Calls')).toBeInTheDocument(); // title drops "Today's" for a past date
     await waitFor(() => expect(screen.getByText('No calls logged on this date.')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByText('Today'));
+    await user.click(screen.getByText('Today'));
     await waitFor(() => expect(screen.getByText("Today's Calls")).toBeInTheDocument());
   });
 
   it('reports the real total via onTotalChange only while viewing today', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 8, 15)); // Sep 15, 2026 — fixed "today"
     const pastDay = { ...statsWithRecording, calls: [], summary: { ...statsWithRecording.summary, total: 3 } };
     CallsService.getTodayCalls
       .mockResolvedValueOnce(statsWithRecording) // today, total 1
       .mockResolvedValueOnce(pastDay);           // a past date, total 3 — must NOT report this
 
+    const user = userEvent.setup();
     const onTotalChange = vi.fn();
     render(<TodayStatsPanel onTotalChange={onTotalChange} />);
     await waitFor(() => expect(onTotalChange).toHaveBeenCalledWith(1));
 
     onTotalChange.mockClear();
-    fireEvent.change(screen.getByLabelText('Select date'), { target: { value: '2026-08-01' } });
+    await user.click(screen.getByRole('button', { name: 'Select date' }));
+    await user.click(screen.getByRole('button', { name: 'Go to the Previous Month' }));
+    await user.click(screen.getByRole('button', { name: 'Saturday, August 1st, 2026' }));
     await waitFor(() => expect(CallsService.getTodayCalls).toHaveBeenLastCalledWith('2026-08-01'));
     expect(onTotalChange).not.toHaveBeenCalled();
   });
@@ -155,11 +170,13 @@ describe('TodayStatsPanel', () => {
       ],
     };
     CallsService.getTodayCalls.mockResolvedValue(twoOutcomes);
+    const user = userEvent.setup();
     render(<TodayStatsPanel />);
     await waitFor(() => expect(screen.getByText('Jane Doe')).toBeInTheDocument());
     expect(screen.getByText('John Smith')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByDisplayValue('All outcomes'), { target: { value: 'No Answer' } });
+    await user.click(screen.getByRole('button', { name: 'All outcomes' }));
+    await user.click(screen.getByRole('menuitem', { name: 'No Answer' }));
     expect(screen.queryByText('Jane Doe')).not.toBeInTheDocument();
     expect(screen.getByText('John Smith')).toBeInTheDocument();
   });
@@ -192,10 +209,10 @@ describe('TodayStatsPanel', () => {
     render(<TodayStatsPanel />);
     await waitFor(() => expect(screen.getByText('Lead 0')).toBeInTheDocument());
 
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+    expect(screen.getByText('1 / 2')).toBeInTheDocument();
     expect(screen.queryByText('Lead 19')).not.toBeInTheDocument(); // page 2, not shown yet
 
-    fireEvent.click(screen.getByText('Page 1 of 2').parentElement.querySelector('button:last-child'));
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
     await waitFor(() => expect(screen.getByText('Lead 19')).toBeInTheDocument());
     expect(screen.queryByText('Lead 0')).not.toBeInTheDocument();
   });

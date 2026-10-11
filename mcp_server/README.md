@@ -1,4 +1,4 @@
-# RCM MCP server
+# Alternate CRM MCP server
 
 Read-only lead/call data access for internal teams, via Claude — no more asking
 engineering for one-off data pulls. Wraps `backend/routes/public_api_routes.py`;
@@ -15,8 +15,10 @@ uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
 ```
 
-Get an API key: Admin Settings -> Public API tab in RCM (generates one if
-none exists yet).
+Get an API key (Super Admin only): **Control Center → Integrations tab →
+"Public API — CMT ↔ Salesforce Bridge" card → Generate New Key**. Shown once —
+copy it immediately. Full step-by-step walkthrough with both staging/prod URLs:
+`docs/MCP_SETUP.md`.
 
 Register with your MCP client (e.g. Claude Code's `.mcp.json`, or Claude
 Desktop's config):
@@ -24,12 +26,12 @@ Desktop's config):
 ```json
 {
   "mcpServers": {
-    "rcm": {
+    "alternatecrm": {
       "command": "/absolute/path/to/mcp_server/.venv/bin/python",
-      "args": ["/absolute/path/to/mcp_server/rcm_mcp.py"],
+      "args": ["/absolute/path/to/mcp_server/alternatecrm_mcp.py"],
       "env": {
-        "RCM_BASE_URL": "https://api.alternatecrm.com",
-        "RCM_API_KEY": "<your key>"
+        "ALTERNATE_CRM_BASE_URL": "https://api.alternatecrm.staging.in",
+        "ALTERNATE_CRM_API_KEY": "<your key>"
       }
     }
   }

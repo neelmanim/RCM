@@ -1,21 +1,18 @@
 # ── journey_engine/channels/email_channel.py ─────────────────────────────────
 """
-Email channel for Sales Journey — wraps the existing Nylas send path
-(routes/email_routes.py) rather than reimplementing it. Uses a sync httpx
-client (not AsyncClient) since journey_engine runs on a scheduled_jobs.py
-threading.Timer thread, not inside an async FastAPI request.
+Email channel for Sales Journey — sends via email_send.send_email(),
+the shared Nylas send path also used by Email Campaigns (email_send.py),
+rather than reimplementing it. That helper runs sync httpx (not AsyncClient)
+since journey_engine runs on a scheduled_jobs.py threading.Timer thread, not
+inside an async FastAPI request.
 """
 import hashlib
 import logging
 
-import httpx
-
 import models
-from email_utils import sanitize_preview as _sanitize_preview
 from journey_engine.merge_fields import apply_merge_fields as _apply_merge_fields
-from routes.email_routes import NYLAS_API_BASE, _get_nylas_config, _get_api_key, _plain_text_to_html
 
-from .base import ChannelProvider, SendResult
+from .base import ChannelProvider, SendResult, sender_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -39,95 +36,85 @@ def _pick_variant(node_data: dict, enrollment_id: str, node_id: str) -> dict:
     return {"key": variant.get("key") or str(idx), "subject": variant.get("subject", ""), "body": variant.get("body", "")}
 
 
+def resolve_subject_body(node_data: dict, lead, enrollment_id: str, node_id: str, sender=None) -> dict:
+    """Pure merge-field resolution, no send — shared by EmailChannelProvider.send
+    (automated) and journey_engine.engine._handle_manual_email_node's 1st pass
+    (manual: resolves the draft a rep reviews before approving). Variant
+    assignment stays deterministic either way, so a manual step's draft and
+    its eventual send never disagree on which A/B variant was shown.
+    Returns {"subject", "body", "is_html", "variant_key"}."""
+    variant = _pick_variant(node_data, enrollment_id, node_id or "")
+    is_html = node_data.get("body_format") == "html"
+    return {
+        "subject": _apply_merge_fields(variant["subject"], lead, sender=sender),
+        "body": _apply_merge_fields(variant["body"], lead, escape_html=is_html, sender=sender),
+        "is_html": is_html,
+        "variant_key": variant["key"],
+    }
+
+
+def _find_sender_mailbox(db, lead, journey):
+    """(sender, mailbox, None) for the first sender candidate with a connected
+    mailbox — the lead's rep, else the cadence owner (base.sender_candidates)
+    — or (None, None, error) when nobody can send."""
+    candidates = sender_candidates(db, lead, journey)
+    for user in candidates:
+        mailbox = db.query(models.UserMailbox).filter(
+            models.UserMailbox.user_id == user.id,
+            models.UserMailbox.status == "connected",
+        ).first()
+        if mailbox:
+            if user.id != candidates[0].id:
+                logger.info(f"[Cadence] {candidates[0].email} has no connected mailbox — sent as {user.email}")
+            return user, mailbox, None
+    names = ", ".join(u.name or u.email for u in candidates) or "the cadence owner"
+    return None, None, f"No connected mailbox for {names}"
+
+
 class EmailChannelProvider(ChannelProvider):
     channel_name = "email"
 
+    def preflight(self, db, lead, journey):
+        if not lead.email:
+            return "Lead has no email address"
+        return _find_sender_mailbox(db, lead, journey)[2]
+
     def send(self, db, lead, journey, node_data: dict, enrollment=None, node_id: str = None) -> SendResult:
+        # Deferred, not top-level: email_send.py itself imports
+        # journey_engine.channels.base.SendResult, and importing ANY submodule
+        # of a package first runs that package's __init__.py — which imports
+        # this file. A top-level `from email_send import send_email`
+        # here closes that into a real circular import (surfaces as an
+        # ImportError the moment something imports email_send.py before
+        # journey_engine.channels has fully loaded, e.g. scheduled_jobs.py's
+        # email-campaign scheduler in isolation). Deferring it to call time
+        # breaks the cycle without changing behavior.
+        from email_send import send_email
+
         if not lead.email:
             return SendResult(success=False, error="Lead has no email address", retryable=False)
 
-        mailbox = db.query(models.UserMailbox).filter(
-            models.UserMailbox.user_id == journey.owner_id,
-            models.UserMailbox.status == "connected",
-        ).first()
-        if not mailbox:
-            return SendResult(
-                success=False,
-                error=f"Journey owner ({journey.owner_id}) has no connected mailbox",
-                retryable=False,
-            )
+        sender, mailbox, err = _find_sender_mailbox(db, lead, journey)
+        if err:
+            return SendResult(success=False, error=err, retryable=False)
 
-        try:
-            config = _get_nylas_config(db)
-            api_key = _get_api_key(config)
-        except Exception as e:
-            # _get_nylas_config/_get_api_key raise HTTPException when meant for
-            # a live request — here there's no request to return it to, so
-            # normalize to a SendResult. Retryable: a misconfigured/inactive
-            # Nylas integration can be fixed by an admin within the retry window.
-            return SendResult(success=False, error=f"Nylas not available: {e}", retryable=True)
-        variant = _pick_variant(node_data, enrollment.id if enrollment else "", node_id or "")
-        subject = _apply_merge_fields(variant["subject"], lead)
-        body = _apply_merge_fields(variant["body"], lead)
-        html_body = _plain_text_to_html(body)
+        # body_format "html" = authored in the rich-text editor (v13.0.0) — merge
+        # values are HTML-escaped into it and it's sent as HTML (sanitized by
+        # send_email). Anything else is the original plain-text body.
+        resolved = resolve_subject_body(node_data, lead, enrollment.id if enrollment else "", node_id, sender=sender)
+        subject, body, is_html = resolved["subject"], resolved["body"], resolved["is_html"]
 
-        message_payload = {
-            "to": [{"email": lead.email}],
-            "subject": subject,
-            "body": html_body,
-            "custom_headers": [{"name": "X-Mailer", "value": "RCM CRM / RCM"}],
-            # Engagement tracking (Gap: cadence emails had zero open/click
-            # visibility — the regular compose path already requests this,
-            # this channel just never did). "label" lets Nylas-side reporting
-            # correlate back to the lead independent of our own DB.
-            "tracking_options": {"opens": True, "links": True, "thread_replies": True, "label": lead.id},
-        }
-        try:
-            resp = httpx.post(
-                f"{NYLAS_API_BASE}/v3/grants/{mailbox.nylas_grant_id}/messages/send",
-                json=message_payload,
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                timeout=30,
-            )
-        except httpx.HTTPError as e:
-            return SendResult(success=False, error=str(e), retryable=True)
-
-        if 200 <= resp.status_code < 300:
-            try:
-                data = resp.json()
-                msg_data = data.get("data", {})
-                provider_ref = msg_data.get("id")
-                thread_id = msg_data.get("thread_id")
-            except Exception:
-                provider_ref = None
-                thread_id = None
-            # Log the send as LeadEmailActivity, linked back to the journey —
-            # without this row, opened_at/click_count (set later by the same
-            # Nylas webhook handler that already tracks regular email) have
-            # nothing to attach to, so a cadence email was sent but its
-            # engagement was invisible everywhere. nylas_thread_id lets the
-            # stats endpoint correlate a later inbound reply on this thread
-            # back to this specific journey/step.
-            db.add(models.LeadEmailActivity(
-                lead_id=lead.id,
-                user_id=journey.owner_id,
-                direction="outbound",
-                subject=subject,
-                body_preview=_sanitize_preview(body),
-                from_email=mailbox.email_address,
-                to_email=lead.email,
-                nylas_message_id=provider_ref,
-                nylas_thread_id=thread_id,
-                journey_id=journey.id,
-                enrollment_id=enrollment.id if enrollment else None,
-                journey_node_id=node_id,
-                variant_key=variant["key"],
-            ))
-            db.flush()
-            return SendResult(success=True, provider_ref=provider_ref)
-
-        if resp.status_code == 429:
-            return SendResult(success=False, error=f"Rate limited: {resp.text[:200]}", retryable=True)
-        if 400 <= resp.status_code < 500:
-            return SendResult(success=False, error=f"Nylas {resp.status_code}: {resp.text[:200]}", retryable=False)
-        return SendResult(success=False, error=f"Nylas {resp.status_code}: {resp.text[:200]}", retryable=True)
+        # Engagement tracking (opens/links/thread_replies) and the
+        # LeadEmailActivity write both happen inside send_email — linked
+        # back to this journey/step via extra_log_fields so opened_at/
+        # click_count (set later by the same Nylas webhook that already
+        # tracks regular email) and reply-correlation have somewhere to land.
+        # body_is_html follows the node's body_format (see above): plain text is
+        # escaped, rich-text HTML is sanitized — never the other way round.
+        result = send_email(db, mailbox, subject, body, lead, body_is_html=is_html, extra_log_fields={
+            "journey_id": journey.id,
+            "enrollment_id": enrollment.id if enrollment else None,
+            "journey_node_id": node_id,
+            "variant_key": resolved["variant_key"],
+        })
+        return SendResult(success=result.success, error=result.error, retryable=result.retryable, provider_ref=result.provider_ref)

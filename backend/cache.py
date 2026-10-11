@@ -34,7 +34,18 @@ import threading
 import time
 from typing import Any, Dict, Optional, Tuple
 
+import httpx
+
 logger = logging.getLogger(__name__)
+
+# upstash-redis hardcodes its internal httpx client to timeout=None (RCA
+# 2026-10-01: a slow/degraded Upstash endpoint blocked every cached route's
+# worker thread for 10-46s each, with app CPU and DB both idle the whole
+# time, because nothing ever timed out). The SDK exposes no public way to
+# set this, so _init_redis() below reaches into its private _http._client
+# to swap in a bounded one. ponytail: private-attribute reliance, upgrade
+# to a public `timeout=` kwarg if upstash-redis ever adds one.
+_REDIS_TIMEOUT_SECONDS = 2.0
 
 # ── TTL (seconds) per namespace ───────────────────────────────────────────────
 TTL: Dict[str, int] = {
@@ -81,7 +92,8 @@ def _init_redis():
 
     try:
         from upstash_redis import Redis
-        client = Redis(url=url, token=token)
+        client = Redis(url=url, token=token, rest_retries=0)
+        client._http._client = httpx.Client(timeout=_REDIS_TIMEOUT_SECONDS)
         client.ping()
         _redis_client = client
         _redis_available = True
@@ -116,6 +128,25 @@ def _get_store(namespace: str):
     return _stores[namespace], _locks[namespace]
 
 
+# RCA 2026-08-25: high-cardinality namespaces (leads_page/my_leads/leads_count
+# key on search text, page number, and filter combos) mint a key that's almost
+# never re-read after it expires. get_cached()'s lazy delete-on-read only ever
+# frees a key that's read again, so `store` grows for the life of the worker —
+# this is what kept OOM-killing staging even after the scheduler-timer and
+# Nylas-semaphore fixes landed (those were separate, unrelated leaks). Sweep
+# expired entries once a namespace crosses a size threshold instead of adding
+# a background job. Must be called with the namespace's lock held.
+_SWEEP_THRESHOLD = 500
+
+
+def _sweep_expired_locked(store: Dict[str, Tuple[Any, float]]) -> None:
+    if len(store) <= _SWEEP_THRESHOLD:
+        return
+    now = time.monotonic()
+    for k in [k for k, (_, expiry) in store.items() if now > expiry]:
+        del store[k]
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def get_cached(namespace: str, key: str) -> Optional[Any]:
@@ -125,9 +156,11 @@ def get_cached(namespace: str, key: str) -> Optional[Any]:
     Redis failures are silently caught — falls back to in-memory.
     """
     # Layer 1: Try Redis
+    redis_answered = False
     if _redis_available and _redis_client is not None:
         try:
             raw = _redis_client.get(_redis_key(namespace, key))
+            redis_answered = True
             if raw is not None:
                 # Upstash returns str for string values
                 value = json.loads(raw) if isinstance(raw, str) else raw
@@ -136,12 +169,19 @@ def get_cached(namespace: str, key: str) -> Optional[Any]:
                 ttl = TTL.get(namespace, DEFAULT_TTL)
                 with lock:
                     store[key] = (value, time.monotonic() + ttl)
+                    _sweep_expired_locked(store)
                 return value
         except Exception:
             pass  # Redis down or corrupt data — fall through
 
     # Layer 2: Try in-memory dict
     store, lock = _get_store(namespace)
+    if redis_answered:
+        # Redis answered "nothing here": it is the shared truth, so another worker invalidated this key (or it expired).
+        # Our own in-memory copy is stale — serving it was the "I changed a setting and it still shows the old value" bug.
+        with lock:
+            store.pop(key, None)
+        return None
     with lock:
         entry = store.get(key)
         if entry is None:
@@ -179,6 +219,7 @@ def set_cached(namespace: str, key: str, value: Any, ttl: Optional[int] = None) 
         store, lock = _get_store(namespace)
         with lock:
             store[key] = (value, time.monotonic() + ttl)
+            _sweep_expired_locked(store)
 
 
 def invalidate(namespace: str, key: Optional[str] = None) -> None:

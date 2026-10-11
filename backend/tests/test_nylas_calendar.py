@@ -88,7 +88,7 @@ class TestCreateEvent:
     def test_creates_with_participant(self, mock_post):
         mock_post.return_value = _resp(200, {"data": {"id": "evt-1", "html_link": "https://cal.example/evt-1"}})
         event = create_event(
-            "grant-1", "key", "cal-1", "Meeting: Jane Doe (Acme)", "Booked via RCM",
+            "grant-1", "key", "cal-1", "Meeting: Jane Doe (Acme)", "Booked via Alternate CRM",
             1000, 2800, participant_email="jane@acme.com", participant_name="Jane Doe",
         )
         assert event["id"] == "evt-1"
@@ -100,7 +100,7 @@ class TestCreateEvent:
     def test_creates_without_participant_when_no_email(self, mock_post):
         mock_post.return_value = _resp(200, {"data": {"id": "evt-2"}})
         event = create_event(
-            "grant-1", "key", "cal-1", "Meeting: Jane Doe (Acme)", "Booked via RCM",
+            "grant-1", "key", "cal-1", "Meeting: Jane Doe (Acme)", "Booked via Alternate CRM",
             1000, 2800, participant_email=None, participant_name="Jane Doe",
         )
         assert event["id"] == "evt-2"

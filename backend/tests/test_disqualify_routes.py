@@ -100,6 +100,8 @@ class TestApproveReject:
         assert resp.json()["count"] == 1  # only the non-terminal lead counted
 
     def test_reject_records_reason(self, client_as_pod_admin, db):
+        from tests.conftest import create_test_user
+        create_test_user(db, email="maker@t.com", id="sdr-user-id", role="SDR", pod_id="test-pod-id")   # request from their own pod
         leads = _make_leads(db, 1)
         req = models.DisqualifyRequest(
             company="Acme", lead_ids=json.dumps([leads[0].id]),

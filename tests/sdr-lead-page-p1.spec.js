@@ -3,7 +3,7 @@
 
 const { test, expect } = require('@playwright/test');
 
-const BASE = process.env.CRM_URL || 'https://rcm-frontend-staging.onrender.com';
+const BASE = process.env.CRM_URL || 'https://messenger-frontend-staging.onrender.com';
 const SDR_TOKEN = process.env.SDR_TOKEN || '';         // dialer_enabled: false
 const SDR_DIALER_TOKEN = process.env.SDR_DIALER_TOKEN || ''; // dialer_enabled: true
 const LEAD_IN_CALLING = process.env.LEAD_CALLING_ID || '';
@@ -17,7 +17,11 @@ function loginURL(token) {
 async function goToLead(page, token, leadId) {
     // Step 1: land on the app with the token so auth.js stores it in localStorage
     await page.goto(`${BASE}/?token=${token}`);
-    await page.waitForSelector('#app-sidebar', { timeout: 30000 });
+    // RCA 2026-08-24 (see tests/helpers/auth.js's loginAs): #app-sidebar
+    // hasn't existed in the current markup since the sidebar was rebuilt in
+    // React — the app loads fine, this selector was just stale. Wait on the
+    // sidebar's own visible "Dashboard" link instead, matching loginAs().
+    await page.waitForSelector('nav >> text=Dashboard', { timeout: 30000 });
     // Step 2: use hash navigation (not page.goto) so we avoid a full reload that
     // could race with localStorage auth and interrupt the SPA router
     await page.evaluate((id) => { window.location.hash = `#lead-detail/${id}`; }, leadId);
@@ -35,8 +39,23 @@ test.describe('1. Lead Detail Page Load', () => {
     test('1.1 Lead detail page renders without JS errors', async ({ page }) => {
         const errors = [];
         page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+        // /api/calls/my-active and /api/conversations/status 401 on every page
+        // load regardless of view — confirmed pre-existing global app-shell
+        // polling noise (see tests/lead-detail-hub.spec.js), not a real error.
+        // Chromium's "Failed to load resource" console text never carries the
+        // URL, so a genuine new failure can only be told apart via the
+        // network response itself.
+        const unexpectedFailures = [];
+        page.on('response', (res) => {
+            if (res.status() < 400) return;
+            const url = res.url();
+            if (url.includes('/api/calls/my-active') || url.includes('/api/conversations/status')) return;
+            unexpectedFailures.push(`${res.status()} ${url}`);
+        });
         await goToLead(page, SDR_TOKEN, LEAD_IN_ASSIGNED);
-        expect(errors.filter(e => !e.includes('favicon'))).toHaveLength(0);
+        expect(unexpectedFailures).toHaveLength(0);
+        const realErrors = errors.filter(e => !e.includes('favicon') && !e.includes('Failed to load resource'));
+        expect(realErrors).toHaveLength(0);
     });
 
     test('1.2 Lead name and company are visible', async ({ page }) => {
@@ -82,19 +101,19 @@ test.describe('1. Lead Detail Page Load', () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 test.describe('2. Dialer Gating — Call Button Labels', () => {
-    test('2.1 SDR with dialer_enabled=false sees "Log Manual Call" not "Call via RCM"', async ({ page }) => {
+    test('2.1 SDR with dialer_enabled=false sees "Log Manual Call" not "Call via Alternate Messenger"', async ({ page }) => {
         // NOTE: This test documents a known bug — the button currently shows
-        // "Call via RCM" even when dialer_enabled=false. Test is marked
+        // "Call via Alternate Messenger" even when dialer_enabled=false. Test is marked
         // as a known failure until the dialer gating bug (#1) is fixed.
         await goToLead(page, SDR_TOKEN, LEAD_IN_CALLING);
         const callBtn = page.locator('#log-call-btn').first();
         await expect(callBtn).toBeVisible();
-        // TODO: Once bug fixed, assert: expect(label).not.toContain('RCM')
+        // TODO: Once bug fixed, assert: expect(label).not.toContain('Alternate Messenger')
         expect(true).toBe(true); // placeholder — tracks bug state
     });
 
-    test('2.2 SDR with dialer_enabled=false — no RCM call button anywhere on page', async ({ page }) => {
-        // Known bug: RCM button shows for all users regardless of dialer_enabled
+    test('2.2 SDR with dialer_enabled=false — no Alternate Messenger call button anywhere on page', async ({ page }) => {
+        // Known bug: Alternate Messenger button shows for all users regardless of dialer_enabled
         // This test documents current (broken) state — will assert 0 when fixed
         await goToLead(page, SDR_TOKEN, LEAD_IN_CALLING);
         const callBtn = page.locator('#log-call-btn');
@@ -102,11 +121,11 @@ test.describe('2. Dialer Gating — Call Button Labels', () => {
         expect(true).toBe(true); // tracked in implementation_plan.md as bug #1
     });
 
-    test('2.3 SDR with dialer_enabled=true sees "Call via RCM" option', async ({ page }) => {
+    test('2.3 SDR with dialer_enabled=true sees "Call via Alternate Messenger" option', async ({ page }) => {
         if (!SDR_DIALER_TOKEN) return test.skip();
         await goToLead(page, SDR_DIALER_TOKEN, LEAD_IN_CALLING);
-        const rcmBtn = page.locator('button:has-text("RCM"), button:has-text("via RCM")').first();
-        await expect(rcmBtn).toBeVisible();
+        const messengerBtn = page.locator('button:has-text("Alternate Messenger"), button:has-text("via Alternate Messenger")').first();
+        await expect(messengerBtn).toBeVisible();
     });
 
     test('2.4 Manual call modal opens for SDR without dialer', async ({ page }) => {

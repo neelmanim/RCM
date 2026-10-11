@@ -2,7 +2,8 @@
  * nav-entry.jsx
  *
  * IIFE entry point for the NavHub bundle.
- * Exposes window.NavHub = { mount, update, unmount, isMounted, openFeedback }.
+ * Exposes window.NavHub = { mount, update, unmount, isMounted, openFeedback,
+ * focusSearch, mountViewAsBanner }.
  *
  * Called by app.js after auth:
  *   window.NavHub.mount(sidebarEl, topbarEl, props)
@@ -25,19 +26,30 @@
  */
 import React, { useState, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { NavSidebar } from './layout/NavSidebar';
 import { NavTopbar }  from './layout/NavTopbar';
 import { FeedbackModal } from './layout/FeedbackModal';
+import { ViewAsBanner } from './layout/ViewAsBanner';
+import { ToastHost } from './components/ui/Toast';
 import './layout/NavHub.css';
 import './nav-tailwind.css';
 
 let _sidebarRoot = null;
 let _topbarRoot  = null;
 let _modalRoot   = null;
+let _toastRoot   = null;
+let _viewAsRoot  = null;
 let _setModalOpen = null;  // setter exposed by the modal root component
 let _focusSearch  = null;  // ref to NavTopbar's search input focus fn
 let _mounted     = false;
 let _currentProps = {};
+let _mobileNavOpen = false; // off-canvas drawer state below the NavHub.css mobile breakpoint
+
+function _setMobileNavOpen(open) {
+  _mobileNavOpen = open;
+  _render({});
+}
 
 // ── FeedbackPortal — thin wrapper so we can imperatively open the modal ──────
 function FeedbackPortal() {
@@ -52,14 +64,21 @@ function FeedbackPortal() {
 function _render(props) {
   _currentProps = { ..._currentProps, ...props };
   if (_sidebarRoot) {
-    _sidebarRoot.render(<NavSidebar {..._currentProps} />);
+    _sidebarRoot.render(
+      <NavSidebar
+        {..._currentProps}
+        mobileNavOpen={_mobileNavOpen}
+        onCloseMobileNav={() => _setMobileNavOpen(false)}
+      />
+    );
   }
   if (_topbarRoot) {
     _topbarRoot.render(
       <NavTopbar
         {..._currentProps}
         onFocusSearchRef={(fn) => { _focusSearch = fn; }}
-        onSearch={(q) => window._runGlobalSearch?.(q)}
+        mobileNavOpen={_mobileNavOpen}
+        onToggleMobileNav={() => _setMobileNavOpen(!_mobileNavOpen)}
       />
     );
   }
@@ -86,6 +105,17 @@ window.NavHub = {
     _modalRoot = createRoot(portalEl);
     _modalRoot.render(<FeedbackPortal />);
 
+    // Mount ToastHost into its own portal — NavHub is the one root that's
+    // always present app-wide (never unmounted on loadView()), which is
+    // what makes it the right host for toasts triggered from vanilla-JS
+    // code (app.js) via the 'alternate:toast' CustomEvent, not just from
+    // React features. See components/ui/Toast.jsx's own doc comment.
+    const toastPortalEl = document.createElement('div');
+    toastPortalEl.id = 'nh-toast-portal';
+    document.body.appendChild(toastPortalEl);
+    _toastRoot = createRoot(toastPortalEl);
+    _toastRoot.render(<ToastHost />);
+
     _mounted = true;
   },
 
@@ -95,6 +125,10 @@ window.NavHub = {
    */
   update(partialProps = {}) {
     if (!_mounted) return;
+    // Safety net for the mobile drawer: any real view change closes it, not
+    // just clicks routed through NavSidebar's own link handler (e.g. a
+    // topbar search result navigates straight via window._loadView).
+    if (partialProps.activeView) _mobileNavOpen = false;
     _render(partialProps);
   },
 
@@ -114,12 +148,32 @@ window.NavHub = {
     _focusSearch?.();
   },
 
+  /**
+   * mountViewAsBanner(container, props) — renders ViewAsBanner's content
+   * into `container` SYNCHRONOUSLY (flushSync), before returning. app.js
+   * calls this, then immediately calls top_banner_stack.js's
+   * stackTopBanner(container) — which appends container to <body> and reads
+   * its offsetHeight right after. If container were still empty at that
+   * point, the computed stacked height would be wrong (the same class of
+   * dead-click bug stackTopBanner was written to fix). `props`: {userName,
+   * userRole, onExit} — app.js owns onExit (mp.track + the actual redirect).
+   */
+  mountViewAsBanner(container, props = {}) {
+    if (_viewAsRoot) return; // already mounted — one banner per session
+    _viewAsRoot = createRoot(container);
+    flushSync(() => { _viewAsRoot.render(<ViewAsBanner {...props} />); });
+  },
+
   unmount() {
     if (_sidebarRoot) { _sidebarRoot.unmount(); _sidebarRoot = null; }
     if (_topbarRoot)  { _topbarRoot.unmount();  _topbarRoot  = null; }
     if (_modalRoot)   { _modalRoot.unmount();   _modalRoot   = null; }
+    if (_toastRoot)   { _toastRoot.unmount();   _toastRoot   = null; }
+    if (_viewAsRoot)  { _viewAsRoot.unmount();  _viewAsRoot  = null; }
     const portal = document.getElementById('nh-feedback-portal');
     if (portal) portal.remove();
+    const toastPortal = document.getElementById('nh-toast-portal');
+    if (toastPortal) toastPortal.remove();
     _mounted = false;
     _currentProps = {};
     _setModalOpen = null;

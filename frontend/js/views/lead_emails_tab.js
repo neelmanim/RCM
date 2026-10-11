@@ -76,7 +76,7 @@ export async function loadEmailsTab(leadId, lead, container, { onReload } = {}) 
                     <div style="width:40px;height:40px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 2px 8px rgba(99,102,241,0.15);">📧</div>
                     <div style="flex:1;">
                         <div style="font-weight:700;font-size:0.85rem;color:#312e81;">Connect Your Email</div>
-                        <div style="font-size:0.78rem;color:#4338ca;margin-top:2px;">Connect <b>${currentUser?.email || 'your email'}</b> to send and view emails from RCM</div>
+                        <div style="font-size:0.78rem;color:#4338ca;margin-top:2px;">Connect <b>${currentUser?.email || 'your email'}</b> to send and view emails from Alternate CRM</div>
                     </div>
                     <button class="btn btn-primary" id="connect-email-tab-btn" style="padding:8px 18px;border-radius:10px;background:linear-gradient(135deg,#6366f1,#818cf8);border:none;font-size:0.82rem;font-weight:600;cursor:pointer;">🔗 Connect Email</button>
                 </div>
@@ -163,7 +163,7 @@ function _renderSplitPane(emailStatus, emails) {
                 <span class="email-status-email">${emailStatus.email}</span>
             </div>
 
-            <div style="display:flex;gap:8px;">
+            <div style="display:flex;gap:8px;" title="Only emails sent via Compose here are tracked for opens — a message sent directly from Gmail/Outlook won't show up in reports.">
                 <button class="email-compose-btn" id="email-compose-btn" style="flex:1;">
                     ✏️ Compose Email
                 </button>

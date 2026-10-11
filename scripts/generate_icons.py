@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RCM Icon Generator
+Alternate CRM Icon Generator
 ========================
 Regenerates all required icon sizes from the master logo PNG.
 
@@ -11,7 +11,7 @@ Requirements:
     pip install Pillow
 
 Source file:
-    frontend/img/icons/rcm-logo-master.png  (788x788 square, no padding)
+    frontend/img/icons/alternatecrm-logo-master.png  (788x788 square, no padding)
 
 Outputs:
     frontend/favicon.ico                       — 16/32/48 multi-res (browser tab)
@@ -22,13 +22,13 @@ Outputs:
     frontend/img/icons/icon-192x192.png        — Android / PWA manifest
     frontend/img/icons/icon-512x512.png        — PWA splash screen
     frontend/img/icons/og-image.png            — Open Graph / social share
-    frontend/img/rcm-logo.png            — Sidebar brand image (192x192)
+    frontend/img/alternatecrm-logo.png            — Sidebar brand image (192x192)
 
 Future logo update process:
     1. Obtain new logo: must be square PNG, min 1024x1024, high quality
-    2. Save as: frontend/img/icons/rcm-logo-master.png
+    2. Save as: frontend/img/icons/alternatecrm-logo-master.png
     3. Run: python3 scripts/generate_icons.py
-    4. Commit: git add frontend/favicon.ico frontend/img/icons/ frontend/img/rcm-logo.png
+    4. Commit: git add frontend/favicon.ico frontend/img/icons/ frontend/img/alternatecrm-logo.png
     5. Test: verify favicon in Chrome/Firefox/Safari; iOS home screen icon
     6. Deploy and check OG image via https://www.opengraph.xyz
 """
@@ -49,7 +49,7 @@ SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend")
 ICONS_DIR    = os.path.join(FRONTEND_DIR, "img", "icons")
-MASTER_SRC   = os.path.join(ICONS_DIR, "rcm-logo-master.png")
+MASTER_SRC   = os.path.join(ICONS_DIR, "alternatecrm-logo-master.png")
 
 # ── Icon output targets ─────────────────────────────────────────────────────
 ICONS = {
@@ -97,14 +97,14 @@ def main():
     print(f"  ✓ {'favicon.ico':40s} 16/32/48 multi-res")
 
     # Sidebar logo (copy of 192x192)
-    logo_path = os.path.join(FRONTEND_DIR, "img", "rcm-logo.png")
+    logo_path = os.path.join(FRONTEND_DIR, "img", "alternatecrm-logo.png")
     shutil.copy(os.path.join(ICONS_DIR, "icon-192x192.png"), logo_path)
-    print(f"  ✓ {'img/rcm-logo.png':40s} (copy of 192x192)")
+    print(f"  ✓ {'img/alternatecrm-logo.png':40s} (copy of 192x192)")
 
     print("\n✅ All icons generated successfully.")
     print("\nNext steps:")
-    print("  git add frontend/favicon.ico frontend/img/icons/ frontend/img/rcm-logo.png")
-    print("  git commit -m 'brand: update RCM icons'")
+    print("  git add frontend/favicon.ico frontend/img/icons/ frontend/img/alternatecrm-logo.png")
+    print("  git commit -m 'brand: update Alternate CRM icons'")
 
 
 if __name__ == "__main__":

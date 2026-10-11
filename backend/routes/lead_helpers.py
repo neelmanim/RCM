@@ -7,8 +7,8 @@ No FastAPI router — just functions.
 """
 from datetime import datetime, timezone
 from fastapi import HTTPException
-from sqlalchemy.orm import Session, joinedload, load_only
-from sqlalchemy import func, or_, select, union_all
+from sqlalchemy.orm import Session, joinedload, load_only, object_session, selectinload
+from sqlalchemy import and_, func, or_, select, union_all
 
 import models
 from models import COMPANY_RESOLVED_OUTCOMES
@@ -21,6 +21,15 @@ logger = logging.getLogger(__name__)
 # Using load_only() with these columns prevents SQLAlchemy from loading large
 # text fields (research_*, enrichment) that are never displayed in list views.
 # Reduces memory per lead from ~4KB to ~1.5KB.
+# List views only read these off a lead's dialer calls (last outcome / call count). The full rows carry the call
+# transcript and raw provider payload, which made this the slowest statement of the Leads list (RCA 2026-10-07).
+def summary_dialer_calls():
+    # a function because Lead.dialer_calls is a backref, which doesn't exist yet at import time
+    return selectinload(models.Lead.dialer_calls).load_only(
+        models.DialerCall.id, models.DialerCall.lead_id, models.DialerCall.status, models.DialerCall.outcome,
+        models.DialerCall.started_at, models.DialerCall.created_at,
+    )
+
 SUMMARY_COLUMNS = load_only(
     models.Lead.id, models.Lead.first_name, models.Lead.last_name,
     models.Lead.email, models.Lead.phone, models.Lead.phone_secondary,
@@ -41,6 +50,11 @@ SUMMARY_COLUMNS = load_only(
     # above if these are read in _lead_to_summary without being loaded here.
     models.Lead.city, models.Lead.state, models.Lead.country,
     models.Lead.employee_count, models.Lead.research_company_size,
+    # Power Dialer's call script (v12.6.0) — same trap again: talking_points
+    # is read in _lead_to_summary now, so it has to be loaded here too.
+    models.Lead.talking_points,
+    # Instantly.ai sync (v13.3.0) — same trap again: read in _lead_to_summary.
+    models.Lead.instantly_interest_label,
 )
 
 STATUS_ORDER = [
@@ -55,6 +69,26 @@ def _is_backward_move(old_status, new_status):
         return STATUS_ORDER.index(new_status) < STATUS_ORDER.index(old_status)
     except ValueError:
         return False  # Unknown statuses (terminal/legacy) — don't block
+
+
+# The legacy lead page's PIPELINE_STAGES groups (lead_detail.js) — moving
+# within a group is free, skipping a whole group is not (for SDRs/AEs).
+# Moved to models.py (v13.0.0) — the cadence engine and models.assign_lead
+# need it too, and neither should import from the web layer.
+from models import STAGE_GROUP
+STAGE_SKIP_MSG = "Please advance one stage at a time."
+
+
+def _skips_stage(old_status, new_status):
+    """True if the move jumps over a whole pipeline stage. Parked/terminal/
+    unknown statuses (Pending Review, Nurture, Disqualified…) are exempt.
+
+    RCA 2026-09-29: this rule only ever existed in the legacy page's own
+    stepper click handler — the backend never enforced it, so the React
+    Lead Detail Hub's Change Stage (and any direct API call) let an SDR jump
+    Calling → Demo Done in one step."""
+    o, n = STAGE_GROUP.get(old_status), STAGE_GROUP.get(new_status)
+    return o is not None and n is not None and n > o + 1
 
 
 # ── Company Resolution ──────────────────────────────────────────────────────
@@ -353,6 +387,29 @@ def _batch_latest_activity(db, leads):
     for lid, cnt in count_call_rows:
         call_counts[lid] = cnt
 
+    # RCA 2026-08-25: dialer-logged outcomes never create a CallLog row (see
+    # call_routes.py's attached_to_dialer branch) — CallLog alone undercounts
+    # any lead called via the in-app dialer, same class 
+    # _latest_call_outcome already merges DialerCall for below. Exclude FAILED
+    # (no call actually placed) and any DialerCall already counted via its
+    # paired CallLog (dialer_call_id) to avoid double-counting the same call.
+    paired_dialer_call_ids = {
+        row[0] for row in db.query(models.CallLog.dialer_call_id).filter(
+            models.CallLog.lead_id.in_(lead_ids),
+            models.CallLog.dialer_call_id.isnot(None),
+        ).all()
+    }
+    count_dialer_rows = db.query(
+        models.DialerCall.lead_id,
+        func.count(models.DialerCall.id).label("cnt")
+    ).filter(
+        models.DialerCall.lead_id.in_(lead_ids),
+        models.DialerCall.status != "FAILED",
+        ~models.DialerCall.id.in_(paired_dialer_call_ids),
+    ).group_by(models.DialerCall.lead_id).all()
+    for lid, cnt in count_dialer_rows:
+        call_counts[lid] = call_counts.get(lid, 0) + cnt
+
     if is_postgres and lead_ids:
         placeholders = ", ".join(f"'{lid}'" for lid in lead_ids)
         call_sql = sa_text(f"""
@@ -381,7 +438,42 @@ def _batch_latest_activity(db, leads):
                     "_count": call_counts.get(cl.lead_id, 0),
                 }
 
+    # A lead called only via the in-app dialer (no CallLog row at all) never
+    # got a latest_calls entry above — _lead_to_summary reads "_count" from
+    # here, not from call_counts directly, so its merged DialerCall count was
+    # silently dropped without this backfill.
+    for lid, cnt in call_counts.items():
+        if lid not in latest_calls:
+            latest_calls[lid] = {"outcome": None, "called_at": None, "_count": cnt}
+
     return latest_notes, latest_calls
+
+
+def _batch_open_call_scripts(db, leads):
+    """Power Dialer's cadence-default script: the most recent NOT-done Task
+    with a description, per lead — set only by a journey "call" node that had
+    a script filled in (call_channel.py). One query for the whole page,
+    matching _batch_latest_activity's shape; only called by the one endpoint
+    the dialer actually queries (GET /leads), not the other list/kanban
+    endpoints that share _lead_to_summary but have no consumer for this."""
+    lead_ids = [l.id for l in leads]
+    if not lead_ids:
+        return {}
+    rows = (
+        db.query(models.Task.lead_id, models.Task.title, models.Task.description, models.Task.created_at)
+        .filter(
+            models.Task.lead_id.in_(lead_ids),
+            models.Task.done == "false",
+            models.Task.description.isnot(None),
+        )
+        .order_by(models.Task.lead_id, models.Task.created_at.desc())
+        .all()
+    )
+    scripts = {}
+    for lid, title, description, _created_at in rows:
+        if lid not in scripts:  # first row per lead_id = most recent (ORDER BY above)
+            scripts[lid] = {"title": title, "script": description}
+    return scripts
 
 
 def _batch_last_outbound_email(db, leads):
@@ -431,7 +523,7 @@ def _latest_call_outcome(lead):
 _NOT_PREFETCHED = object()
 
 
-def _lead_to_summary(lead, prefetched_note=_NOT_PREFETCHED, prefetched_call=_NOT_PREFETCHED, last_email_sent_at=None):
+def _lead_to_summary(lead, prefetched_note=_NOT_PREFETCHED, prefetched_call=_NOT_PREFETCHED, last_email_sent_at=None, active_call_script=None):
     """Lightweight dict for list/table views — no enrichment or research data."""
     lead_pod_ids = list(set(u.pod_id for u in lead.assigned_users if u.pod_id)) if lead.assigned_users else []
     # Latest note preview — use prefetched data if available
@@ -540,7 +632,13 @@ def _lead_to_summary(lead, prefetched_note=_NOT_PREFETCHED, prefetched_call=_NOT
     else:
         # No batch was attempted for this call (non-list callers) — fall
         # back to the lazy relationship, same as the note/call blocks above.
+        # Merge in DialerCall the same way the batched path above does, so a
+        # single-lead fetch doesn't undercount dialer-made calls relative to
+        # the list view (RCA 2026-08-25).
         call_count = len(lead.call_logs) if hasattr(lead, 'call_logs') and lead.call_logs else 0
+        if hasattr(lead, 'dialer_calls') and lead.dialer_calls:
+            paired_ids = {cl.dialer_call_id for cl in (lead.call_logs or []) if cl.dialer_call_id}
+            call_count += sum(1 for dc in lead.dialer_calls if dc.status != "FAILED" and dc.id not in paired_ids)
 
     return {
         "id":             lead.id,
@@ -571,6 +669,8 @@ def _lead_to_summary(lead, prefetched_note=_NOT_PREFETCHED, prefetched_call=_NOT
         # actual enforcement is the backend gate in dialer_service.initiate_call)
         "do_not_contact":      lead.do_not_contact,
         "unsubscribed_at":     str(lead.unsubscribed_at) if lead.unsubscribed_at else None,
+        # Instantly.ai sync signal — informational only, see columns.jsx's badge.
+        "instantly_interest_label": lead.instantly_interest_label,
         # Power Dialer's lead-context strip — raw fields only, display
         # formatting (bucketing employee_count, mapping lead_source to a
         # label, etc.) happens client-side, same convention as `status`.
@@ -599,6 +699,12 @@ def _lead_to_summary(lead, prefetched_note=_NOT_PREFETCHED, prefetched_call=_NOT
         # Notes preview
         "latest_note": latest_note,
         "note_count":  note_count,
+        # Power Dialer call-prep — per-lead override, then the cadence
+        # default (see models.Lead.talking_points / models.Task.description).
+        # active_call_script is only populated by callers that prefetch it
+        # (today: GET /leads, the endpoint the dialer queue actually calls).
+        "talking_points":    lead.talking_points,
+        "active_call_script": active_call_script,
     }
 
 
@@ -627,6 +733,31 @@ def _get_cached_settings():
     return _settings_cache["data"]
 
 
+def _sf_links(lead) -> dict:
+    """Clickable Salesforce links for the lead detail page — v11.4.2.
+    sf_lead_url: once a lead has been pushed to Salesforce (real, non-
+    placeholder sf_lead_id — pushed leads carry the actual Lead Id, uploaded-
+    but-not-yet-pushed ones carry an "upload-..." sentinel, see
+    salesforce._is_sentinel_sf_id).
+    sf_opportunity_url: when a direct-dial webhook matched an inbound
+    Salesforce Opportunity instead of a Lead (see
+    dialer_service._find_or_create_lead_by_phone).
+    Detail-view only — deliberately not added to _lead_to_summary/list views,
+    which already avoid one extra query per row (see SUMMARY_COLUMNS above).
+    """
+    db = object_session(lead)
+    if not db:
+        return {"sf_lead_url": None, "sf_opportunity_url": None}
+    from salesforce import _is_sentinel_sf_id, salesforce_record_url
+    sf_lead_url = (
+        salesforce_record_url(db, "Lead", lead.sf_lead_id)
+        if lead.sf_lead_id and not _is_sentinel_sf_id(lead.sf_lead_id) else None
+    )
+    sf_opportunity_id = getattr(lead, "sf_opportunity_id", None)
+    sf_opportunity_url = salesforce_record_url(db, "Opportunity", sf_opportunity_id) if sf_opportunity_id else None
+    return {"sf_lead_url": sf_lead_url, "sf_opportunity_url": sf_opportunity_url}
+
+
 def _lead_to_dict(lead):
     """Full dict for detail view — includes enrichment, research, lifecycle."""
     # Fetch global settings (cached at module level to avoid per-lead DB hits)
@@ -638,6 +769,8 @@ def _lead_to_dict(lead):
     return {
         "id":             lead.id,
         "sf_lead_id":     lead.sf_lead_id,
+        "sf_opportunity_id": getattr(lead, "sf_opportunity_id", None),
+        **_sf_links(lead),
         "first_name":     lead.first_name,
         "last_name":      lead.last_name,
         "email":          lead.email,
@@ -646,6 +779,15 @@ def _lead_to_dict(lead):
         "company":        lead.company,
         "title":          lead.title,
         "status":         lead.status,
+        # RCA 2026-08-24: do_not_contact was added to ALLOWED_UPDATE_FIELDS
+        # and set correctly by the opt-out PATCH, but never added here — the
+        # detail view always saw it as undefined, so the "Opted Out" badge
+        # never showed and the "Mark Opted Out" button never disappeared,
+        # regardless of the actual DB state. Caught by a Playwright spec
+        # checking the real API response, not just the ORM write.
+        "do_not_contact": bool(lead.do_not_contact),
+        "unsubscribed_at": str(lead.unsubscribed_at) if lead.unsubscribed_at else None,
+        "phone_invalid_at": str(lead.phone_invalid_at) if lead.phone_invalid_at else None,
         "lead_source":    lead.lead_source or "salesforce",
         "last_synced_at": str(lead.last_synced_at) if lead.last_synced_at else None,
         "created_at":     str(lead.created_at) if lead.created_at else None,
@@ -739,100 +881,156 @@ def _lead_to_dict(lead):
 # ── Query builder ────────────────────────────────────────────────────────────
 
 def _build_lead_query(db, user, global_view: bool = False):
-    """Build a base query scoped by user role (Super Admin / Pod Admin / SDR).
+    """Transport-layer shim over domain.lead_access.visible_leads().
 
-    global_view=True (Pod Admin only): bypass pod scoping and return all leads.
-    This powers the Pod/Global toggle pill in the UI.
+    The rule itself moved to backend/domain/lead_access.py; this keeps the
+    signature every existing handler and test already calls. New callers
+    should build an Actor and call visible_leads() directly — a caller that
+    has to invent a token-shaped dict (as public_api_routes did) is the smell
+    this shim exists to retire.
     """
-    role = user.get("role")
-    if role in ("Super Admin", "Admin"):  # Admin = V1 Super Admin
-        return db.query(models.Lead)
-    elif role == "Pod Admin":
-        if global_view:
-            # Pod Admin explicitly switched to global view — return everything
-            return db.query(models.Lead)
+    from domain.actor import Actor
+    from domain.lead_access import visible_leads
+    return visible_leads(db, Actor.from_claims(user), global_view=global_view)
 
-        pod_id = user.get("pod_id")
-        if pod_id:
-            # ── Hybrid query (Option B) ───────────────────────────────────────
-            # Branch 1: leads assigned to ANY user who belongs to this pod.
-            # Uses lead_assignments JOIN — correctly handles AE pods where
-            # lead.pod_id still points to the originating SDR pod.
-            pod_user_ids = (
-                db.query(models.User.id)
-                .filter(models.User.pod_id == pod_id)
-                .subquery()
-            )
-            assigned_lead_ids = (
-                db.query(models.lead_assignments.c.lead_id)
-                .filter(models.lead_assignments.c.user_id.in_(pod_user_ids))
-            )
 
-            # Branch 2: pod-tagged leads with NO assignment yet (round-robin pool).
-            # These are managed by the Pod Admin for upcoming assignment.
-            any_assigned_ids = db.query(models.lead_assignments.c.lead_id)
-            unassigned_pod_lead_ids = (
-                db.query(models.Lead.id)
-                .filter(
-                    models.Lead.pod_id == pod_id,
-                    ~models.Lead.id.in_(any_assigned_ids),
-                )
-            )
+def load_lead(db, user, lead_id, edit: bool = False):
+    """THE per-lead access check for routes — the HTTP adapter over
+    domain.lead_access.can_view_lead / can_edit_lead. Returns the lead, or
+    404 if the caller may not see it (never confirm another user's lead
+    exists), or 403 if they may see but not change it. Honours
+    SECURITY_LEAD_ACCESS_MODE=monitor (logs instead of refusing) for rollout.
+    tests/test_route_access_guard.py fails the build if a lead-scoped route
+    doesn't reach this (or _can_modify_lead)."""
+    lead = db.query(models.Lead).options(
+        joinedload(models.Lead.assigned_users)
+    ).filter(models.Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    authorize_lead(user, lead, edit=edit)
+    if edit:
+        db.info["change_actor"] = user.get("name") or user.get("email") or "system"
+    return lead
 
-            visible_ids = assigned_lead_ids.union(unassigned_pod_lead_ids).subquery()
-            return db.query(models.Lead).filter(models.Lead.id.in_(visible_ids))
 
-        # Pod Admin with no pod_id in token — data error, show nothing safely
-        return db.query(models.Lead).filter(models.Lead.id == None)  # noqa: E711
-    else:
-        # SDR: only their assigned leads.
-        # Use a direct JOIN on lead_assignments — lets PostgreSQL use idx_lead_assignments_user_id
-        # instead of the double-subquery pattern (IN (SELECT id FROM (SELECT lead_id...)))
-        # which the query planner couldn't optimize.
-        return (
-            db.query(models.Lead)
-            .join(
-                models.lead_assignments,
-                (models.lead_assignments.c.lead_id == models.Lead.id) &
-                (models.lead_assignments.c.user_id == user["sub"])
-            )
-        )
+def authorize_lead(user, lead, edit: bool = False):
+    """load_lead()'s check, for a route that already loaded the lead (with
+    assigned_users) and shouldn't query it twice."""
+    from auth import security_deny
+    from domain.actor import Actor
+    from domain.lead_access import can_view_lead, can_edit_lead
+    actor = Actor.from_claims(user)
+    ctx = {"user": actor.id, "role": actor.role, "lead": lead.id, "need": "edit" if edit else "view"}
+    if not can_view_lead(actor, lead):
+        security_deny("LEAD_ACCESS", 404, "Lead not found", **ctx)
+    elif edit and not can_edit_lead(actor, lead):
+        security_deny("LEAD_ACCESS", 403, "You can only change leads assigned to you or your pod.", **ctx)
+    return lead
 
+
+def lead_allowed(user, lead, edit: bool = False) -> bool:
+    """authorize_lead() for bulk actions that skip a disallowed lead instead
+    of failing the whole request. Logs like authorize_lead; always True in
+    monitor mode."""
+    try:
+        authorize_lead(user, lead, edit=edit)
+        return True
+    except HTTPException:
+        return False
+
+
+def child_of_lead(obj, lead_id, what: str = "Record"):
+    """A note/call/task/attachment addressed as /leads/{lead_id}/…/{id} must
+    belong to that lead — otherwise access to your own lead would reach any
+    other lead's rows by id. Always enforced (no legitimate mismatch)."""
+    if obj is None or getattr(obj, "lead_id", None) != lead_id:
+        raise HTTPException(status_code=404, detail=f"{what} not found")
+    return obj
 
 
 def _can_modify_lead(db, user, lead_id):
-    """Check if the current user is allowed to modify this lead.
-    Super Admins can modify any lead.
-    Pod Admins can only modify leads that are unassigned or assigned to their pod's members.
-    SDRs can only modify their own assigned leads.
-    Returns the lead or raises 403."""
-    role = user.get("role")
+    """Edit check for the routes that have always enforced it. Same rule as
+    load_lead(edit=True) (domain.lead_access.can_edit_lead) but always
+    enforced and with its original 403 messages, so no existing behaviour
+    changes. Returns the lead or raises 404/403."""
+    from domain.actor import Actor
+    from domain.lead_access import can_edit_lead
     lead = db.query(models.Lead).options(
         joinedload(models.Lead.assigned_users)
     ).filter(models.Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    if role in ("Super Admin", "Admin"):
-        return lead  # unrestricted
+    # Attribute any LeadFieldHistory rows this request's edits produce to the
+    # acting user — see models.py::_record_lead_field_history.
+    db.info["change_actor"] = user.get("name") or user.get("email") or "system"
 
-    if role == "Pod Admin":
-        # Unassigned leads — Pod Admin can modify
-        if not lead.assigned_users:
-            return lead
-        # Check if any assigned user belongs to Pod Admin's pod
-        user_pod_id = user.get("pod_id")
-        if user_pod_id:
-            for u in lead.assigned_users:
-                if u.pod_id == user_pod_id:
-                    return lead
-        raise HTTPException(status_code=403, detail="You can only modify leads assigned to your POD.")
-
-    # SDR — only their assigned leads
-    user_id = user.get("sub")
-    if any(u.id == user_id for u in lead.assigned_users):
+    actor = Actor.from_claims(user)
+    if can_edit_lead(actor, lead):
         return lead
+    if actor.is_pod_admin:
+        raise HTTPException(status_code=403, detail="You can only modify leads assigned to your POD.")
     raise HTTPException(status_code=403, detail="You can only modify your assigned leads.")
+
+
+def lead_search_clause(search: str, extra_cols=(), phone_cols=None):
+    """THE lead search, shared by every screen that searches leads (Leads list, global search bar, Call Monitor,
+    Replies, Activity Monitor) so they all behave the same and all stay fast.
+
+    Every word must match one of first name / last name / email / company (plus `extra_cols`, e.g. an email
+    subject), so "Gopala Tale", "Tale Gopala" and "Gopala Acme" all work. Those columns have trigram indexes.
+    Phone columns (`phone_cols`, default Lead.phone) are only searched when the text has 3+ digits: an
+    unindexed-column OR, or an expression like first||last, forces a full scan of every lead on every keystroke."""
+    words = search.split()
+    cols = (models.Lead.first_name, models.Lead.last_name, models.Lead.email, models.Lead.company, *extra_cols)
+    per_word = [or_(*[c.ilike(f"%{w}%") for c in cols]) for w in words]
+    clause = and_(*per_word) if per_word else or_(*[c.ilike(f"%{search}%") for c in cols])
+    if sum(ch.isdigit() for ch in search) >= 3:
+        clause = or_(clause, *[c.ilike(f"%{search}%") for c in (phone_cols or (models.Lead.phone,))])
+    return clause
+
+
+def apply_lead_scope_filters(base, db, tag=None, upload_log_id=None, journey_id=None, assigned_to=None):
+    """Tag / upload / active-cadence / assignee filters shared by the Leads list
+    (get_leads) and the Claude connector's count_leads, so both count the same leads."""
+    if tag:
+        base = base.filter(models.Lead.tags.any(models.Tag.name.in_(tag)))
+    if upload_log_id:
+        base = base.filter(models.Lead.upload_log_id == upload_log_id)
+    if journey_id:
+        # Power Dialer "load from cadence": leads actively enrolled right now
+        # (not completed/failed/exited — those shouldn't show up for a
+        # manual call step anymore).
+        enrolled_lead_ids = db.query(models.JourneyEnrollment.lead_id).filter(
+            models.JourneyEnrollment.journey_id == journey_id,
+            models.JourneyEnrollment.status == "active",
+        )
+        base = base.filter(models.Lead.id.in_(enrolled_lead_ids))
+    if assigned_to == 'unassigned':
+        assigned_ids = db.query(models.lead_assignments.c.lead_id).distinct()
+        base = base.filter(~models.Lead.id.in_(assigned_ids))
+    elif assigned_to:
+        base = base.filter(models.Lead.assigned_users.any(models.User.id == assigned_to))
+    return base
+
+
+def apply_smart_view(base, db, user, smart, smart_from=None, smart_to=None):
+    """The two Dashboard click-throughs that are not a plain status filter. Built on the same helpers My Day uses, so the
+    count on the Dashboard card equals the number of leads this opens."""
+    from datetime import datetime
+    from fastapi import HTTPException
+    from sqlalchemy import false
+    from routes import my_day_routes as md
+    if smart == "given_today":
+        try:
+            start, end = (datetime.fromisoformat(v.replace("Z", "+00:00")) for v in (smart_from, smart_to))  # browsers send ...Z
+        except (TypeError, ValueError, AttributeError):
+            raise HTTPException(status_code=400, detail="given_today needs smart_from and smart_to (ISO timestamps)")
+        ids = list(md.given_leads(db, user["sub"], start, end))
+        return base.filter(models.Lead.id.in_(ids)) if ids else base.filter(false())
+    if smart == "not_yet_called":
+        return base.filter(models.Lead.status.in_(md.CALLABLE), ~models.Lead.id.in_(md.ever_called_ids(db)))
+    raise HTTPException(status_code=400, detail="smart must be given_today or not_yet_called")
 
 
 def _apply_filters(query, search=None, status=None, source=None, date_from=None, date_to=None, company=None, outcome=None):
@@ -872,14 +1070,7 @@ def _apply_filters(query, search=None, status=None, source=None, date_from=None,
         except ValueError:
             pass
     if search:
-        search_term = f"%{search}%"
-        query = query.filter(or_(
-            models.Lead.first_name.ilike(search_term),
-            models.Lead.last_name.ilike(search_term),
-            models.Lead.email.ilike(search_term),
-            models.Lead.company.ilike(search_term),
-            models.Lead.phone.ilike(search_term),
-        ))
+        query = query.filter(lead_search_clause(search))
     # Filter by MOST RECENT call outcome only.
     # We build a correlated subquery that finds the latest call time per lead
     # across both CallLog and DialerCall, then checks that the call at that

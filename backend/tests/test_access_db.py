@@ -35,6 +35,22 @@ class TestAddAllowedUser:
         result = access_db.add_allowed_user(db, "dup@test.com", "Dup", "SDR", "admin")
         assert result is False
 
+    def test_add_clears_a_matching_pending_access_request(self, db):
+        """Granting access is the resolution for a pending AccessRequest (see
+        models.AccessRequest's docstring) — no separate dismiss action."""
+        import models
+        db.add(models.AccessRequest(email="newhire@test.com", name="New Hire"))
+        db.commit()
+
+        access_db.add_allowed_user(db, "newhire@test.com", "New Hire", "SDR", "admin")
+
+        assert db.query(models.AccessRequest).filter(models.AccessRequest.email == "newhire@test.com").first() is None
+
+    def test_add_with_no_pending_request_is_a_no_op(self, db):
+        import models
+        access_db.add_allowed_user(db, "nopending@test.com", "Nobody Asked", "SDR", "admin")
+        assert db.query(models.AccessRequest).count() == 0
+
 
 # ── remove_allowed_user ──────────────────────────────────────────────────────
 

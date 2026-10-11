@@ -3,6 +3,7 @@ import { Badge } from '../../components/ui/Badge';
 import { StatusCell } from './components/StatusCell';
 import { AssigneeCell } from './components/AssigneeCell';
 import { PhoneCell } from './components/PhoneCell';
+import { formatLeadSource } from '../../lib/leadSource';
 
 // Phone resolution priority, matching the classic table exactly: phone →
 // phone_secondary → company_phone, first non-blank. Shared by the Phone
@@ -26,31 +27,18 @@ function timeInStatusClass(hours) {
   return 'text-red-600 font-semibold';
 }
 
-// Bulk imports store lead_source as "upload:<batch name>:<ISO timestamp>"
-// (or "gsheet:...") — show just the batch name, not the internal prefix/timestamp.
-// Klenty's nightly call sync ("klenty_sync:<date>") and the dialer's anonymous
-// manual-dial leads ("Manual Dial") don't fit that shape and previously fell
-// through unlabeled/mislabeled — give them their own badge text.
-export function formatLeadSource(source) {
-  if (!source) return '—';
-  const m = source.match(/^(?:upload|gsheet):(.+):\d{4}-\d{2}-\d{2}T[\d:.+Z-]+$/);
-  if (m) return m[1];
-  if (source.startsWith('klenty_sync')) return 'Klenty';
-  if (source.startsWith('aircall_webhook') || source.startsWith('aircall_sync')) return 'Aircall';
-  if (source === 'Manual Dial') return 'Manual Dial';
-  // Legacy pre-enhancement tags (predate the upload:/gsheet: prefixed
-  // format above) — the classic view has always had these two cases;
-  // this port dropped them, leaving the raw lowercase string on screen.
-  if (source === 'uploaded') return 'Uploaded';
-  if (source === 'manual') return 'Manual';
-  return source;
-}
-
 export const COLUMN_DEFS = [
   {
     key: 'status', label: 'Status', sortKey: 'status', defaultWidth: 150, interactive: true,
     renderCell: (lead, { onSetStatus }) => (
-      <StatusCell status={lead.status} onChange={(status) => onSetStatus(lead.id, status)} />
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <StatusCell status={lead.status} onChange={(status) => onSetStatus(lead.id, status)} />
+        {/* Instantly.ai pull-sync signal — informational only, never implies
+            a status change. Most leads won't have one. */}
+        {lead.instantly_interest_label && (
+          <Badge variant="info" title="Instantly.ai signal — informational only">{lead.instantly_interest_label}</Badge>
+        )}
+      </div>
     ),
   },
   {

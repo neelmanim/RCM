@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LeadsHub } from '../../features/leads-hub/LeadsHub';
+import { SavedViewsService } from '../../services/api';
 
 const sampleLead = {
   id: 'lead-1', first_name: 'Jane', last_name: 'Smith', title: 'VP Marketing',
@@ -12,6 +13,16 @@ const sampleLead = {
 };
 
 vi.mock('../../services/api', () => ({
+  // Saved views live on the server per user; an in-memory stand-in with the same contract.
+  SavedViewsService: (() => {
+    let store = [];
+    return {
+      list: vi.fn(async () => [...store]),
+      create: vi.fn(async (v) => { const row = { id: `sv-${store.length + 1}`, ...v }; store.push(row); return row; }),
+      remove: vi.fn(async (id) => { store = store.filter((x) => x.id !== id); return {}; }),
+      _reset: () => { store = []; },
+    };
+  })(),
   LeadsService: {
     getLeads: vi.fn(() => Promise.resolve({ data: [sampleLead], total: 1, page: 1, pages: 1 })),
     getCompanies: vi.fn(() => Promise.resolve({ companies: [] })),
@@ -39,6 +50,9 @@ vi.mock('../../services/api', () => ({
     getRequests: vi.fn(() => Promise.resolve({ requests: [] })),
     create: vi.fn(() => Promise.resolve({ id: 'dq-1' })),
   },
+  ReassignService: {
+    getRequests: vi.fn(() => Promise.resolve({ requests: [] })),
+  },
   CallsService: {
     getCallOutcomes: vi.fn(() => Promise.resolve({ enabled_outcomes: [{ value: 'Meeting Confirmed' }, { value: 'No Answer' }] })),
   },
@@ -58,6 +72,7 @@ const renderHub = async (props) => {
 describe('LeadsHub', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    SavedViewsService._reset();
     // useLeadsList persists view state (including sort) to sessionStorage —
     // without clearing it, one test's sort/filter choices leak into the
     // next test's "nothing restored" default-state assumptions.
@@ -79,9 +94,9 @@ describe('LeadsHub', () => {
       data: [sampleLead, { ...sampleLead, id: 'lead-2', first_name: 'Bob', last_name: 'Diaz', company: 'Globex Corp' }],
       total: 2, page: 1, pages: 1,
     });
-    // Admin role — a non-admin defaults to a priority sort (see the SDR
-    // workflow parity tests below), which intentionally suppresses company
-    // grouping; this test is about the disqualify-modal flow, not sorting.
+    // Admin role — this test is about the disqualify-modal flow, not
+    // sorting; see 'SDR role still sees company grouping...' below for the
+    // non-admin priority-sort-default grouping behavior specifically.
     await renderHub({ userRole: 'Super Admin' });
     await userEvent.click(screen.getAllByLabelText('Disqualify account')[0]);
     await screen.findByRole('heading', { name: 'Disqualify Acme Robotics' });
@@ -100,6 +115,18 @@ describe('LeadsHub', () => {
     await renderHub({ userRole: 'Pod Admin' });
     await userEvent.click(screen.getByText('Disqualify Requests'));
     await waitFor(() => expect(screen.getByText(/no pending requests/i)).toBeInTheDocument());
+  });
+
+  it('Pod Admin+ gets a Reassign Requests tab that opens its queue; SDR never gets it or calls its endpoint', async () => {
+    const { ReassignService } = await import('../../services/api');
+    await renderHub({ userRole: 'Pod Admin' });
+    await userEvent.click(screen.getByText('Reassign Requests'));
+    await waitFor(() => expect(screen.getByText('No pending reassign requests.')).toBeInTheDocument());
+    ReassignService.getRequests.mockClear();
+    cleanup();
+    await renderHub({ userRole: 'SDR' });
+    expect(screen.queryByText('Reassign Requests')).not.toBeInTheDocument();
+    expect(ReassignService.getRequests).not.toHaveBeenCalled();
   });
 
   it('hides the Disqualify Requests tab and Pod/Global toggle for SDR/AE — they can request a disqualify but not approve one', async () => {
@@ -122,8 +149,10 @@ describe('LeadsHub', () => {
   it('inline status change calls LeadsService.updateLead', async () => {
     const { LeadsService } = await import('../../services/api');
     await renderHub();
-    const select = screen.getByLabelText('Change status');
-    await userEvent.selectOptions(select, 'Demo Scheduled');
+    await userEvent.click(screen.getByRole('button', { name: 'Change status' }));
+    // StatusCell's Select isn't `searchable` — it renders as a Radix
+    // DropdownMenu, whose items carry role="menuitem", not "option".
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Demo Scheduled' }));
     await waitFor(() => expect(LeadsService.updateLead).toHaveBeenCalledWith('lead-1', { status: 'Demo Scheduled' }));
   });
 
@@ -172,9 +201,10 @@ describe('LeadsHub', () => {
     await userEvent.click(screen.getByText('+ Filter'));
     const addFilterMenu = screen.getByText('Add a filter').parentElement;
     await userEvent.click(within(addFilterMenu).getByText('Source'));
-    await userEvent.click(screen.getByText('Uploaded'));
+    await userEvent.click(await screen.findByText('Uploaded'));
     await waitFor(() => expect(LeadsService.getLeads).toHaveBeenCalledWith(
-      expect.objectContaining({ source: 'uploaded' })
+      expect.objectContaining({ source: 'uploaded' }),
+      expect.anything()
     ));
     // Chip shows the friendly label, not the raw value sent to the backend.
     expect(screen.getByText('Source: Uploaded')).toBeInTheDocument();
@@ -186,11 +216,14 @@ describe('LeadsHub', () => {
     await userEvent.click(screen.getByText('Assign mode'));
     await userEvent.click(screen.getByLabelText('Select Jane Smith'));
     await userEvent.click(await screen.findByText('Assign to…'));
-    const searchInput = screen.getByPlaceholderText('Search SDR…');
-    const picker = searchInput.parentElement;
+    // Select's searchable popover has a fixed "Search…" placeholder (not
+    // per-field-named); the option list is the whole listbox, not just the
+    // search input's own wrapper div (which holds only the icon+input).
+    const searchInput = screen.getByPlaceholderText('Search…');
+    const picker = screen.getByRole('listbox');
     await userEvent.type(searchInput, 'Neha');
-    expect(within(picker).queryByText('Isha Banerjee')).not.toBeInTheDocument();
-    await userEvent.click(within(picker).getByText('Neha Singh'));
+    expect(within(picker).queryByText(/Isha Banerjee/)).not.toBeInTheDocument();
+    await userEvent.click(within(picker).getByText(/Neha Singh/));
     await userEvent.click(screen.getByText('Assign'));
     await waitFor(() => expect(AssignmentsService.bulkAssign).toHaveBeenCalledWith('sdr-2', ['lead-1']));
   });
@@ -201,9 +234,10 @@ describe('LeadsHub', () => {
     await userEvent.click(screen.getByText('+ Filter'));
     const addFilterMenu = screen.getByText('Add a filter').parentElement;
     await userEvent.click(within(addFilterMenu).getByText('Last outcome'));
-    await userEvent.click(screen.getByText('No Answer'));
+    await userEvent.click(await screen.findByText('No Answer'));
     await waitFor(() => expect(LeadsService.getLeads).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'No Answer' })
+      expect.objectContaining({ outcome: 'No Answer' }),
+      expect.anything()
     ));
   });
 
@@ -224,14 +258,32 @@ describe('LeadsHub', () => {
     let addFilterMenu = screen.getByText('Add a filter').parentElement;
     await userEvent.click(within(addFilterMenu).getByText('Created'));
 
-    const fromInput = screen.getByLabelText(/From/);
-    const toInput = screen.getByLabelText(/To/);
-    await userEvent.type(fromInput, '2026-01-01');
-    await userEvent.type(toInput, '2026-06-01');
+    // The two native date inputs are gone — DateRangePopover now renders a
+    // Calendar (react-day-picker) inside the same chip/Apply shell. With no
+    // date set yet it defaults to the current month, so pick two days in it
+    // (1st as "from", 8th as "to") instead of typing ISO strings.
+    const now = new Date();
+    const fromDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    const toDate = new Date(now.getFullYear(), now.getMonth(), 8);
+    const ordinalSuffix = (n) => {
+      const j = n % 10, k = n % 100;
+      if (j === 1 && k !== 11) return 'st';
+      if (j === 2 && k !== 12) return 'nd';
+      if (j === 3 && k !== 13) return 'rd';
+      return 'th';
+    };
+    const dayLabel = (d) => new RegExp(
+      `${d.toLocaleString('en-US', { month: 'long' })} ${d.getDate()}${ordinalSuffix(d.getDate())}, ${d.getFullYear()}`
+    );
+    const toIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    await userEvent.click(await screen.findByRole('button', { name: dayLabel(fromDate) }));
+    await userEvent.click(screen.getByRole('button', { name: dayLabel(toDate) }));
     await userEvent.click(screen.getByText('Apply'));
 
     await waitFor(() => expect(LeadsService.getLeads).toHaveBeenCalledWith(
-      expect.objectContaining({ date_from: '2026-01-01', date_to: '2026-06-01' })
+      expect.objectContaining({ date_from: toIso(fromDate), date_to: toIso(toDate) }),
+      expect.anything()
     ));
 
     await userEvent.click(screen.getByLabelText('Remove Created filter'));
@@ -258,15 +310,16 @@ describe('LeadsHub', () => {
     await userEvent.click(screen.getByText('+ Filter'));
     let addFilterMenu = screen.getByText('Add a filter').parentElement;
     await userEvent.click(within(addFilterMenu).getByText('Status'));
-    await userEvent.click(screen.getByRole('button', { name: 'Unassigned' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Unassigned' }));
     await waitFor(() => expect(LeadsService.getLeads).toHaveBeenCalledWith(
-      expect.objectContaining({ assigned_to: 'unassigned' })
+      expect.objectContaining({ assigned_to: 'unassigned' }),
+      expect.anything()
     ));
 
     await userEvent.click(screen.getByText('+ Filter'));
     addFilterMenu = screen.getByText('Add a filter').parentElement;
     await userEvent.click(within(addFilterMenu).getByText('Assigned to'));
-    await userEvent.click(screen.getByRole('button', { name: 'Neha Singh' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Neha Singh' }));
 
     await waitFor(() => {
       const lastCall = LeadsService.getLeads.mock.calls.at(-1)[0];
@@ -279,8 +332,8 @@ describe('LeadsHub', () => {
     const { LeadsService } = await import('../../services/api');
     LeadsService.updateLead.mockRejectedValueOnce({ response: { data: { detail: 'nope' } } });
     await renderHub();
-    const statusSelect = screen.getByLabelText('Change status');
-    await userEvent.selectOptions(statusSelect, 'Research');
+    await userEvent.click(screen.getByRole('button', { name: 'Change status' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Research' }));
     await waitFor(() => expect(screen.getByText('nope')).toBeInTheDocument());
   });
 
@@ -291,7 +344,9 @@ describe('LeadsHub', () => {
     await userEvent.click(screen.getByText('Assign mode'));
     await userEvent.click(screen.getByLabelText('Select Jane Smith'));
     await userEvent.click(await screen.findByText('Assign to…'));
-    await userEvent.click(screen.getByRole('button', { name: /Isha Banerjee/ }));
+    // AssigneePicker is a searchable Select (Popover-based) — its options
+    // render as role="option" buttons, not plain "button".
+    await userEvent.click(screen.getByRole('option', { name: /Isha Banerjee/ }));
     await userEvent.click(screen.getByText('Assign'));
     await waitFor(() => expect(screen.getByText('Failed to assign leads — please try again.')).toBeInTheDocument());
   });
@@ -305,7 +360,7 @@ describe('LeadsHub', () => {
     await userEvent.click(screen.getByText('+ Filter'));
     const addFilterMenu = screen.getByText('Add a filter').parentElement;
     await userEvent.click(within(addFilterMenu).getByText('Source'));
-    await userEvent.click(screen.getByText('Uploaded'));
+    await userEvent.click(await screen.findByText('Uploaded'));
 
     await userEvent.click(screen.getByText('+ Save view'));
     await userEvent.type(screen.getByPlaceholderText('Name this view…'), 'Acme View');
@@ -320,6 +375,46 @@ describe('LeadsHub', () => {
 
     await userEvent.click(screen.getByText('Acme View'));
     expect(screen.getByPlaceholderText('Search name, email, or company…')).toHaveValue('acme');
+  });
+
+  it('a failed save says why and keeps the dialog open (it used to do nothing, silently)', async () => {
+    const { SavedViewsService } = await import('../../services/api');
+    SavedViewsService.create.mockRejectedValueOnce({ response: { data: { detail: 'You already have a view called "Dup".' } } });
+    await renderHub();
+    await userEvent.click(screen.getByText('+ Filter'));
+    await userEvent.click(within(screen.getByText('Add a filter').parentElement).getByText('Source'));
+    await userEvent.click(await screen.findByText('Uploaded'));
+    await userEvent.click(screen.getByText('+ Save view'));
+    await userEvent.type(screen.getByPlaceholderText('Name this view…'), 'Dup');
+    await userEvent.click(screen.getByText('Save view'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('You already have a view called "Dup".');
+    expect(screen.getByPlaceholderText('Name this view…')).toBeInTheDocument();   // still open, name kept
+  });
+
+  it('moves views left in this browser (before they were per user) up to the account, once', async () => {
+    const { SavedViewsService } = await import('../../services/api');
+    window.localStorage.setItem('leadsHub.savedViews', JSON.stringify([
+      { id: 'old', name: 'Old View', filters: { source: 'uploaded' }, keys: ['source'], search: '' },
+    ]));
+    await renderHub();
+    expect(await screen.findByText('Old View')).toBeInTheDocument();
+    expect(SavedViewsService.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Old View', keys: ['source'] }));
+    expect(window.localStorage.getItem('leadsHub.savedViews')).toBeNull();
+  });
+
+  it('opens a Dashboard smart view: says what it is, asks the server for it, and clears back to all leads', async () => {
+    window.sessionStorage.setItem('leadsHub.viewState', JSON.stringify({
+      filters: {}, activeFilterKeys: [], page: 1, smartView: { key: 'not_yet_called', label: 'Leads nobody has called yet' },
+    }));
+    const { LeadsService } = await import('../../services/api');
+    await renderHub();
+    expect(await screen.findByTestId('smart-view-banner')).toHaveTextContent('Leads nobody has called yet');
+    expect(LeadsService.getLeads.mock.calls.some(([params]) => params.smart === 'not_yet_called')).toBe(true);
+    LeadsService.getLeads.mockClear();
+    await userEvent.click(screen.getByLabelText('Clear this view'));
+    await waitFor(() => expect(screen.queryByTestId('smart-view-banner')).not.toBeInTheDocument());
+    await waitFor(() => expect(LeadsService.getLeads).toHaveBeenCalled());
+    expect(LeadsService.getLeads.mock.calls.every(([params]) => params.smart === undefined)).toBe(true);
   });
 
   it('does not crash when localStorage has a schema-drifted (valid JSON, wrong shape) saved-views value', async () => {
@@ -356,7 +451,7 @@ describe('LeadsHub', () => {
     await userEvent.click(screen.getByText('+ Filter'));
     const addFilterMenu = screen.getByText('Add a filter').parentElement;
     await userEvent.click(within(addFilterMenu).getByText('Source'));
-    await userEvent.click(screen.getByText('Uploaded'));
+    await userEvent.click(await screen.findByText('Uploaded'));
 
     // Native window.prompt replaced with the app's own Modal + text input.
     await userEvent.click(screen.getByText('+ Save view'));
@@ -471,8 +566,47 @@ describe('LeadsHub — SDR workflow parity', () => {
     const { LeadsService } = await import('../../services/api');
     await renderHub({ userRole: 'SDR' });
     await waitFor(() => expect(LeadsService.getLeads).toHaveBeenCalledWith(
-      expect.objectContaining({ sort_by: 'priority', sort_dir: 'desc' })
+      expect.objectContaining({ sort_by: 'priority', sort_dir: 'desc' }),
+      expect.anything()
     ));
+  });
+
+  it('SDR role still sees company grouping under its own default priority sort', async () => {
+    // RCA 2026-08-21 (live — "SDRs still don't see grouping"): grouping used
+    // to be suppressed whenever ANY sort key was set, including the
+    // priority-sort default every SDR/AE gets automatically on load -- so
+    // company grouping silently never rendered for a single SDR, ever,
+    // with no way to discover it was there. Classic itself shows company
+    // grouping and a priority badge together with no conflict; this must too.
+    const { LeadsService } = await import('../../services/api');
+    LeadsService.getLeads.mockResolvedValueOnce({
+      data: [sampleLead, { ...sampleLead, id: 'lead-2', first_name: 'Bob', last_name: 'Diaz', company: 'Globex Corp' }],
+      total: 2, page: 1, pages: 1,
+    });
+    await renderHub({ userRole: 'SDR' });
+    expect(screen.getAllByLabelText('Disqualify account')).toHaveLength(2);
+  });
+
+  it('the No Company group always sorts last, never first', async () => {
+    // RCA 2026-08-21 (live): plain localeCompare doesn't reliably push the
+    // '—' no-company bucket after every real company name -- pin it last
+    // explicitly. Feed it first in the raw API response so a naive
+    // "preserve original order" bug would also fail this.
+    const { LeadsService } = await import('../../services/api');
+    LeadsService.getLeads.mockResolvedValueOnce({
+      data: [
+        { ...sampleLead, id: 'lead-nc', company: null },
+        { ...sampleLead, id: 'lead-2', first_name: 'Bob', last_name: 'Diaz', company: 'Globex Corp' },
+      ],
+      total: 2, page: 1, pages: 1,
+    });
+    await renderHub({ userRole: 'Super Admin' });
+    const acme = await screen.findByText('Globex Corp');
+    // Scoped to the group-header toggle button — LeadsHubTour's own copy
+    // also mentions "No Company" in its first step's body text.
+    const noCompany = screen.getByRole('button', { name: /No Company/ });
+    // DOCUMENT_POSITION_FOLLOWING (4) means noCompany comes after acme in the DOM.
+    expect(acme.compareDocumentPosition(noCompany) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('admin role does not get a priority-sort default', async () => {
@@ -486,6 +620,23 @@ describe('LeadsHub — SDR workflow parity', () => {
     await renderHub({ userRole: 'SDR' });
     expect(screen.queryByText('Round Robin Auto-Assign')).not.toBeInTheDocument();
     expect(screen.queryByText('Assign mode')).not.toBeInTheDocument();
+  });
+
+  it('SDR gets a lighter "Select Leads" toggle instead — checkboxes and Add to Call List, no Assign/Unassign', async () => {
+    await renderHub({ userRole: 'SDR' });
+    expect(screen.getByText('Select Leads')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Select Leads'));
+    await userEvent.click(screen.getByLabelText('Select Jane Smith'));
+
+    expect(screen.getByText('Add to Call List')).toBeInTheDocument();
+    expect(screen.queryByText('Assign')).not.toBeInTheDocument();
+    expect(screen.queryByText('Unassign')).not.toBeInTheDocument();
+  });
+
+  it('Pod Admin/Super Admin do not get the separate "Select Leads" toggle — Assign mode already covers it', async () => {
+    await renderHub({ userRole: 'Pod Admin' });
+    expect(screen.queryByText('Select Leads')).not.toBeInTheDocument();
   });
 
   it('Round Robin / Assign mode are present for Pod Admin', async () => {
@@ -513,13 +664,16 @@ describe('LeadsHub — SDR workflow parity', () => {
     await userEvent.click(screen.getByText('Assign mode'));
     await userEvent.click(screen.getByLabelText('Select Jane Smith'));
     await userEvent.click(await screen.findByText('Assign to…'));
-    const picker = screen.getByPlaceholderText('Search SDR…').parentElement;
-    const names = within(picker).getAllByRole('button').map((b) => b.textContent);
+    // The option list is the Popover's whole listbox (search input + options
+    // are siblings inside it, not nested under the input) and each option
+    // is a role="option" button, not a plain "button".
+    const picker = screen.getByRole('listbox');
+    const names = within(picker).getAllByRole('option').map((b) => b.textContent);
     // Neha (1/5) most available, then Isha (4/5), then at-cap Priya (5/5) last.
     expect(names[0]).toContain('Neha Singh');
     expect(names[names.length - 1]).toContain('Priya Rao');
     expect(within(picker).getByText(/5\/5.*FULL/)).toBeInTheDocument();
-    expect(within(picker).getByText('Priya Rao').closest('button')).toBeDisabled();
+    expect(within(picker).getByText(/Priya Rao/).closest('button')).toBeDisabled();
   });
 
   it("a 'Sales'-role user appears in the assign picker, not just SDR/AE", async () => {
@@ -527,8 +681,8 @@ describe('LeadsHub — SDR workflow parity', () => {
     await userEvent.click(screen.getByText('Assign mode'));
     await userEvent.click(screen.getByLabelText('Select Jane Smith'));
     await userEvent.click(await screen.findByText('Assign to…'));
-    const picker = screen.getByPlaceholderText('Search SDR…').parentElement;
-    expect(within(picker).getByText('Priya Rao')).toBeInTheDocument();
+    const picker = screen.getByRole('listbox');
+    expect(within(picker).getByText(/Priya Rao/)).toBeInTheDocument();
   });
 
   it('SDR role never fires the admin-only sdrs/uploadLogs fetches, and never sees "Assigned To" or the Upload filter', async () => {
@@ -551,5 +705,18 @@ describe('LeadsHub — SDR workflow parity', () => {
     await userEvent.click(screen.getByText('+ Filter'));
     const addFilterMenu = screen.getByText('Add a filter').parentElement;
     expect(within(addFilterMenu).getByText('Upload')).toBeInTheDocument();
+  });
+
+  it('shows a "Switch to classic view" link when onSwitchToClassic is provided, and calls it on click', async () => {
+    const onSwitchToClassic = vi.fn();
+    await renderHub({ userRole: 'SDR', onSwitchToClassic });
+    const link = screen.getByText('Switch to classic view');
+    await userEvent.click(link);
+    expect(onSwitchToClassic).toHaveBeenCalled();
+  });
+
+  it('has no "Switch to classic view" link when onSwitchToClassic is not provided', async () => {
+    await renderHub({ userRole: 'SDR' });
+    expect(screen.queryByText('Switch to classic view')).not.toBeInTheDocument();
   });
 });

@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PowerDialerHub } from '../../features/power-dialer-hub/PowerDialerHub';
-import { LeadsService, CallsService, DialerService } from '../../services/api';
+import { _resetQueueCacheForTests } from '../../features/power-dialer-hub/usePowerDialerQueue';
+import { LeadsService, CallsService, DialerService, CallListsService } from '../../services/api';
 
 vi.mock('../../services/api', () => ({
   LeadsService: { getLeads: vi.fn() },
   CallsService: { getTodayCalls: vi.fn() },
   DialerService: { getStatus: vi.fn(), getQueueStatus: vi.fn(), setQueueStatus: vi.fn(), clearQueueStatus: vi.fn(), getSkipSummary: vi.fn() },
+  SalesJourneyService: { list: vi.fn().mockResolvedValue([]) },
+  CallListsService: { list: vi.fn().mockResolvedValue({ call_lists: [] }) },
 }));
 
 const emptyStats = { date: '2026-08-07', summary: { total: 0, connected: 0, no_answer: 0, voicemail: 0, callback: 0, meeting: 0, other: 0 }, calls: [] };
@@ -15,6 +18,7 @@ const emptyStats = { date: '2026-08-07', summary: { total: 0, connected: 0, no_a
 describe('PowerDialerHub', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetQueueCacheForTests();
     CallsService.getTodayCalls.mockResolvedValue(emptyStats);
     DialerService.getStatus.mockResolvedValue({ active: false, provider: 'none' });
   });
@@ -117,6 +121,59 @@ describe('PowerDialerHub', () => {
     // which also matches the unrelated "Total" tile in TodayStatsPanel).
     await waitFor(() => expect(screen.getByText('calls today')).toBeInTheDocument());
     expect(screen.getByText('calls today').previousSibling).toHaveTextContent('8');
+  });
+
+  it('shows a Call List dropdown once any exist, and threads call_list_id into GET /leads', async () => {
+    const user = userEvent.setup();
+    LeadsService.getLeads.mockResolvedValue({ data: [] });
+    CallListsService.list.mockResolvedValue({
+      call_lists: [{ id: 'cl-1', name: 'Q3 Follow-ups', lead_count: 5 }],
+    });
+    render(<PowerDialerHub />);
+
+    const select = await screen.findByLabelText('Call List:');
+    await user.click(select);
+    await user.click(screen.getByRole('menuitem', { name: 'Q3 Follow-ups (5)' }));
+    await waitFor(() => expect(LeadsService.getLeads).toHaveBeenLastCalledWith(
+      expect.objectContaining({ call_list_id: 'cl-1' })
+    ));
+  });
+
+  it('does not show a Call List dropdown when none exist', async () => {
+    LeadsService.getLeads.mockResolvedValue({ data: [] });
+    CallListsService.list.mockResolvedValue({ call_lists: [] });
+    render(<PowerDialerHub />);
+    await waitFor(() => expect(LeadsService.getLeads).toHaveBeenCalled());
+    expect(screen.queryByLabelText('Call List:')).not.toBeInTheDocument();
+  });
+
+  it('falls back to "All leads" and shows a notice when a selected Call List no longer exists on refresh', async () => {
+    // Two lists, so the dropdown itself survives the deletion — isolates the
+    // "selection resets" behavior from the separate "dropdown disappears
+    // when zero lists remain" case.
+    const user = userEvent.setup();
+    LeadsService.getLeads.mockResolvedValue({ data: [] });
+    CallListsService.list.mockResolvedValue({
+      call_lists: [
+        { id: 'cl-1', name: 'Q3 Follow-ups', lead_count: 5 },
+        { id: 'cl-2', name: 'Renewals', lead_count: 2 },
+      ],
+    });
+    render(<PowerDialerHub />);
+
+    const select = await screen.findByLabelText('Call List:');
+    await user.click(select);
+    await user.click(screen.getByRole('menuitem', { name: 'Q3 Follow-ups (5)' }));
+    await waitFor(() => expect(select).toHaveTextContent('Q3 Follow-ups (5)'));
+
+    // Someone else deleted cl-1 — the next Refresh's call-lists fetch no
+    // longer includes it. TodayStatsPanel has its own separate "Refresh"
+    // button too — the header's is the first one in DOM order.
+    CallListsService.list.mockResolvedValue({ call_lists: [{ id: 'cl-2', name: 'Renewals', lead_count: 2 }] });
+    await user.click(screen.getAllByRole('button', { name: /Refresh/ })[0]);
+
+    await waitFor(() => expect(select).toHaveTextContent('All leads'));
+    expect(screen.getByText(/no longer exists/)).toBeInTheDocument();
   });
 
   it('passes onLeadClick through to the current-call card ("View in CRM")', async () => {

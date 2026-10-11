@@ -16,7 +16,8 @@ class TestAddNote:
         assert resp.status_code == 200
         data = resp.json()
         assert data["content"] == "This is a test note"
-        assert data["author"] == "Tester"
+        # 2026-09-29: author is the logged-in user, never the request body.
+        assert data["author"] == "Test Admin"
 
     def test_add_note_lead_not_found(self, client):
         resp = client.post("/api/leads/nonexistent/notes", json={"content": "Oops"})
@@ -26,7 +27,7 @@ class TestAddNote:
         lead = create_test_lead(db, email="defauth@t.com")
         resp = client.post(f"/api/leads/{lead.id}/notes", json={"content": "No author"})
         assert resp.status_code == 200
-        assert resp.json()["author"] == "You"
+        assert resp.json()["author"] == "Test Admin"
 
 
 class TestGetNotes:

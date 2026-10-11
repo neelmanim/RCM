@@ -6,7 +6,7 @@ import { DialerService, LeadsService } from '../../services/api';
 
 vi.mock('../../services/api', () => ({
   DialerService: { getStatus: vi.fn() },
-  LeadsService: { addNote: vi.fn() },
+  LeadsService: { addNote: vi.fn(), updateLead: vi.fn() },
 }));
 
 const lead = { id: 'l1', first_name: 'Jane', last_name: 'Doe', company: 'Acme', phone: '+919876543210', status: 'Lead Assigned' };
@@ -16,6 +16,7 @@ describe('CurrentCallCard', () => {
     window._openCallModal = vi.fn();
     DialerService.getStatus.mockResolvedValue({ active: false, provider: 'none' });
     LeadsService.addNote.mockResolvedValue({});
+    LeadsService.updateLead.mockResolvedValue({});
   });
 
   it('shows "Call" (not "Call Next") before an outcome is resolved, and dials via the global call flow', async () => {
@@ -29,7 +30,7 @@ describe('CurrentCallCard', () => {
     expect(window._openCallModal).toHaveBeenCalledWith('l1', 'Jane Doe', '+919876543210', lead);
   });
 
-  it('labels the button by active dialer provider — Aircall, RCM, or a manual-log fallback', async () => {
+  it('labels the button by active dialer provider — Aircall, Alternate Messenger, or a manual-log fallback', async () => {
     DialerService.getStatus.mockResolvedValue({ active: true, provider: 'aircall', has_credentials: true });
     render(<CurrentCallCard lead={lead} callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()} />);
     await waitFor(() => expect(screen.getByRole('button', { name: /Call via Aircall/ })).toBeInTheDocument());
@@ -58,7 +59,9 @@ describe('CurrentCallCard', () => {
     const onSkip = vi.fn();
     render(<CurrentCallCard lead={lead} callNextEnabled={false} onCallNext={vi.fn()} onSkip={onSkip} />);
 
-    const skipBtn = screen.getByRole('button', { name: /Skip/ });
+    // Exact match — a regex would also catch the adjacent "Skip with a
+    // reason" trigger button now that it's a real <button role> too.
+    const skipBtn = screen.getByRole('button', { name: 'Skip' });
     expect(skipBtn).not.toBeDisabled();
     await user.click(skipBtn);
     expect(onSkip).toHaveBeenCalledTimes(1);
@@ -69,7 +72,8 @@ describe('CurrentCallCard', () => {
     const onSkip = vi.fn();
     render(<CurrentCallCard lead={lead} callNextEnabled={false} onCallNext={vi.fn()} onSkip={onSkip} />);
 
-    await user.selectOptions(screen.getByLabelText('Skip with a reason'), 'Wrong number');
+    await user.click(screen.getByRole('button', { name: 'Skip with a reason' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Wrong number' }));
     expect(onSkip).toHaveBeenCalledWith('Wrong number');
   });
 
@@ -99,7 +103,10 @@ describe('CurrentCallCard', () => {
     expect(onSkip).toHaveBeenCalledTimes(1);
 
     onSkip.mockClear();
-    screen.getByLabelText('Skip with a reason').focus();
+    // Open the reason menu — the keydown guard only needs to swallow "s"
+    // while the (portalled) menu/menuitem is actually showing, not merely
+    // while the closed trigger button happens to have focus.
+    await user.click(screen.getByRole('button', { name: 'Skip with a reason' }));
     await user.keyboard('s');
     expect(onSkip).not.toHaveBeenCalled();
   });
@@ -162,6 +169,20 @@ describe('CurrentCallCard', () => {
       expect(screen.getByText(/Last contact: —/)).toBeInTheDocument();
       expect(screen.getByText(/Last outcome: —/)).toBeInTheDocument();
     });
+
+    it('shows the previous caller\'s note content, not just the outcome enum', () => {
+      render(<CurrentCallCard
+        lead={{ ...lead, latest_note: { content: 'Asked to call back after 3pm, interested in Pro plan', author: 'Priya', created_at: '2026-09-10T12:00:00Z' } }}
+        callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()}
+      />);
+      expect(screen.getByText(/Asked to call back after 3pm, interested in Pro plan/)).toBeInTheDocument();
+      expect(screen.getByText(/Priya/)).toBeInTheDocument();
+    });
+
+    it('renders no note preview when the lead has no notes yet', () => {
+      render(<CurrentCallCard lead={{ ...lead, latest_note: null }} callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()} />);
+      expect(screen.queryByText('Last note')).not.toBeInTheDocument();
+    });
   });
 
   describe('Add Note', () => {
@@ -208,6 +229,74 @@ describe('CurrentCallCard', () => {
 
       rerender(<CurrentCallCard lead={{ ...lead, id: 'l2' }} callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()} />);
       expect(screen.queryByPlaceholderText('Add a note…')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Call script', () => {
+    it('shows no script section and an "Add Script" button when the lead has neither', () => {
+      render(<CurrentCallCard lead={lead} callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()} />);
+      expect(screen.getByRole('button', { name: /Add Script/ })).toBeInTheDocument();
+      expect(screen.queryByText('Your script')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Cadence script/)).not.toBeInTheDocument();
+    });
+
+    it('shows the per-lead override, labeled "Your script", over the cadence default', () => {
+      render(<CurrentCallCard
+        lead={{ ...lead, talking_points: 'Ask about their renewal date first.', active_call_script: { title: 'Follow-up', script: 'Generic cadence script' } }}
+        callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()}
+      />);
+      expect(screen.getByText('Your script')).toBeInTheDocument();
+      expect(screen.getByText('Ask about their renewal date first.')).toBeInTheDocument();
+      expect(screen.queryByText('Generic cadence script')).not.toBeInTheDocument();
+    });
+
+    it('falls back to the cadence default, with its journey title, when there is no override', () => {
+      render(<CurrentCallCard
+        lead={{ ...lead, active_call_script: { title: 'Follow-up call', script: 'Lead with the renewal discount.' } }}
+        callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()}
+      />);
+      expect(screen.getByText(/Cadence script — Follow-up call/)).toBeInTheDocument();
+      expect(screen.getByText('Lead with the renewal discount.')).toBeInTheDocument();
+    });
+
+    it('opens the editor prefilled from the cadence default, and saves an override via LeadsService.updateLead', async () => {
+      const user = userEvent.setup();
+      render(<CurrentCallCard
+        lead={{ ...lead, active_call_script: { title: 'Follow-up', script: 'Generic script' } }}
+        callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()}
+      />);
+
+      await user.click(screen.getByRole('button', { name: 'Edit' }));
+      const textarea = screen.getByPlaceholderText(/Key talking points/);
+      expect(textarea).toHaveValue('Generic script');
+      await user.clear(textarea);
+      await user.type(textarea, 'My own tailored script');
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(LeadsService.updateLead).toHaveBeenCalledWith('l1', { talking_points: 'My own tailored script' }));
+    });
+
+    it('saving a blank override sends null, clearing it', async () => {
+      const user = userEvent.setup();
+      render(<CurrentCallCard lead={{ ...lead, talking_points: 'existing override' }} callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()} />);
+
+      await user.click(screen.getByRole('button', { name: 'Edit' }));
+      await user.clear(screen.getByPlaceholderText(/Key talking points/));
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(LeadsService.updateLead).toHaveBeenCalledWith('l1', { talking_points: null }));
+    });
+
+    it('shows an error and keeps the composer open if saving fails', async () => {
+      LeadsService.updateLead.mockRejectedValue(new Error('network'));
+      const user = userEvent.setup();
+      render(<CurrentCallCard lead={{ ...lead, talking_points: 'x' }} callNextEnabled={false} onCallNext={vi.fn()} onSkip={vi.fn()} />);
+
+      await user.click(screen.getByRole('button', { name: 'Edit' }));
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(screen.getByText(/Failed to save/)).toBeInTheDocument());
+      expect(screen.getByPlaceholderText(/Key talking points/)).toBeInTheDocument();
     });
   });
 

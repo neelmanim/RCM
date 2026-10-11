@@ -1,0 +1,98 @@
+[
+  {
+    "sheet": "01_scanner_events",
+    "raw": 286,
+    "kept": 0,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 286
+  },
+  {
+    "sheet": "02_apollo_enriched",
+    "raw": 324,
+    "kept": 265,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 59
+  },
+  {
+    "sheet": "03_sf_export_tanya",
+    "raw": 545,
+    "kept": 0,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 545
+  },
+  {
+    "sheet": "04_mixed_gauri",
+    "raw": 89,
+    "kept": 0,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 89
+  },
+  {
+    "sheet": "05_enriched_outbound",
+    "raw": 1201,
+    "kept": 823,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 378
+  },
+  {
+    "sheet": "06_messenger_tier",
+    "raw": 525,
+    "kept": 525,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 0
+  },
+  {
+    "sheet": "07_event_gauri",
+    "raw": 141,
+    "kept": 135,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 6
+  },
+  {
+    "sheet": "08_fresh_outbound",
+    "raw": 1302,
+    "kept": 264,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 1038
+  },
+  {
+    "sheet": "09_sql_won_tracker",
+    "raw": 134,
+    "kept": 97,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 37
+  },
+  {
+    "sheet": "10_himanshu_batch",
+    "raw": 4871,
+    "kept": 4249,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 622
+  },
+  {
+    "sheet": "12_drift_salesloft",
+    "raw": 146,
+    "kept": 118,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 28
+  },
+  {
+    "sheet": "11_master_merged",
+    "raw": 3549,
+    "kept": 1896,
+    "skipped_no_phone": 0,
+    "skipped_no_sdr": 0,
+    "skipped_total": 1653
+  }
+]

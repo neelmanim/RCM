@@ -5,8 +5,8 @@ Phase 1: Download Google Sheets + Build SDR Email Map
 Downloads all 12 sheets as CSV, fetches Aircall users, and produces:
   - data/raw/*.csv                (12 raw CSV files)
   - data/aircall_users.json       (all Aircall users)
-  - data/rcm_users.json     (all RCM users — from prod DB)
-  - data/sdr_email_map.json       (matched SDRs: email → {aircall_id, rcm_id, name, pod})
+  - data/alternatecrm_users.json     (all Alternate CRM users — from prod DB)
+  - data/sdr_email_map.json       (matched SDRs: email → {aircall_id, alternatecrm_id, name, pod})
   - data/sheet_sdr_name_map.json  (sheet SDR name → canonical email)
 """
 
@@ -31,7 +31,7 @@ SHEETS = [
     {"id": "1DtYJxEsUsFq-fMNsuUtocRflyxyhxxES", "gid": "1591506325",
      "name": "05_enriched_outbound", "sdr_col": "Assigned SDR", "desc": "Enriched outbound"},
     {"id": "1DtYJxEsUsFq-fMNsuUtocRflyxyhxxES", "gid": "582922199",
-     "name": "06_rcm_tier", "sdr_col": "SDR", "desc": "RCM tier"},
+     "name": "06_messenger_tier", "sdr_col": "SDR", "desc": "Alternate Messenger tier"},
     {"id": "1DtYJxEsUsFq-fMNsuUtocRflyxyhxxES", "gid": "373568905",
      "name": "07_event_gauri", "sdr_col": "Assigned to", "desc": "Event leads (Gauri)"},
     {"id": "1DtYJxEsUsFq-fMNsuUtocRflyxyhxxES", "gid": "608409716",
@@ -50,8 +50,8 @@ SHEETS = [
 AIRCALL_API_ID = "f48035d08c16ff744865ecd22bb43c85"
 AIRCALL_API_TOKEN = "a2de0d3cf7c3b00a2b2f712912912be1"
 
-# RCM production API
-RCM_PROD = "https://api.alternatecrm.com"
+# Alternate CRM production API
+ALTERNATE_CRM_PROD = "https://api.alternatecrm.messenger.ai"
 
 
 def download_sheet(sheet_id, gid, output_path):
@@ -96,9 +96,9 @@ def fetch_aircall_users():
     return all_users
 
 
-def fetch_rcm_users_from_db():
+def fetch_alternatecrm_users_from_db():
     """
-    Fetch RCM users by connecting to the production database.
+    Fetch Alternate CRM users by connecting to the production database.
     
     Pass the DATABASE_URL via:
       - CLI argument:  python phase1_download_and_map.py "postgresql://..."
@@ -138,13 +138,13 @@ def fetch_rcm_users_from_db():
             })
         return result
     except Exception as e:
-        print(f"  ⚠️  Could not connect to RCM DB: {e}")
+        print(f"  ⚠️  Could not connect to Alternate CRM DB: {e}")
         return None
 
 
-def build_sdr_maps(aircall_users, rcm_users):
+def build_sdr_maps(aircall_users, alternatecrm_users):
     """
-    Build the SDR email map: only SDRs present in BOTH Aircall AND RCM.
+    Build the SDR email map: only SDRs present in BOTH Aircall AND Alternate CRM.
     Also build a sheet SDR name → email map for normalizing the varying 
     name formats across sheets.
     """
@@ -157,9 +157,9 @@ def build_sdr_maps(aircall_users, rcm_users):
             "email": u["email"]
         }
     
-    # RCM: email → user data
+    # Alternate CRM: email → user data
     ls_by_email = {}
-    for u in rcm_users:
+    for u in alternatecrm_users:
         ls_by_email[u["email"].lower()] = u
     
     # Match: only SDRs in BOTH systems
@@ -171,10 +171,10 @@ def build_sdr_maps(aircall_users, rcm_users):
             sdr_email_map[email] = {
                 "aircall_id": ac["id"],
                 "aircall_name": ac["name"],
-                "rcm_id": ls["id"],
-                "rcm_name": ls["name"],
-                "rcm_role": ls["role"],
-                "rcm_pod_id": ls["pod_id"],
+                "alternatecrm_id": ls["id"],
+                "alternatecrm_name": ls["name"],
+                "alternatecrm_role": ls["role"],
+                "alternatecrm_pod_id": ls["pod_id"],
                 "email": email,
             }
     
@@ -189,8 +189,8 @@ def build_sdr_maps(aircall_users, rcm_users):
         first = full.split()[0] if full else ""
         if first and first not in name_to_email:
             name_to_email[first] = email
-        # Also try RCM name
-        ls_full = (data["rcm_name"] or "").strip().lower()
+        # Also try Alternate CRM name
+        ls_full = (data["alternatecrm_name"] or "").strip().lower()
         if ls_full:
             name_to_email[ls_full] = email
             ls_first = ls_full.split()[0]
@@ -231,29 +231,29 @@ def main():
     with open(os.path.join(DATA_DIR, "aircall_users.json"), "w") as f:
         json.dump(aircall_users, f, indent=2)
     
-    # ── Step 3: Fetch RCM users ──
-    print("\n👤 Step 3: Fetching RCM users...")
-    ls_users = fetch_rcm_users_from_db()
+    # ── Step 3: Fetch Alternate CRM users ──
+    print("\n👤 Step 3: Fetching Alternate CRM users...")
+    ls_users = fetch_alternatecrm_users_from_db()
     if ls_users:
-        print(f"  ✅ {len(ls_users)} RCM users fetched from DB")
-        with open(os.path.join(DATA_DIR, "rcm_users.json"), "w") as f:
+        print(f"  ✅ {len(ls_users)} Alternate CRM users fetched from DB")
+        with open(os.path.join(DATA_DIR, "alternatecrm_users.json"), "w") as f:
             json.dump(ls_users, f, indent=2)
     else:
         # Try loading from a saved file if DB isn't accessible
-        saved_path = os.path.join(DATA_DIR, "rcm_users.json")
+        saved_path = os.path.join(DATA_DIR, "alternatecrm_users.json")
         if os.path.exists(saved_path):
             with open(saved_path) as f:
                 ls_users = json.load(f)
             print(f"  ⚠️  Loaded {len(ls_users)} users from cached file")
         else:
-            print("  ❌ Cannot fetch RCM users. Please run this from the backend env.")
+            print("  ❌ Cannot fetch Alternate CRM users. Please run this from the backend env.")
             sys.exit(1)
     
     # ── Step 4: Build SDR maps ──
     print("\n🗺️  Step 4: Building SDR email map...")
     sdr_map, name_map = build_sdr_maps(aircall_users, ls_users)
     
-    print(f"  ✅ {len(sdr_map)} SDRs matched (in both Aircall + RCM):")
+    print(f"  ✅ {len(sdr_map)} SDRs matched (in both Aircall + Alternate CRM):")
     for email, data in sorted(sdr_map.items()):
         print(f"     {data['aircall_name']:<30} | {email}")
     
@@ -269,7 +269,7 @@ def main():
     print(f"  📄 Sheets downloaded:    {sum(1 for s in sheet_stats if s['status'] == 'ok')}/12")
     print(f"  📊 Total raw rows:       {total_rows:,}")
     print(f"  📞 Aircall users:        {len(aircall_users)}")
-    print(f"  👤 RCM users:      {len(ls_users)}")
+    print(f"  👤 Alternate CRM users:      {len(ls_users)}")
     print(f"  🗺️  Matched SDRs:        {len(sdr_map)}")
     print(f"\n  Checkpoint files in: {DATA_DIR}/")
     print(f"  Next: Run phase2_normalize.py")

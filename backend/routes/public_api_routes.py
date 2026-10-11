@@ -5,7 +5,7 @@ Authentication via X-API-Key header (managed in Admin Settings → Public API ta
 
 Available endpoints:
   GET /api/public/sf/account       — Look up a Salesforce Account (or Lead fallback)
-                                      using RCMMessaging_AccountId__c or Account Name.
+                                      using messaging_provider_AccountId__c or Account Name.
   GET /api/public/leads/search     — Search leads by name/email/company.
   GET /api/public/leads/{id}/calls — Call history for a lead.
   GET /api/public/health           — Unauthenticated liveness check.
@@ -14,7 +14,7 @@ A valid API key grants full (Super Admin-equivalent) read access — same trust
 model as the existing sf/account endpoint. There is no per-key user identity or
 role scoping, so treat the key itself as the access boundary: one key per
 consumer, and only hand it out for read-only internal tooling (e.g. the
-RCM MCP server in mcp_server/).
+Alternate CRM MCP server in mcp_server/).
 """
 import logging
 import re
@@ -22,10 +22,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from sqlalchemy.orm import Session
 
-from auth import require_api_key
+from auth import require_api_key, public_endpoint
 from database import get_db
-from salesforce import get_sf_client
-from routes.lead_helpers import _build_lead_query, _apply_filters
+from salesforce import get_sf_client, sf_lightning_url
+from routes.lead_helpers import _apply_filters
+from domain.actor import Actor
+from domain.lead_access import visible_leads
 from routes.call_routes import get_lead_calls as _get_lead_calls
 import models
 
@@ -33,12 +35,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/public", tags=["public-api"])
 
-# Synthetic identity for _build_lead_query — an API key has no per-user role/pod,
-# so it's granted the same unrestricted scope as Super Admin (see module docstring).
-_FULL_ACCESS_USER = {"role": "Super Admin", "sub": "public-api-key"}
+# An API key has no per-user role or pod, so it reads at unrestricted scope
+# (see module docstring). Declared as a service Actor rather than a fake
+# Super Admin token dict: same reach, but audit trails can tell the two
+# apart, and the domain rule no longer needs a JWT-shaped input to be called.
+_API_KEY_ACTOR = Actor.service("public-api-key")
 
-# ── SF field name for RCM Messaging Account ID on Account object ──────────────────
-SF_EXTERNAL_ID_FIELD = "RCMMessaging_AccountId__c"
+# ── SF field name for SMS Magic Account ID on Account object ──────────────────
+SF_MESSAGING_PROVIDER_FIELD = "messaging_provider_AccountId__c"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -65,29 +69,29 @@ def _build_sf_url(sf_client, record_id: str, object_type: str) -> Optional[str]:
             if match:
                 instance = match.group(1)
         if instance:
-            return f"{instance}/lightning/r/{object_type}/{record_id}/view"
+            return sf_lightning_url(instance, object_type, record_id)
     except Exception:
         pass
     return None
 
 
-def _query_account_by_rcm_messaging_id(sf, sms_id: str) -> Optional[dict]:
-    """Query Salesforce Account object by RCMMessaging_AccountId__c (exact match)."""
+def _query_account_by_messaging_provider_id(sf, sms_id: str) -> Optional[dict]:
+    """Query Salesforce Account object by messaging_provider_AccountId__c (exact match)."""
     safe_id = _escape_soql(sms_id)
     try:
         result = sf.query(
-            f"SELECT Id, Name FROM Account WHERE {SF_EXTERNAL_ID_FIELD} = '{safe_id}' LIMIT 1"
+            f"SELECT Id, Name FROM Account WHERE {SF_MESSAGING_PROVIDER_FIELD} = '{safe_id}' LIMIT 1"
         )
         records = result.get("records", [])
         if records:
-            return {"record": records[0], "confidence": "exact", "matched_by": "rcm_messaging_id"}
+            return {"record": records[0], "confidence": "exact", "matched_by": "messaging_provider_id"}
     except Exception as e:
         err = str(e)
         if "INVALID_FIELD" in err or "No such column" in err:
-            logger.warning(f"[PublicAPI] {SF_EXTERNAL_ID_FIELD} field not found on Account object. "
+            logger.warning(f"[PublicAPI] {SF_MESSAGING_PROVIDER_FIELD} field not found on Account object. "
                            f"Check SF field API name. Error: {e}")
             return None
-        logger.error(f"[PublicAPI] SOQL error querying Account by rcm_messaging_id: {e}")
+        logger.error(f"[PublicAPI] SOQL error querying Account by messaging_provider_id: {e}")
         raise HTTPException(status_code=503,
                             detail="Salesforce query error. Check server logs.")
     return None
@@ -131,23 +135,23 @@ def _query_account_by_name(sf, company_name: str) -> Optional[dict]:
     return None
 
 
-def _query_lead_by_rcm_messaging_id(sf, sms_id: str) -> Optional[dict]:
-    """Fallback: query Salesforce Lead by RCMMessaging_AccountId__c."""
+def _query_lead_by_messaging_provider_id(sf, sms_id: str) -> Optional[dict]:
+    """Fallback: query Salesforce Lead by messaging_provider_AccountId__c."""
     safe_id = _escape_soql(sms_id)
     try:
         result = sf.query(
             f"SELECT Id, FirstName, LastName, Company FROM Lead "
-            f"WHERE {SF_EXTERNAL_ID_FIELD} = '{safe_id}' LIMIT 1"
+            f"WHERE {SF_MESSAGING_PROVIDER_FIELD} = '{safe_id}' LIMIT 1"
         )
         records = result.get("records", [])
         if records:
-            return {"record": records[0], "confidence": "exact", "matched_by": "rcm_messaging_id"}
+            return {"record": records[0], "confidence": "exact", "matched_by": "messaging_provider_id"}
     except Exception as e:
         err = str(e)
         if "INVALID_FIELD" in err or "No such column" in err:
-            logger.warning(f"[PublicAPI] {SF_EXTERNAL_ID_FIELD} field not found on Lead object.")
+            logger.warning(f"[PublicAPI] {SF_MESSAGING_PROVIDER_FIELD} field not found on Lead object.")
             return None
-        logger.error(f"[PublicAPI] SOQL error querying Lead by rcm_messaging_id: {e}")
+        logger.error(f"[PublicAPI] SOQL error querying Lead by messaging_provider_id: {e}")
     return None
 
 
@@ -192,26 +196,26 @@ def _query_lead_by_company(sf, company_name: str) -> Optional[dict]:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.get("/health")
+@router.get("/health", dependencies=[Depends(public_endpoint)])
 def public_health():
     """Unauthenticated liveness check for the public API."""
-    return {"status": "ok", "api": "RCM Public API"}
+    return {"status": "ok", "api": "Alternate CRM Public API"}
 
 
 @router.get("/sf/account")
 def get_sf_account(
-    rcm_messaging_id: Optional[str] = Query(None, description="RCM Messaging Account ID (RCMMessaging_AccountId__c value in Salesforce)"),
+    messaging_provider_id: Optional[str] = Query(None, description="SMS Magic Account ID (messaging_provider_AccountId__c value in Salesforce)"),
     company_name: Optional[str] = Query(None, description="Salesforce Account Name to look up"),
     _auth: bool = Depends(require_api_key),
 ):
     """
-    Look up a Salesforce Account (or Lead fallback) using RCM's configured SF connection.
+    Look up a Salesforce Account (or Lead fallback) using Alternate CRM's configured SF connection.
 
-    Provide AT LEAST ONE of: rcm_messaging_id | company_name
+    Provide AT LEAST ONE of: messaging_provider_id | company_name
 
     Lookup priority:
       1. Try Salesforce Account object
-           a. If rcm_messaging_id → WHERE RCMMessaging_AccountId__c = '<id>'
+           a. If messaging_provider_id → WHERE messaging_provider_AccountId__c = '<id>'
            b. If company_name → WHERE Name = '<name>' then LIKE fallback
       2. No Account found → try Salesforce Lead object (same matching)
       3. Nothing found → found: false
@@ -219,27 +223,27 @@ def get_sf_account(
     Returns the full Salesforce Lightning URL for the matched record.
     """
     # ── Validate input ────────────────────────────────────────────────────────
-    rcm_messaging_id  = (rcm_messaging_id  or "").strip() or None
+    messaging_provider_id  = (messaging_provider_id  or "").strip() or None
     company_name  = (company_name  or "").strip() or None
 
-    if not rcm_messaging_id and not company_name:
+    if not messaging_provider_id and not company_name:
         raise HTTPException(
             status_code=400,
-            detail="Provide at least one of: rcm_messaging_id, company_name"
+            detail="Provide at least one of: messaging_provider_id, company_name"
         )
 
-    # ── Get SF client (uses RCM's configured connection) ───────────────
+    # ── Get SF client (uses Alternate CRM's configured connection) ───────────────
     sf = get_sf_client()
     if not sf:
         raise HTTPException(
             status_code=503,
-            detail="Salesforce is not connected. Ask your RCM admin to configure the SF connection."
+            detail="Salesforce is not connected. Ask your Alternate CRM admin to configure the SF connection."
         )
 
     # ── Step 1: Query Account ────────────────────────────────────────────────
     account_match = None
-    if rcm_messaging_id:
-        account_match = _query_account_by_rcm_messaging_id(sf, rcm_messaging_id)
+    if messaging_provider_id:
+        account_match = _query_account_by_messaging_provider_id(sf, messaging_provider_id)
     if not account_match and company_name:
         account_match = _query_account_by_name(sf, company_name)
 
@@ -263,8 +267,8 @@ def get_sf_account(
 
     # ── Step 2: No Account — fallback to Lead ────────────────────────────────
     lead_match = None
-    if rcm_messaging_id:
-        lead_match = _query_lead_by_rcm_messaging_id(sf, rcm_messaging_id)
+    if messaging_provider_id:
+        lead_match = _query_lead_by_messaging_provider_id(sf, messaging_provider_id)
     if not lead_match and company_name:
         lead_match = _query_lead_by_company(sf, company_name)
 
@@ -290,12 +294,12 @@ def get_sf_account(
         return response
 
     # ── Step 3: Nothing found ─────────────────────────────────────────────────
-    logger.info(f"[PublicAPI] No Account or Lead found for rcm_messaging_id={rcm_messaging_id!r}, company_name={company_name!r}")
+    logger.info(f"[PublicAPI] No Account or Lead found for messaging_provider_id={messaging_provider_id!r}, company_name={company_name!r}")
     return {
         "found": False,
         "message": "No Account or Lead found in Salesforce for the given identifier.",
         "searched": {
-            "rcm_messaging_id": rcm_messaging_id,
+            "messaging_provider_id": messaging_provider_id,
             "company_name": company_name,
         }
     }
@@ -308,8 +312,8 @@ def search_leads(
     db: Session = Depends(get_db),
     _auth: bool = Depends(require_api_key),
 ):
-    """Search leads for internal read-only tooling (e.g. the RCM MCP server)."""
-    base = _build_lead_query(db, _FULL_ACCESS_USER, global_view=True)
+    """Search leads for internal read-only tooling (e.g. the Alternate CRM MCP server)."""
+    base = visible_leads(db, _API_KEY_ACTOR, global_view=True)
     base = _apply_filters(base, search=q)
     leads = base.order_by(models.Lead.created_at.desc()).limit(limit).all()
     return {
@@ -335,4 +339,6 @@ def get_lead_calls_public(
     _auth: bool = Depends(require_api_key),
 ):
     """Call history for a lead — same data/shape as the internal endpoint this wraps."""
-    return _get_lead_calls(lead_id=lead_id, page=page, limit=limit, db=db)
+    # The API key is a Super-Admin-reach service actor (see _API_KEY_ACTOR).
+    return _get_lead_calls(lead_id=lead_id, page=page, limit=limit, db=db,
+                           user={"sub": _API_KEY_ACTOR.id, "role": _API_KEY_ACTOR.role})

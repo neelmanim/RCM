@@ -19,8 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from database import get_db
+from database import get_db, get_ai_db
 from auth import require_admin
+import access_db
 import models
 from services.smart_analytics import (
     parse_nl_to_dsl,
@@ -72,7 +73,7 @@ class PinReportRequest(BaseModel):
 def smart_query(
     payload: QueryRequest,
     admin: dict = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_ai_db),
 ):
     """
     Convert a natural language question to analytics results.
@@ -428,6 +429,10 @@ def list_batches(
     Returns [{id, label, upload_date, filename}]
     """
     batches = resolve_batches(db)
+    if admin.get("role") == "Pod Admin":      # v13.12.1: only batches that touched their own pod's leads
+        mine = {x for (x,) in db.query(models.Lead.upload_log_id).filter(
+            models.Lead.pod_id == (access_db.pod_of(admin)), models.Lead.upload_log_id.isnot(None)).distinct()}
+        batches = [b for b in batches if b["id"] in mine]
     return [
         {
             "id":          b["id"],

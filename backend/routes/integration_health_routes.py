@@ -1,16 +1,18 @@
 # ── routes/integration_health_routes.py — Integration health diagnostics ──────
 """
-Lightweight, auth-protected health endpoints for RCM integrations.
+Lightweight, auth-protected health endpoints for Alternate Messenger integrations.
 No secrets are exposed — only presence/validity status is returned.
 
-GET /api/dialer/health  — Check RCM Contact Center (calling) config
-GET /api/chat/health    — Check RCM Conversations (messaging) config
+GET /api/dialer/health  — Check Alternate Messenger Contact Center (calling) config
+GET /api/chat/health    — Check Alternate Messenger Conversations (messaging) config
 
 Both endpoints perform live API pings so you get real connectivity status,
 not just "are credentials stored?" — useful for debugging staging vs prod.
 """
 import logging
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -45,7 +47,7 @@ def dialer_health(
     db: Session = Depends(get_db),
 ):
     """
-    Diagnose the RCM Contact Center (calling) integration end-to-end.
+    Diagnose the Alternate Messenger Contact Center (calling) integration end-to-end.
     Checks: provider config → credentials → from_number → live API ping.
     Safe: no secrets in response. Requires auth (any role).
     """
@@ -67,11 +69,11 @@ def dialer_health(
         return {"status": "misconfigured", "checks": checks}
 
     # 2. Credentials present
-    if provider == "rcm":
+    if provider == "messenger":
         use_shared = getattr(settings, "dialer_use_shared_creds", True)
         if use_shared:
-            api_key = settings.rcm_api_key or ""
-            user_id = settings.rcm_user_id or ""
+            api_key = settings.messenger_api_key or ""
+            user_id = settings.messenger_user_id or ""
             source = "shared (Conversations tab)"
         else:
             api_key = settings.dialer_api_key or ""
@@ -82,16 +84,16 @@ def dialer_health(
         checks["api_key_present"] = _check(
             bool(api_key),
             f"API Key present ({_masked(api_key)})",
-            "API Key missing — set rcm_api_key in Settings",
+            "API Key missing — set messenger_api_key in Settings",
         )
         checks["user_id_present"] = _check(
             bool(user_id),
             f"User ID present ({_masked(user_id)})",
-            "User ID missing — set rcm_user_id in Settings",
+            "User ID missing — set messenger_user_id in Settings",
         )
         checks["from_number_present"] = _check(
-            bool(settings.rcm_from_number),
-            f"Caller ID (from_number) set to '{settings.rcm_from_number}'",
+            bool(settings.messenger_from_number),
+            f"Caller ID (from_number) set to '{settings.messenger_from_number}'",
             "No caller ID set — calls will fail. Set Default Caller ID in Settings → Contact Center",
         )
 
@@ -102,17 +104,17 @@ def dialer_health(
         # 3. Live API ping (only if credentials exist)
         if api_key and user_id:
             try:
-                from rcm_provider import RCMDialerProvider
+                from messaging_provider import AlternateDialerProvider
                 base_url = (
                     getattr(settings, "dialer_base_url", None)
-                    or settings.rcm_base_url
-                    or "https://app.bercm.com"
+                    or settings.messenger_base_url
+                    or "https://app.alternatecrm.com"
                 )
-                provider_inst = RCMDialerProvider(
+                provider_inst = AlternateDialerProvider(
                     base_url=base_url,
                     api_key=api_key,
                     user_id=user_id,
-                    from_number=settings.rcm_from_number or "",
+                    from_number=settings.messenger_from_number or "",
                 )
                 result = provider_inst.test_connection()
                 checks["api_reachable"] = _check(
@@ -168,7 +170,7 @@ def chat_health(
     db: Session = Depends(get_db),
 ):
     """
-    Diagnose the RCM Conversations (messaging/SMS/WhatsApp) integration.
+    Diagnose the Alternate Messenger Conversations (messaging/SMS/WhatsApp) integration.
     Checks: enabled flag → api_key → user_id → account_id → sender_id → live API ping.
     Safe: no secrets in response. Requires auth (any role).
     """
@@ -180,51 +182,51 @@ def chat_health(
     overall_ok = True
 
     # 1. Feature enabled
-    enabled = getattr(settings, "rcm_enabled", False)
+    enabled = getattr(settings, "messenger_enabled", False)
     checks["feature_enabled"] = _check(
         enabled,
-        "RCM messaging is enabled",
-        "RCM messaging is disabled (Settings → Conversations → Enable toggle)",
+        "Alternate Messenger messaging is enabled",
+        "Alternate Messenger messaging is disabled (Settings → Conversations → Enable toggle)",
     )
     if not enabled:
         overall_ok = False
 
     # 2. API Key
-    api_key = settings.rcm_api_key or ""
+    api_key = settings.messenger_api_key or ""
     checks["api_key_present"] = _check(
         bool(api_key),
         f"API Key present ({_masked(api_key)})",
-        "API Key missing — set rcm_api_key in Settings → Conversations",
+        "API Key missing — set messenger_api_key in Settings → Conversations",
     )
     if not api_key:
         overall_ok = False
 
     # 3. User ID
-    user_id = settings.rcm_user_id or ""
+    user_id = settings.messenger_user_id or ""
     checks["user_id_present"] = _check(
         bool(user_id),
         f"User ID present ({_masked(user_id)})",
-        "User ID missing — set rcm_user_id in Settings → Conversations",
+        "User ID missing — set messenger_user_id in Settings → Conversations",
     )
     if not user_id:
         overall_ok = False
 
     # 4. Account ID
-    account_id = getattr(settings, "rcm_account_id", None) or ""
+    account_id = getattr(settings, "messenger_account_id", None) or ""
     checks["account_id_present"] = _check(
         bool(account_id),
         f"Account ID present ({_masked(account_id)})",
-        "Account ID missing — set rcm_account_id in Settings → Conversations",
+        "Account ID missing — set messenger_account_id in Settings → Conversations",
     )
     if not account_id:
         overall_ok = False
 
     # 5. Sender ID (outbound number)
-    sender_id = getattr(settings, "rcm_sender_id", None) or ""
+    sender_id = getattr(settings, "messenger_sender_id", None) or ""
     checks["sender_id_present"] = _check(
         bool(sender_id),
         f"Sender ID (outbound number) set to '{sender_id}'",
-        "Sender ID missing — outbound messages will fail. Set rcm_sender_id in Settings → Conversations",
+        "Sender ID missing — outbound messages will fail. Set messenger_sender_id in Settings → Conversations",
     )
     if not sender_id:
         overall_ok = False
@@ -232,14 +234,14 @@ def chat_health(
     # 6. Live API ping (only if all credentials are present)
     if api_key and user_id and account_id:
         try:
-            from rcm_conversations_service import RCMConversationsService
-            svc = RCMConversationsService(
+            from conversations_service import AlternateMessenger
+            svc = AlternateMessenger(
                 api_key=api_key,
                 user_id=user_id,
                 account_id=account_id,
             )
-            # Ping: list conversations with page_size=1 — lightest possible request
-            result = svc.list_conversations(page=1, page_size=1)
+            # Ping: fetch 1 conversation — lightest possible request
+            result = svc.get_conversations(count=1, index=0)
             reachable = result is not None
             checks["api_reachable"] = _check(
                 reachable,
@@ -320,6 +322,31 @@ def email_health(
     except Exception as e:
         checks["api_reachable"] = {"ok": False, "message": f"Could not decrypt or reach Nylas API — {e}"}
         overall_ok = False
+
+    # Tracking (RCA 2026-10-07: a prod cadence showed 0% opens/clicks/replies and nobody could tell
+    # whether the webhook was failing or nobody had opened). Without the webhook secret every event
+    # is rejected with 401; with it, sent mail that never produces a single open/click/reply event
+    # in a week means the webhook isn't reaching us or isn't subscribed to the right triggers.
+    checks["webhook_secret_present"] = _check(
+        bool(config.webhook_secret_encrypted),
+        "Webhook secret present — Nylas events are accepted",
+        "Webhook secret missing — every Nylas event (opens, clicks, replies) is rejected with 401",
+    )
+    overall_ok = overall_ok and checks["webhook_secret_present"]["ok"]
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+    LEA = models.LeadEmailActivity
+    nylas_rows = db.query(LEA).filter(LEA.source == "nylas", LEA.timestamp >= week_ago)
+    sent = nylas_rows.filter(LEA.direction == "outbound", LEA.nylas_message_id.isnot(None), LEA.timestamp <= hour_ago).count()
+    events = nylas_rows.filter(or_(LEA.opened_at.isnot(None), LEA.clicked_at.isnot(None), LEA.direction == "inbound")).count()
+    arriving = sent < 10 or events > 0
+    checks["tracking_events_arriving"] = _check(
+        arriving,
+        f"{sent} tracked emails sent in the last 7 days, {events} with an open, click or reply" if sent else "No tracked email sent in the last 7 days to judge by",
+        f"{sent} tracked emails sent in the last 7 days but no open, click or reply event has arrived — "
+        "check the Nylas webhook URL and that it is subscribed to message.opened, message.link_clicked and message.created",
+    )
+    overall_ok = overall_ok and arriving
 
     return {
         "status": "ok" if overall_ok else "degraded",

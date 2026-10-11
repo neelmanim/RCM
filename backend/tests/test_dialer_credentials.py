@@ -24,11 +24,11 @@ def _make_settings(**kwargs):
     """Create a mock SyncSettings object with given fields."""
     settings = MagicMock(spec=models.SyncSettings)
     defaults = {
-        'rcm_base_url': 'https://app.bercm.com',
-        'rcm_api_key': 'shared-key',
-        'rcm_user_id': '300956',
-        'rcm_from_number': None,
-        'dialer_provider': 'rcm',
+        'messenger_base_url': 'https://app.alternatecrm.com',
+        'messenger_api_key': 'shared-key',
+        'messenger_user_id': '300956',
+        'messenger_from_number': None,
+        'dialer_provider': 'messenger',
         'dialer_use_shared_creds': True,
         'dialer_base_url': None,
         'dialer_api_key': None,
@@ -68,24 +68,24 @@ class TestResolveDialerCredentials:
         from dialer_service import _resolve_dialer_credentials
         settings = _make_settings(
             dialer_use_shared_creds=True,
-            rcm_base_url='https://app.bercm.com',
-            rcm_api_key='shared-key',
-            rcm_user_id='300956',
+            messenger_base_url='https://app.alternatecrm.com',
+            messenger_api_key='shared-key',
+            messenger_user_id='300956',
         )
         base_url, api_key, user_id = _resolve_dialer_credentials(settings)
-        assert base_url == 'https://app.bercm.com'
+        assert base_url == 'https://app.alternatecrm.com'
         assert api_key == 'shared-key'
         assert user_id == '300956'
 
     def test_shared_mode_fallback_to_default_url(self):
-        """When rcm_base_url is empty, falls back to default."""
+        """When messenger_base_url is empty, falls back to default."""
         from dialer_service import _resolve_dialer_credentials
         settings = _make_settings(
             dialer_use_shared_creds=True,
-            rcm_base_url=None,
+            messenger_base_url=None,
         )
         base_url, _, _ = _resolve_dialer_credentials(settings)
-        assert base_url == 'https://app.bercm.com'
+        assert base_url == 'https://app.alternatecrm.com'
 
     @patch('crypto.decrypt_token', return_value='decrypted-key')
     def test_separate_mode_uses_own_credentials(self, mock_decrypt):
@@ -93,28 +93,28 @@ class TestResolveDialerCredentials:
         from dialer_service import _resolve_dialer_credentials
         settings = _make_settings(
             dialer_use_shared_creds=False,
-            dialer_base_url='https://qa-app.bercm.com',
+            dialer_base_url='https://qa-app.alternatecrm.com',
             dialer_api_key='encrypted-key',
             dialer_user_id='1128097',
         )
         base_url, api_key, user_id = _resolve_dialer_credentials(settings)
-        assert base_url == 'https://qa-app.bercm.com'
+        assert base_url == 'https://qa-app.alternatecrm.com'
         assert api_key == 'decrypted-key'
         assert user_id == '1128097'
 
     @patch('crypto.decrypt_token', return_value='decrypted-key')
     def test_separate_mode_falls_back_to_messaging_url(self, mock_decrypt):
-        """When dialer_base_url is None in separate mode, falls back to rcm_base_url."""
+        """When dialer_base_url is None in separate mode, falls back to messenger_base_url."""
         from dialer_service import _resolve_dialer_credentials
         settings = _make_settings(
             dialer_use_shared_creds=False,
             dialer_base_url=None,
             dialer_api_key='encrypted-key',
             dialer_user_id='1128097',
-            rcm_base_url='https://main.bercm.com',
+            messenger_base_url='https://main.alternatecrm.com',
         )
         base_url, _, _ = _resolve_dialer_credentials(settings)
-        assert base_url == 'https://main.bercm.com'
+        assert base_url == 'https://main.alternatecrm.com'
 
     @patch('crypto.decrypt_token', side_effect=Exception('decrypt failed'))
     def test_separate_mode_decryption_failure(self, mock_decrypt):
@@ -146,16 +146,16 @@ class TestResolveDialerCredentials:
 class TestFromNumberFallback:
     """Test that from_number resolution follows: SDR personal → global → omit."""
 
-    @patch('dialer_service.RCMDialerProvider')
+    @patch('dialer_service.AlternateDialerProvider')
     @patch('dialer_service._resolve_dialer_credentials')
     @patch('dialer_service._get_settings')
     def test_sdr_number_overrides_global(self, mock_settings, mock_resolve, mock_provider_cls, db):
         """SDR's personal number should override the global default."""
         from dialer_service import initiate_call
 
-        settings = _make_settings(rcm_from_number='+1_GLOBAL')
+        settings = _make_settings(messenger_from_number='+1_GLOBAL')
         mock_settings.return_value = settings
-        mock_resolve.return_value = ('https://app.bercm.com', 'key', 'uid')
+        mock_resolve.return_value = ('https://app.alternatecrm.com', 'key', 'uid')
 
         # Create a mock provider with proper return values
         mock_result = MagicMock()
@@ -166,16 +166,16 @@ class TestFromNumberFallback:
         mock_result.room_name = None
         mock_result.error = None
         mock_result.agent_join_via_phone = False
-        mock_result.provider = 'rcm'
+        mock_result.provider = 'messenger'
 
         mock_provider = MagicMock()
         mock_provider.from_number = '+1_GLOBAL'
-        mock_provider.provider_name = 'rcm'
+        mock_provider.provider_name = 'messenger'
         mock_provider.initiate_call.return_value = mock_result
         mock_provider_cls.return_value = mock_provider
 
         user_obj = create_test_user(db, email="sdr-test@example.com")
-        user_obj.rcm_from_number = '+1_SDR_PERSONAL'
+        user_obj.messenger_from_number = '+1_SDR_PERSONAL'
         db.commit()
 
         lead = create_test_lead(db)
@@ -188,16 +188,16 @@ class TestFromNumberFallback:
         # The provider's from_number should have been overridden to SDR's number
         assert mock_provider.from_number == '+1_SDR_PERSONAL'
 
-    @patch('dialer_service.RCMDialerProvider')
+    @patch('dialer_service.AlternateDialerProvider')
     @patch('dialer_service._resolve_dialer_credentials')
     @patch('dialer_service._get_settings')
     def test_global_number_used_when_sdr_not_set(self, mock_settings, mock_resolve, mock_provider_cls, db):
         """When SDR hasn't set a number, global default is used."""
         from dialer_service import initiate_call
 
-        settings = _make_settings(rcm_from_number='+1_GLOBAL')
+        settings = _make_settings(messenger_from_number='+1_GLOBAL')
         mock_settings.return_value = settings
-        mock_resolve.return_value = ('https://app.bercm.com', 'key', 'uid')
+        mock_resolve.return_value = ('https://app.alternatecrm.com', 'key', 'uid')
 
         mock_result = MagicMock()
         mock_result.success = True
@@ -207,16 +207,16 @@ class TestFromNumberFallback:
         mock_result.room_name = None
         mock_result.error = None
         mock_result.agent_join_via_phone = False
-        mock_result.provider = 'rcm'
+        mock_result.provider = 'messenger'
 
         mock_provider = MagicMock()
         mock_provider.from_number = '+1_GLOBAL'
-        mock_provider.provider_name = 'rcm'
+        mock_provider.provider_name = 'messenger'
         mock_provider.initiate_call.return_value = mock_result
         mock_provider_cls.return_value = mock_provider
 
         user_obj = create_test_user(db, email="sdr-nonum@example.com")
-        user_obj.rcm_from_number = None
+        user_obj.messenger_from_number = None
         db.commit()
 
         lead = create_test_lead(db, email="nonum@lead.com")
@@ -228,16 +228,16 @@ class TestFromNumberFallback:
         # Global number should remain
         assert mock_provider.from_number == '+1_GLOBAL'
 
-    @patch('dialer_service.RCMDialerProvider')
+    @patch('dialer_service.AlternateDialerProvider')
     @patch('dialer_service._resolve_dialer_credentials')
     @patch('dialer_service._get_settings')
     def test_no_number_at_all(self, mock_settings, mock_resolve, mock_provider_cls, db):
         """When neither SDR nor global number is set, from_number stays empty."""
         from dialer_service import initiate_call
 
-        settings = _make_settings(rcm_from_number=None)
+        settings = _make_settings(messenger_from_number=None)
         mock_settings.return_value = settings
-        mock_resolve.return_value = ('https://app.bercm.com', 'key', 'uid')
+        mock_resolve.return_value = ('https://app.alternatecrm.com', 'key', 'uid')
 
         mock_result = MagicMock()
         mock_result.success = True
@@ -247,11 +247,11 @@ class TestFromNumberFallback:
         mock_result.room_name = None
         mock_result.error = None
         mock_result.agent_join_via_phone = False
-        mock_result.provider = 'rcm'
+        mock_result.provider = 'messenger'
 
         mock_provider = MagicMock()
         mock_provider.from_number = ''  # No global number
-        mock_provider.provider_name = 'rcm'
+        mock_provider.provider_name = 'messenger'
         mock_provider.initiate_call.return_value = mock_result
         mock_provider_cls.return_value = mock_provider
 
@@ -268,17 +268,17 @@ class TestFromNumberFallback:
         assert mock_provider.from_number == ''
 
 
-# ── RCM Provider from_number in Payload ────────────────────────────────
+# ── Alternate Messenger Provider from_number in Payload ────────────────────────────────
 
 class TestProviderPayloadFromNumber:
     """Test that the provider only includes from_number in API payload when set."""
 
-    @patch('rcm_provider.RCMAuthManager.get_token', return_value='test-jwt')
-    @patch('rcm_provider.urllib.request.urlopen')
+    @patch('messaging_provider.AlternateMessengerAuthManager.get_token', return_value='test-jwt')
+    @patch('messaging_provider.urllib.request.urlopen')
     def test_from_number_included_when_set(self, mock_urlopen, mock_token):
         """When from_number is set, it should be in the payload."""
         import json
-        from rcm_provider import RCMDialerProvider
+        from messaging_provider import AlternateDialerProvider
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps({"call_id": "C1"}).encode()
@@ -287,7 +287,7 @@ class TestProviderPayloadFromNumber:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        provider = RCMDialerProvider(
+        provider = AlternateDialerProvider(
             base_url="https://test.com", api_key="k", user_id="1",
             from_number="+14155551234",
         )
@@ -301,12 +301,12 @@ class TestProviderPayloadFromNumber:
         assert body["from_number"] == "+14155551234"  # verbatim pass-through (v9.5.1): only whitespace/parens/dashes stripped
 
 
-    @patch('rcm_provider.RCMAuthManager.get_token', return_value='test-jwt')
+    @patch('messaging_provider.AlternateMessengerAuthManager.get_token', return_value='test-jwt')
     def test_from_number_empty_returns_error(self, mock_token):
         """When from_number is empty, initiate_call should fail with a clear error."""
-        from rcm_provider import RCMDialerProvider
+        from messaging_provider import AlternateDialerProvider
 
-        provider = RCMDialerProvider(
+        provider = AlternateDialerProvider(
             base_url="https://test.com", api_key="k", user_id="1",
             from_number="",
         )
@@ -407,9 +407,9 @@ class TestDialerConfig:
     def test_save_config_saves_base_url(self, db):
         """save_dialer_config should save dialer_base_url."""
         from dialer_service import save_dialer_config, get_dialer_config
-        save_dialer_config(db, {"dialer_base_url": "https://qa-app.bercm.com"})
+        save_dialer_config(db, {"dialer_base_url": "https://qa-app.alternatecrm.com"})
         config = get_dialer_config(db)
-        assert config["dialer_base_url"] == "https://qa-app.bercm.com"
+        assert config["dialer_base_url"] == "https://qa-app.alternatecrm.com"
 
     def test_save_config_clears_from_number(self, db):
         """save_dialer_config should clear from_number when empty string."""
@@ -418,3 +418,126 @@ class TestDialerConfig:
         save_dialer_config(db, {"from_number": ""})
         config = get_dialer_config(db)
         assert config["from_number"] == ""
+
+
+class TestMessengerApiKeyEncryption:
+    """messenger_api_key was the only credential on sync_settings still
+    stored in plaintext — its siblings (dialer_api_token, llm_api_key,
+    messenger_access_token, public_api_key) have always been encrypted.
+    It is now an encrypting property on the model, so every existing reader
+    keeps working unchanged while the value on disk is ciphertext."""
+
+    def test_value_on_disk_is_ciphertext_and_reads_back_as_plaintext(self, db):
+        from sqlalchemy import text
+        s = models.SyncSettings(id=1, messenger_api_key="sk-live-plaintext-1234")
+        db.add(s)
+        db.commit()
+
+        stored = db.execute(
+            text("SELECT messenger_api_key FROM sync_settings WHERE id = 1")
+        ).scalar()
+        assert stored != "sk-live-plaintext-1234", (
+            "Credential is still plaintext at rest — a DB dump or read-replica "
+            "leak hands over a live Alternate Messenger key."
+        )
+        from crypto import decrypt_token
+        assert decrypt_token(stored) == "sk-live-plaintext-1234"
+
+        # Every existing caller reads the attribute directly; that must be
+        # transparently plaintext or SMS/WhatsApp sending breaks org-wide.
+        db.expire_all()
+        assert db.query(models.SyncSettings).first().messenger_api_key == "sk-live-plaintext-1234"
+
+    def test_legacy_plaintext_row_still_readable(self, db):
+        """Rows written before encryption hold plaintext. The property must
+        return it rather than None — returning None would silently disable
+        messaging for everyone until the backfill migration ran."""
+        from sqlalchemy import text
+        db.add(models.SyncSettings(id=1))
+        db.commit()
+        db.execute(text(
+            "UPDATE sync_settings SET messenger_api_key = 'legacy-plain-key' WHERE id = 1"
+        ))
+        db.commit()
+        db.expire_all()
+        assert db.query(models.SyncSettings).first().messenger_api_key == "legacy-plain-key"
+
+    def test_blank_and_none_are_stored_as_is(self, db):
+        """"Not configured" must stay falsy, not become ciphertext of "" —
+        every caller gates on truthiness (`settings.messenger_api_key or ""`)."""
+        s = models.SyncSettings(id=1, messenger_api_key=None)
+        db.add(s)
+        db.commit()
+        assert db.query(models.SyncSettings).first().messenger_api_key is None
+        s.messenger_api_key = ""
+        db.commit()
+        db.expire_all()
+        assert not db.query(models.SyncSettings).first().messenger_api_key
+
+    def test_backfill_migration_encrypts_plaintext_and_is_idempotent(self, db, engine):
+        from sqlalchemy import text
+        from migrations import module as _migrations
+        _encrypt_messenger_api_key = _migrations._encrypt_messenger_api_key
+        from crypto import decrypt_token
+
+        db.add(models.SyncSettings(id=1))
+        db.commit()
+        db.execute(text(
+            "UPDATE sync_settings SET messenger_api_key = 'plain-to-encrypt' WHERE id = 1"
+        ))
+        db.commit()
+
+        _encrypt_messenger_api_key(engine)
+        stored = db.execute(
+            text("SELECT messenger_api_key FROM sync_settings WHERE id = 1")
+        ).scalar()
+        assert decrypt_token(stored) == "plain-to-encrypt"
+
+        # Re-running (or a row already encrypted by a newer instance
+        # mid-deploy) must never double-encrypt.
+        db.execute(text("DELETE FROM _applied_migrations WHERE name = 'encrypt_messenger_api_key'"))
+        db.commit()
+        _encrypt_messenger_api_key(engine)
+        assert db.execute(
+            text("SELECT messenger_api_key FROM sync_settings WHERE id = 1")
+        ).scalar() == stored
+
+
+class TestSyncSettingsWriteGate:
+    """PATCH /admin/sync-settings writes org-wide config — Salesforce sync
+    direction, dialer credentials and provider, POD and call-outcome config.
+    It sat on require_admin, which admits Pod Admin, while the UI has only
+    ever offered it to Super Admins."""
+
+    def _app(self, db, user):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from database import get_db
+        from auth import get_current_user
+        from routes.admin_sync_routes import router
+        app = FastAPI()
+        app.include_router(router)  # router already carries prefix="/api/admin"
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: user
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_pod_admin_cannot_write_org_wide_sync_settings(self, db):
+        from conftest import POD_ADMIN
+        resp = self._app(db, POD_ADMIN).patch(
+            "/api/admin/sync-settings", json={"lead_limit": 99},
+        )
+        assert resp.status_code == 403, (
+            f"Pod Admin wrote org-wide integration settings (got "
+            f"{resp.status_code}) — Salesforce sync direction and the "
+            f"Aircall/Alternate Messenger credentials are reachable by API."
+        )
+        s = db.query(models.SyncSettings).first()
+        assert s is None or s.lead_limit != 99
+
+    def test_super_admin_can_still_write(self, db):
+        from conftest import SUPER_ADMIN
+        resp = self._app(db, SUPER_ADMIN).patch(
+            "/api/admin/sync-settings", json={"lead_limit": 99},
+        )
+        assert resp.status_code == 200, resp.text
+        assert db.query(models.SyncSettings).first().lead_limit == 99

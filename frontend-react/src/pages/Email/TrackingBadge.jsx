@@ -8,6 +8,7 @@
  *   sent     → muted grey pill, "✓ Sent"
  */
 import React from 'react';
+import { Badge } from '../../components/ui/Badge';
 
 function timeAgo(isoString) {
   if (!isoString) return '';
@@ -25,15 +26,15 @@ export function TrackingBadge({ openCount, openedAt }) {
   if (hasOpened) {
     const displayCount = count > 0 ? count : 1; // openedAt set but count 0 → show 1
     return (
-      <span className="eh-tracking-badge eh-tracking-opened">
+      <Badge variant="success">
         👁 Opened {displayCount}× · {timeAgo(openedAt)}
-      </span>
+      </Badge>
     );
   }
 
   return (
-    <span className="eh-tracking-badge eh-tracking-sent">
+    <Badge variant="default">
       ✓ Sent
-    </span>
+    </Badge>
   );
 }

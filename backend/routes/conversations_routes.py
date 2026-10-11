@@ -1,8 +1,12 @@
 """
 routes/conversations_routes.py
 ─────────────────────────────
-Native RCM Converse Desk API routes.
-No iframe required — full REST integration via RCMConversationsService.
+Native Alternate Messenger Converse Desk API routes — full REST integration via
+AlternateMessenger, no iframe, for the per-lead 1:1 message
+thread. The one exception is /embed-url: SMS Campaigns and the full Converse
+Desk view (Sales Tools' SMS Campaigns tab) have no REST equivalent to build
+on — Alternate Messenger exposes those only through its own hosted web app — so that
+one route hands back an authenticated iframe URL instead.
 
 Endpoints:
   GET  /api/conversations                   — list conversations (filter by phone)
@@ -11,9 +15,12 @@ Endpoints:
   GET  /api/conversations/session-state     — session window check for a phone
   GET  /api/conversations/{id}/messages     — fetch message thread
   POST /api/conversations/send              — send message (auto-routes template vs free-text)
+  GET  /api/conversations/embed-url         — iframe URL for SMS Campaigns / Converse Desk (Alternate Messenger's own app)
 
 Rules:
-  • Requires rcm_enabled = True, api_key, user_id, and account_id configured.
+  • Requires messenger_enabled = True, api_key, user_id, and account_id configured.
+  • Requires the caller to hold the channel (users.sms_enabled / whatsapp_enabled)
+    and to be on the Alternate Messenger messaging vendor — see _require_messaging.
   • Credentials pulled from SyncSettings (DB) — same pattern as SMS routes.
   • Service is a singleton that preserves the HMAC session cookie jar across calls.
 """
@@ -29,9 +36,10 @@ from typing import Optional
 import models
 from database import get_db
 from auth import get_current_user
+from messaging_service import CHANNELS, resolve_provider_name, user_can_message
 from routes._admin_helpers import _get_or_create_sync_settings
 from routes.lead_helpers import _can_modify_lead
-from rcm_conversations_service import (
+from conversations_service import (
     get_conversations_service,
     WhatsAppTemplate,
     _phone_digits_match,
@@ -39,25 +47,25 @@ from rcm_conversations_service import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/conversations", tags=["Conversations – RCM"])
+router = APIRouter(prefix="/api/conversations", tags=["Conversations – Alternate Messenger"])
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _get_service(db: Session):
-    """Resolve SyncSettings and return an initialised RCMConversationsService."""
+    """Resolve SyncSettings and return an initialised AlternateMessenger."""
     settings = _get_or_create_sync_settings(db)
-    api_key    = getattr(settings, "rcm_api_key",    None) or ""
-    user_id    = getattr(settings, "rcm_user_id",    None) or ""
-    account_id = getattr(settings, "rcm_account_id", None) or ""
+    api_key    = getattr(settings, "messenger_api_key",    None) or ""
+    user_id    = getattr(settings, "messenger_user_id",    None) or ""
+    account_id = getattr(settings, "messenger_account_id", None) or ""
 
     if not all([api_key, user_id, account_id]):
         raise HTTPException(
             status_code=503,
             detail=(
-                "RCM Conversations is not fully configured. "
-                "Set rcm_api_key, rcm_user_id, and "
-                "rcm_account_id in Settings."
+                "Alternate Messenger Conversations is not fully configured. "
+                "Set messenger_api_key, messenger_user_id, and "
+                "messenger_account_id in Settings."
             ),
         )
     try:
@@ -70,6 +78,40 @@ def _get_service(db: Session):
         raise HTTPException(status_code=503, detail=str(e))
 
 
+def _require_messaging(db: Session, user: dict, channel: Optional[str] = None):
+    """v11.10.0: these routes only checked that the caller was logged in and
+    that the *org* had Alternate Messenger credentials — any authenticated user could
+    send WhatsApp, because messaging had no per-user grant to check. Now the
+    same gate the cadence engine uses applies here, so what the widget lets an
+    SDR do matches what an admin actually granted them.
+
+    `channel=None` means "any channel will do" — for thread listings and counts,
+    which aren't tied to one channel. Reads (not just sends) are gated too:
+    conversation history is lead data.
+
+    Also refuses when the user's messaging vendor isn't Alternate Messenger. Every route
+    in this file is Converse Desk-specific, so serving an Aircall user from the
+    org's Alternate Messenger account would show them the wrong account's threads and
+    send from the wrong number.
+    """
+    db_user = db.query(models.User).filter(models.User.id == user.get("sub")).first()
+    wanted = (channel,) if channel else CHANNELS
+    if not any(user_can_message(db_user, c) for c in wanted):
+        label = {"sms": "SMS", "whatsapp": "WhatsApp"}.get(channel, "messaging")
+        raise HTTPException(
+            status_code=403,
+            detail=f"Your account is not enabled for {label}. "
+                   f"Ask an admin to grant it in Settings → Alternate Messenger.",
+        )
+    provider_name = resolve_provider_name(_get_or_create_sync_settings(db), db_user)
+    if provider_name != "messenger":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Your messaging provider is {provider_name.title()}, which does not "
+                   f"use Alternate Messenger Conversations.",
+        )
+
+
 def _resolve_template_vars(text: str, first_name: str) -> str:
     """Replace ${contacts.first_name} in template text with actual value."""
     if not first_name:
@@ -79,7 +121,7 @@ def _resolve_template_vars(text: str, first_name: str) -> str:
 
 def _phone_matches_lead(phone: str, lead) -> bool:
     """Suffix-match on digits only — tolerates a leading country code present
-    on only one side, the same class of mismatch already handled for dialer
+    on only one side, the same class  already handled for dialer
     webhook matching in dialer_service.py."""
     return any(
         _phone_digits_match(phone, candidate)
@@ -89,13 +131,19 @@ def _phone_matches_lead(phone: str, lead) -> bool:
 
 _LEAD_CONVS_CACHE_TTL = 20  # seconds — comfortably covers the 15s frontend history-poll interval
 _lead_convs_cache: dict[str, tuple] = {}
+# RCA 2026-08-26 (staging OOM): keyed on every distinct lead phone number ever
+# viewed, polled every 15s — same lazy-delete-on-read shape as the analytics
+# caches fixed the same day (cache.py / smart_analytics.py / analytics_routes.py
+# / analytics_ai_routes.py), except values here are full conversation-history
+# payloads, not scalars. Sweep once the store crosses this threshold.
+_CACHE_SWEEP_THRESHOLD = 500
 
 
 def _get_conversations_for_lead_cached(svc, phone: str):
     """/{conversation_id}/messages has no phone param, so it re-verifies
     ownership via a full get_conversations_for_lead round-trip on every call.
     With the frontend polling this route every 15s, that doubled its real
-    RCM API round-trips and pushed it into the P=CRITICAL perf tier
+    Alternate Messenger API round-trips and pushed it into the P=CRITICAL perf tier
     (observed live on staging: 1143ms). Ownership doesn't change within a
     poll cycle, so a short cache removes the repeat round-trip.
     ponytail: single-process in-memory cache — fine at numInstances=1,
@@ -106,6 +154,9 @@ def _get_conversations_for_lead_cached(svc, phone: str):
         return cached[1]
     convs = svc.get_conversations_for_lead(phone)
     _lead_convs_cache[phone] = (now, convs)
+    if len(_lead_convs_cache) > _CACHE_SWEEP_THRESHOLD:
+        for k in [k for k, (ts, _) in _lead_convs_cache.items() if now - ts >= _LEAD_CONVS_CACHE_TTL]:
+            del _lead_convs_cache[k]
     return convs
 
 
@@ -127,7 +178,7 @@ def _authorize_conversation_access(db: Session, user: dict, lead_id: str, phone:
 class SendMessageRequest(BaseModel):
     lead_id: str                    # Lead this send is scoped to — ownership is checked
     phone: str                      # Recipient phone e.g. "+919019280470" — must belong to lead_id
-    sender_id: str                  # RCM sender number e.g. "918956778474"
+    sender_id: str                  # Alternate Messenger sender number e.g. "918956778474"
     channel: str = "whatsapp"       # "whatsapp" | "sms"
 
     # Free-text (active session only)
@@ -144,6 +195,80 @@ class SendMessageRequest(BaseModel):
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+@router.get("/embed-url")
+def get_embed_url(
+    view: str = Query(..., description="campaigns | converse-desk"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Iframe URL for Sales Tools' SMS Campaigns tab, which embeds Alternate Messenger's
+    own hosted app directly — Alternate Messenger exposes no campaign-management REST
+    API, only this web app (see docs/archive/messengercomponent's vendor
+    docs) and the messaging/dialer API the rest of this file already covers.
+
+    The full app (/app/#/...) reads its session from a cookie
+    (mAgIC_pAnDa), not a URL param — unlike the simpler embeddable inbox
+    widget (/fastapp/desk/#/inbox, routes/lead_routes.py::
+    get_messaging_config), which does read session_id straight off the URL
+    and is NOT affected by any of this. So the iframe's src here is the
+    Alternate Messenger /api/v2/crm/authenticate URL itself (built by
+    AlternateMessengerAuthManager.build_browser_auth_url) — the browser hits it
+    directly, receives the session cookie Alternate Messenger sets, and gets
+    redirected on to the real destination. (v12.3 first shipped this as a
+    session_id on the destination URL, copying the inbox widget's pattern;
+    that left both SMS Campaigns tabs showing Alternate Messenger's own login form
+    since the full app never reads session_id at all.)"""
+    if view not in ("campaigns", "converse-desk"):
+        raise HTTPException(status_code=422, detail="view must be 'campaigns' or 'converse-desk'")
+
+    settings = _get_or_create_sync_settings(db)
+    if not settings.messenger_enabled:
+        raise HTTPException(status_code=503, detail="Alternate Messenger is not enabled. Configure it in Control Center → Integrations.")
+    api_key = settings.messenger_api_key or ""
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Alternate Messenger API key is not configured.")
+
+    base_url = (settings.messenger_base_url or "https://app.alternatecrm.com").rstrip("/")
+
+    # Per-SDR Alternate Messenger user ID: check the current user first, then fall
+    # back to global — same resolution lead_routes.py::get_messaging_config
+    # already uses.
+    db_user = db.query(models.User).filter(models.User.id == current_user.get("sub")).first()
+    user_id = (
+        (getattr(db_user, "messenger_user_id", None) or "").strip()
+        or (settings.messenger_user_id or "")
+    )
+    if not user_id:
+        raise HTTPException(status_code=503, detail="No Alternate Messenger user ID configured for your account or the organization.")
+
+    from messaging_auth import AlternateMessengerAuthManager
+    redirect_target = f"{base_url}/app/#/{view}?crm=audience_manager"
+    try:
+        auth_url = AlternateMessengerAuthManager.build_browser_auth_url(base_url, api_key, user_id, redirect_target)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return {"url": auth_url}
+
+
+@router.get("/status")
+def get_conversations_status(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Cheap, no-503 check for whether Alternate Messenger Conversations is configured —
+    lets the frontend widget skip polling entirely for orgs (like Aircall-only
+    ones) that don't use it, instead of hitting every other route here and
+    eating a 503 on each poll cycle."""
+    settings = _get_or_create_sync_settings(db)
+    configured = all([
+        getattr(settings, "messenger_api_key", None),
+        getattr(settings, "messenger_user_id", None),
+        getattr(settings, "messenger_account_id", None),
+    ])
+    return {"configured": bool(configured)}
+
 
 @router.get("")
 def list_conversations(
@@ -166,6 +291,7 @@ def list_conversations(
       index   — page offset (default: 0)
     """
     _authorize_conversation_access(db, current_user, lead_id, phone)
+    _require_messaging(db, current_user)
     svc = _get_service(db)
     try:
         conversations = svc.get_conversations(
@@ -197,7 +323,7 @@ def list_conversations(
         }
     except Exception as e:
         logger.error("Failed to fetch conversations: %s", e)
-        raise HTTPException(status_code=502, detail=f"RCM API error: {e}")
+        raise HTTPException(status_code=502, detail=f"Alternate Messenger API error: {e}")
 
 
 @router.get("/count")
@@ -206,13 +332,14 @@ def get_conversation_count(
     current_user: dict = Depends(get_current_user),
 ):
     """Return total conversation count for the configured owner."""
+    _require_messaging(db, current_user)
     svc = _get_service(db)
     try:
         total = svc.get_conversation_count()
         return {"total": total}
     except Exception as e:
         logger.error("Failed to fetch conversation count: %s", e)
-        raise HTTPException(status_code=502, detail=f"RCM API error: {e}")
+        raise HTTPException(status_code=502, detail=f"Alternate Messenger API error: {e}")
 
 
 @router.get("/templates")
@@ -231,6 +358,7 @@ def get_whatsapp_templates(
     The `template_text` field contains raw text with ${contacts.first_name}
     placeholders. The caller should substitute these before display.
     """
+    _require_messaging(db, current_user, "whatsapp")
     svc = _get_service(db)
     try:
         templates = svc.get_whatsapp_templates(search=search, count=count)
@@ -248,14 +376,14 @@ def get_whatsapp_templates(
         }
     except Exception as e:
         logger.error("Failed to fetch WhatsApp templates: %s", e)
-        raise HTTPException(status_code=502, detail=f"RCM API error: {e}")
+        raise HTTPException(status_code=502, detail=f"Alternate Messenger API error: {e}")
 
 
 @router.get("/session-state")
 def get_session_state(
     lead_id: str = Query(..., description="Lead this check is scoped to — ownership is checked"),
     phone: str = Query(..., description="Lead phone number (E.164 or local) — must belong to lead_id"),
-    sender_id: str = Query(..., description="RCM sender number"),
+    sender_id: str = Query(..., description="Alternate Messenger sender number"),
     channel: str = Query("whatsapp", description="whatsapp | sms"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
@@ -272,6 +400,7 @@ def get_session_state(
         conversation_id: int | null → existing conversation (null = new thread)
     """
     _authorize_conversation_access(db, current_user, lead_id, phone)
+    _require_messaging(db, current_user, (channel or "whatsapp").lower())
     svc = _get_service(db)
     try:
         state = svc.get_session_state(phone=phone, sender_id=sender_id, channel=channel)
@@ -286,7 +415,7 @@ def get_session_state(
         }
     except Exception as e:
         logger.error("Failed to get session state for %s: %s", phone, e)
-        raise HTTPException(status_code=502, detail=f"RCM API error: {e}")
+        raise HTTPException(status_code=502, detail=f"Alternate Messenger API error: {e}")
 
 
 @router.get("/{conversation_id}/messages")
@@ -303,6 +432,7 @@ def get_conversation_thread(
     Returns messages sorted chronologically (oldest first).
     """
     lead = _authorize_conversation_access(db, current_user, lead_id)
+    _require_messaging(db, current_user)
     svc = _get_service(db)
     try:
         # No phone param on this route, so ownership alone doesn't prove this
@@ -335,7 +465,7 @@ def get_conversation_thread(
         raise
     except Exception as e:
         logger.error("Failed to fetch thread for conversation %s: %s", conversation_id, e)
-        raise HTTPException(status_code=502, detail=f"RCM API error: {e}")
+        raise HTTPException(status_code=502, detail=f"Alternate Messenger API error: {e}")
 
 
 @router.post("/send")
@@ -352,14 +482,15 @@ def send_conversation_message(
     - If only `text` is provided → free-text send (requires active session)
 
     The endpoint resolves ${contacts.first_name} using `contact_first_name`
-    before sending. If omitted, the raw placeholder is sent (RCM resolves
+    before sending. If omitted, the raw placeholder is sent (Alternate Messenger resolves
     server-side when CRM contact is linked).
 
     Uses the live-captured endpoint:  POST /api/v2/converse_desk/converse
     """
     lead = _authorize_conversation_access(db, current_user, body.lead_id, body.phone)
-    svc = _get_service(db)
     channel = body.channel.lower()
+    _require_messaging(db, current_user, channel)
+    svc = _get_service(db)
     message_text = body.text or ""
 
     try:
@@ -402,7 +533,7 @@ def send_conversation_message(
             )
 
         # Widget sends previously left no trace in our own DB — every read was
-        # a live proxy call to RCM. Log here the same way the Cadence
+        # a live proxy call to Alternate Messenger. Log here the same way the Cadence
         # engine's automated sms_channel.py already does, so a manual Widget
         # send and an automated cadence send land in the same table/Activity
         # feed regardless of which triggered it.
@@ -416,7 +547,7 @@ def send_conversation_message(
             phone_number=body.phone,
             message_text=message_text,
             channel=channel,
-            provider="rcm",
+            provider="messenger",
             conversation_id=str(sent_conv_id) if sent_conv_id else None,
             template_name=body.template_name,
         ))
@@ -436,9 +567,10 @@ def send_conversation_message(
             phone_number=body.phone,
             message_text=message_text,
             channel=channel,
-            provider="rcm",
+            provider="messenger",
             conversation_id=str(body.conversation_id) if body.conversation_id else None,
             template_name=body.template_name,
+            failure_reason=str(e),
         ))
         db.commit()
-        raise HTTPException(status_code=502, detail=f"RCM API error: {e}")
+        raise HTTPException(status_code=502, detail=f"Alternate Messenger API error: {e}")

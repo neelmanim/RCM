@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alternate Messenger Dialer Test</title>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.9.1/dist/livekit-client.umd.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #0f0f14;
+    color: #e4e4e7;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .dialer {
+    width: 440px;
+    background: linear-gradient(145deg, #1a1a24, #16161e);
+    border-radius: 24px;
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+    overflow: hidden;
+  }
+  .header {
+    background: linear-gradient(135deg, #059669, #10b981);
+    padding: 20px 24px;
+    text-align: center;
+  }
+  .header h1 { font-size: 1.1rem; font-weight: 700; color: #fff; }
+  .header p { font-size: 0.72rem; color: rgba(255,255,255,0.7); margin-top: 4px; }
+  .body { padding: 24px; }
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block; font-size: 0.68rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: #71717a; margin-bottom: 6px;
+  }
+  .field input, .field select {
+    width: 100%; padding: 10px 14px;
+    background: #0f0f14; border: 1px solid #27272a; border-radius: 10px;
+    color: #e4e4e7; font-size: 0.88rem;
+    font-family: 'JetBrains Mono', monospace; outline: none; transition: border 0.2s;
+  }
+  .field input:focus { border-color: #10b981; }
+  .field .hint { font-size: 0.65rem; color: #52525b; margin-top: 4px; }
+  .mode-toggle {
+    display: flex; gap: 8px; margin-bottom: 18px;
+    background: #0f0f14; border-radius: 12px; padding: 4px;
+    border: 1px solid #27272a;
+  }
+  .mode-btn {
+    flex: 1; padding: 10px; border: none; border-radius: 10px;
+    font-size: 0.78rem; font-weight: 600; cursor: pointer;
+    background: transparent; color: #71717a; transition: all 0.2s;
+  }
+  .mode-btn.active {
+    background: linear-gradient(135deg, #059669, #10b981);
+    color: #fff; box-shadow: 0 2px 12px rgba(16,185,129,0.3);
+  }
+  .actions { display: flex; gap: 10px; margin-top: 20px; }
+  .btn {
+    flex: 1; padding: 12px; border: none; border-radius: 12px;
+    font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: all 0.2s;
+  }
+  .btn-call {
+    background: linear-gradient(135deg, #059669, #10b981); color: #fff;
+    box-shadow: 0 4px 20px rgba(16,185,129,0.3);
+  }
+  .btn-call:hover { transform: translateY(-1px); }
+  .btn-call:disabled { opacity: 0.5; transform: none; cursor: not-allowed; }
+  .btn-hangup {
+    background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff;
+    box-shadow: 0 4px 20px rgba(239,68,68,0.3); display: none;
+  }
+  .status {
+    margin-top: 16px; padding: 12px 16px; border-radius: 10px;
+    font-size: 0.78rem; display: none; line-height: 1.5;
+  }
+  .status.info { display: block; background: #172554; border: 1px solid #1e40af; color: #93c5fd; }
+  .status.success { display: block; background: #052e16; border: 1px solid #166534; color: #86efac; }
+  .status.error { display: block; background: #450a0a; border: 1px solid #991b1b; color: #fca5a5; }
+  .status.calling { display: block; background: #1a1a24; border: 1px solid #f59e0b; color: #fcd34d; }
+  .log {
+    margin-top: 16px; max-height: 220px; overflow-y: auto;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+    color: #71717a; background: #0a0a0f; border-radius: 10px;
+    padding: 12px; border: 1px solid #1a1a24;
+  }
+  .log div { padding: 2px 0; }
+  .log .ok { color: #4ade80; }
+  .log .err { color: #f87171; }
+  .log .warn { color: #fbbf24; }
+  .call-timer {
+    text-align: center; font-size: 2rem; font-weight: 700;
+    color: #10b981; font-family: 'JetBrains Mono', monospace;
+    margin: 12px 0; display: none;
+  }
+  .mute-btn {
+    display: none; margin: 0 auto 12px; padding: 8px 24px;
+    border-radius: 10px; border: 1px solid #27272a; background: #1a1a24;
+    color: #e4e4e7; font-size: 0.78rem; cursor: pointer;
+  }
+  .mute-btn.muted { background: #dc2626; border-color: #dc2626; color: #fff; }
+  .sep { border: none; border-top: 1px solid #27272a; margin: 16px 0; }
+</style>
+</head>
+<body>
+<div class="dialer">
+  <div class="header">
+    <h1>📞 Alternate Messenger Dialer Test</h1>
+    <p>Phone Bridge + WebRTC — End-to-End Testing</p>
+  </div>
+  <div class="body">
+    <div class="field">
+      <label>Access Token (JWT)</label>
+      <input type="password" id="jwt" placeholder="eyJ0eXAi...">
+    </div>
+
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="mode-phone" onclick="setMode('phone')">📱 Phone Bridge</button>
+      <button class="mode-btn" id="mode-browser" onclick="setMode('browser')">🌐 Browser (WebRTC)</button>
+    </div>
+
+    <div id="phone-fields">
+      <div class="field">
+        <label>SDR Phone Number</label>
+        <input type="tel" id="sdr-number" placeholder="+917355924848" value="+917355924848">
+        <div class="hint">SDR gets called first, then customer is bridged in</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Customer Phone Number</label>
+      <input type="tel" id="customer-number" placeholder="+91XXXXXXXXXX">
+    </div>
+
+    <div class="field">
+      <label>Caller ID (From Number)</label>
+      <input type="text" id="from-number" value="912264236334">
+    </div>
+
+    <hr class="sep">
+
+    <div class="call-timer" id="timer">00:00</div>
+    <button class="mute-btn" id="muteBtn" onclick="toggleMute()">🎙️ Mute</button>
+
+    <div class="actions">
+      <button class="btn btn-call" id="callBtn" onclick="makeCall()">📞 Call</button>
+      <button class="btn btn-hangup" id="hangupBtn" onclick="hangUp()">📵 Hang Up</button>
+    </div>
+
+    <div class="status" id="status"></div>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let room = null;
+let currentCallId = null;
+let timerInterval = null;
+let callStart = null;
+let callMode = 'phone'; // 'phone' or 'browser'
+let pollInterval = null;
+
+function setMode(mode) {
+  callMode = mode;
+  document.getElementById('mode-phone').className = `mode-btn ${mode === 'phone' ? 'active' : ''}`;
+  document.getElementById('mode-browser').className = `mode-btn ${mode === 'browser' ? 'active' : ''}`;
+  document.getElementById('phone-fields').style.display = mode === 'phone' ? 'block' : 'none';
+}
+
+function log(msg, cls = '') {
+  const el = document.getElementById('log');
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.prepend(d);
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.className = `status ${cls}`;
+  el.innerHTML = msg;
+}
+
+function startTimer() {
+  callStart = Date.now();
+  const el = document.getElementById('timer');
+  el.style.display = 'block';
+  timerInterval = setInterval(() => {
+    const s = Math.floor((Date.now() - callStart) / 1000);
+    el.textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  }, 1000);
+}
+
+function stopTimer() { clearInterval(timerInterval); document.getElementById('timer').style.display = 'none'; }
+
+function startPolling(jwt) {
+  pollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`${API}/calls?page=1&page_size=1`, {
+        headers: { 'Authorization': `Bearer ${jwt}` }
+      });
+      const data = await res.json();
+      const call = data.items?.[0];
+      if (call && call.call_id === currentCallId) {
+        log(`Poll: status=${call.status} answered=${call.answered_at || '-'}`, 'warn');
+        if (call.status === 'active' || call.answered_at) {
+          setStatus(`🔊 <strong>Call connected!</strong> Customer answered.`, 'success');
+          if (!callStart) startTimer();
+        } else if (['completed','failed','cancelled','no_answer','busy'].includes(call.status)) {
+          setStatus(`📵 Call ended: ${call.status} (${call.disconnect_reason || 'unknown'})`, 'info');
+          stopPolling();
+          if (call.duration_seconds) log(`Duration: ${call.duration_seconds}s`, 'ok');
+          if (call.recording_link) log(`Recording: ${call.recording_link}`, 'ok');
+        }
+      }
+    } catch (e) { /* ignore poll errors */ }
+  }, 3000);
+}
+
+function stopPolling() { clearInterval(pollInterval); }
+
+async function makeCall() {
+  const jwt = document.getElementById('jwt').value.trim();
+  const from = document.getElementById('from-number').value.trim();
+  const customer = document.getElementById('customer-number').value.trim();
+  const sdr = document.getElementById('sdr-number')?.value.trim();
+
+  if (!jwt) return setStatus('❌ Enter your JWT access token', 'error');
+  if (!customer) return setStatus('❌ Enter the customer phone number', 'error');
+
+  const callBtn = document.getElementById('callBtn');
+  const hangupBtn = document.getElementById('hangupBtn');
+  callBtn.disabled = true;
+  callBtn.textContent = '⏳ Initiating...';
+
+  try {
+    // Build payload based on mode
+    const payload = {
+      phone_number: customer,
+      senderId: from,
+      callMode: callMode === 'phone' ? 'bridge' : 'browser',
+    };
+
+    if (callMode === 'phone') {
+      payload.use_agent_phone = true;
+      if (sdr) payload.agent_phone = sdr;
+      log(`Mode: PHONE BRIDGE — SDR: ${sdr} → Customer: ${customer}`, 'warn');
+    } else {
+      log(`Mode: BROWSER WEBRTC → Customer: ${customer}`, 'warn');
+    }
+
+    log('Calling POST /calls/initiate...', 'warn');
+    log(`Payload: ${JSON.stringify(payload)}`, 'warn');
+    setStatus('📡 Initiating call via Alternate Messenger API...', 'info');
+
+    const res = await fetch(`${API}/calls/initiate`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      // If agent_phone was rejected, retry without it
+      if (data.errors?.agent_phone) {
+        log('agent_phone rejected, retrying with use_agent_phone only...', 'warn');
+        delete payload.agent_phone;
+        const res2 = await fetch(`${API}/calls/initiate`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data2 = await res2.json();
+        if (!res2.ok) throw new Error(`API ${res2.status}: ${JSON.stringify(data2)}`);
+        Object.assign(data, data2);
+      } else {
+        throw new Error(`API ${res.status}: ${JSON.stringify(data)}`);
+      }
+    }
+
+    currentCallId = data.call_id;
+    log(`✅ Call ID: ${data.call_id}`, 'ok');
+    log(`Room: ${data.room_name || '-'}`, 'ok');
+    log(`Agent via phone: ${data.agent_join_via_phone}`, 'ok');
+    log(`LiveKit token: ${data.token ? 'yes' : 'none'}`, 'ok');
+
+    hangupBtn.style.display = 'block';
+    callBtn.style.display = 'none';
+
+    // Phone bridge mode — just poll for status
+    if (!data.token || callMode === 'phone') {
+      setStatus(`📱 <strong>Call initiated!</strong><br>Waiting for SDR phone to ring...<br>Call ID: <code>${data.call_id}</code>`, 'calling');
+      startTimer();
+      startPolling(jwt);
+      return;
+    }
+
+    // Browser mode — join LiveKit
+    log('Connecting to LiveKit room as agent...', 'warn');
+    setStatus('🔌 Joining WebRTC room as agent...', 'info');
+
+    room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+
+    room.on(LivekitClient.RoomEvent.Connected, () => {
+      log('✅ Connected to LiveKit room!', 'ok');
+      setStatus(`🔊 <strong>Connected!</strong> Dialing customer ${customer}...`, 'success');
+      startTimer();
+    });
+
+    room.on(LivekitClient.RoomEvent.Disconnected, (reason) => {
+      log(`Room disconnected: ${reason}`, 'warn');
+      resetUI();
+    });
+
+    room.on(LivekitClient.RoomEvent.ParticipantConnected, (p) => {
+      log(`Participant joined: ${p.identity}`, 'ok');
+      setStatus(`🔊 <strong>Call active!</strong> Customer connected`, 'success');
+    });
+
+    room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (p) => {
+      log(`Participant left: ${p.identity}`, 'warn');
+    });
+
+    room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+      log(`Audio track from ${participant.identity}`, 'ok');
+      if (track.kind === 'audio') {
+        const el = track.attach();
+        document.body.appendChild(el);
+      }
+    });
+
+    await room.connect(data.livekit_url, data.token);
+    log('Room connected, enabling microphone...', 'warn');
+    await room.localParticipant.setMicrophoneEnabled(true);
+    log('Microphone enabled ✅', 'ok');
+    document.getElementById('muteBtn').style.display = 'block';
+    startPolling(jwt);
+
+  } catch (e) {
+    log(`ERROR: ${e.message}`, 'err');
+    setStatus(`❌ ${e.message}`, 'error');
+    callBtn.disabled = false;
+    callBtn.textContent = '📞 Call';
+  }
+}
+
+function toggleMute() {
+  if (!room) return;
+  const btn = document.getElementById('muteBtn');
+  const mic = room.localParticipant.isMicrophoneEnabled;
+  room.localParticipant.setMicrophoneEnabled(!mic);
+  btn.textContent = mic ? '🔇 Unmute' : '🎙️ Mute';
+  btn.className = mic ? 'mute-btn muted' : 'mute-btn';
+}
+
+async function hangUp() {
+  stopPolling();
+  try {
+    if (room) { room.disconnect(); room = null; log('LiveKit disconnected', 'warn'); }
+    if (currentCallId) {
+      const jwt = document.getElementById('jwt').value.trim();
+      log(`Disconnecting call ${currentCallId}...`, 'warn');
+      const res = await fetch(`${API}/calls/disconnect`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ call_id: currentCallId })
+      });
+      const data = await res.json();
+      log(`Disconnect: ${JSON.stringify(data)}`, data.msg === 'cancelled' ? 'ok' : 'err');
+    }
+  } catch (e) { log(`Hangup error: ${e.message}`, 'err'); }
+  resetUI();
+}
+
+function resetUI() {
+  stopTimer(); stopPolling();
+  document.getElementById('callBtn').style.display = 'block';
+  document.getElementById('callBtn').disabled = false;
+  document.getElementById('callBtn').textContent = '📞 Call';
+  document.getElementById('hangupBtn').style.display = 'none';
+  document.getElementById('muteBtn').style.display = 'none';
+  setStatus('📵 Call ended', 'info');
+  currentCallId = null;
+}
+</script>
+</body>
+</html>

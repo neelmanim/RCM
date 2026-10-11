@@ -3,13 +3,13 @@
 Phase 3: Deduplicate
 ====================
 Deduplicates normalized_filtered.csv using the same 4-tier logic as
-RCM's Upload Center:
+Alternate CRM's Upload Center:
   1. Email match (case-insensitive)
   2. LinkedIn URL match 
   3. Phone match (last 10 digits)
   4. Name + Company match (case-insensitive)
 
-Then checks against existing RCM DB to skip records already present.
+Then checks against existing Alternate CRM DB to skip records already present.
 
 Produces:
   - data/deduped_final.csv        (unique records to import)
@@ -43,7 +43,7 @@ def normalize_linkedin(url):
 
 
 def load_existing_leads_from_db(db_url):
-    """Load existing leads from RCM DB for cross-dedup."""
+    """Load existing leads from Alternate CRM DB for cross-dedup."""
     try:
         from sqlalchemy import create_engine, text
         engine = create_engine(db_url)
@@ -105,7 +105,7 @@ def main():
     existing = None
     existing_count = 0
     if db_url:
-        print("\n  🔍 Loading existing RCM leads for cross-dedup...")
+        print("\n  🔍 Loading existing Alternate CRM leads for cross-dedup...")
         existing, existing_count = load_existing_leads_from_db(db_url)
         if existing:
             print(f"  ✅ {existing_count:,} existing leads loaded")
@@ -232,7 +232,7 @@ def main():
     print(f"  📊 Input records:         {len(records):,}")
     print(f"  ✅ Unique (to import):     {len(unique_records):,}")
     print(f"  ❌ Cross-sheet duplicates: {csv_dup_count:,}")
-    print(f"  ❌ Already in RCM:   {db_dup_count:,}")
+    print(f"  ❌ Already in Alternate CRM:   {db_dup_count:,}")
     print(f"  📋 SDR Distribution (post-dedup):")
     for email, count in sorted(sdr_dist.items(), key=lambda x: -x[1]):
         print(f"     {email:<45} {count:>5}")

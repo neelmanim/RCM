@@ -1,6 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
 import AircallWorkspaceModule from 'aircall-everywhere';
-import { DialerService } from '../../services/api';
+import { DialerService, AdminService } from '../../services/api';
+
+// Neither Aircall's webhook payload nor the Aircall Everywhere SDK exposes any
+// audio-quality signal (no MOS/jitter/packet-loss/hangup-cause-for-connected-
+// calls anywhere — confirmed by reading the SDK's real event catalogue and a
+// week of raw webhook payloads). The SDR's own network condition during the
+// call is the only automatic proxy available client-side, and it is only a
+// proxy — a degraded reading doesn't prove bad audio, and a clean reading
+// doesn't rule it out. Flagged into the existing error-log/dialer category so
+// an admin can eyeball whether reports cluster with real network dips,
+// without a new dashboard.
+function flagPossibleNetworkIssue(connectionAtStart, connectionAtEnd) {
+  const isDegraded = (c) =>
+    c && (c.rtt > 400 || c.downlink < 1.5 || ['slow-2g', '2g', '3g'].includes(c.effectiveType));
+  if (!isDegraded(connectionAtStart) && !isDegraded(connectionAtEnd)) return;
+  AdminService.reportError({
+    severity: 'warning',
+    category: 'dialer',
+    feature: 'Aircall Everywhere',
+    title: 'Degraded network detected during an Aircall call',
+    description: 'Network Information API showed a degraded connection at call start and/or end. This is a proxy for the SDR\'s network, not a confirmed audio-quality measurement — cross-check against call quality complaints before acting.',
+    context_json: JSON.stringify({ connectionAtStart, connectionAtEnd }),
+  }).catch(() => {}); // best-effort — never blocks the call UI
+}
+
+function sampleConnection() {
+  const c = typeof navigator !== 'undefined' && navigator.connection;
+  if (!c) return null; // Network Information API unsupported (e.g. Safari) — no signal, no error
+  return { effectiveType: c.effectiveType, downlink: c.downlink, rtt: c.rtt };
+}
 
 // aircall-everywhere@2.0.6's own CJS build double-wraps its default export
 // ({ __esModule: true, default: <class> } instead of the class itself) —
@@ -68,7 +97,15 @@ export function useAircallEverywhere() {
         try {
           const workspace = new AircallWorkspace({
             domToLoadWorkspace: `#${CONTAINER_ID}`,
-            onLogin: () => { if (!cancelled) setStatus('ready'); },
+            onLogin: () => {
+              if (cancelled) return;
+              setStatus('ready');
+              // RCA 2026-08-18: the org-wide flag has no idea which SDRs
+              // actually log in here vs. stay Desktop-only — this is the
+              // only server-side signal of real per-SDR adoption. Best-effort,
+              // never blocks the UI on failure.
+              DialerService.recordEverywhereLogin().catch(() => {});
+            },
             onLogout: () => { if (!cancelled) setStatus('notready'); },
             // 'big' (666x376, fixed) — matches Aircall's own official demo
             // (aircall.github.io/aircall-everywhere, demo_v2). Confirmed live
@@ -79,9 +116,20 @@ export function useAircallEverywhere() {
           });
           // Not driving calls with these (see docblock above) — only tracking
           // whether one is live, so the UI knows to stay reachable.
-          workspace.on('outgoing_call', () => { if (!cancelled) setCallActive(true); });
-          workspace.on('incoming_call', () => { if (!cancelled) setCallActive(true); });
-          workspace.on('call_ended', () => { if (!cancelled) setCallActive(false); });
+          let connectionAtStart = null;
+          const onCallStart = () => {
+            if (cancelled) return;
+            setCallActive(true);
+            connectionAtStart = sampleConnection();
+          };
+          workspace.on('outgoing_call', onCallStart);
+          workspace.on('incoming_call', onCallStart);
+          workspace.on('call_ended', () => {
+            if (cancelled) return;
+            setCallActive(false);
+            flagPossibleNetworkIssue(connectionAtStart, sampleConnection());
+            connectionAtStart = null;
+          });
         } catch (e) {
           console.error('[AircallEverywhere] SDK construction failed:', e);
           setStatus('error');

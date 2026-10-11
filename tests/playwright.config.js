@@ -13,7 +13,7 @@ module.exports = defineConfig({
   ],
   outputDir: '../test-results/artifacts',
   use: {
-    baseURL: process.env.STAGING_URL || 'https://rcm-frontend-staging.onrender.com',
+    baseURL: process.env.STAGING_URL || 'https://messenger-frontend-staging.onrender.com',
     screenshot: 'on',
     trace: 'on-first-retry',
     video: 'retain-on-failure',

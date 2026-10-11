@@ -2,18 +2,25 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { ConfirmDialog } from '../../../components/ui/Modal';
 
-export function SavedViewsTabs({ savedViews, activeViewId, activeFilterKeys, onApply, onSave, onRemove }) {
+export function SavedViewsTabs({ savedViews, activeViewId, activeFilterKeys, onApply, onSave, onRemove, onToast }) {
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [saveNameInput, setSaveNameInput] = useState('');
   const [removeTarget, setRemoveTarget] = useState(null); // saved view | null
 
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
+
   const handleSave = () => {
     setSaveNameInput('');
+    setSaveError('');
     setSaveModalOpen(true);
   };
-  const confirmSave = () => {
-    if (!saveNameInput.trim()) return;
-    onSave(saveNameInput.trim());
+  const confirmSave = async () => {
+    if (!saveNameInput.trim() || saving) return;
+    setSaving(true);
+    const res = await onSave(saveNameInput.trim());
+    setSaving(false);
+    if (res?.error) { setSaveError(res.error); return; }   // stay open and say why
     setSaveModalOpen(false);
   };
 
@@ -21,9 +28,10 @@ export function SavedViewsTabs({ savedViews, activeViewId, activeFilterKeys, onA
     e.stopPropagation();
     setRemoveTarget(v);
   };
-  const confirmRemove = () => {
-    onRemove(removeTarget.id);
+  const confirmRemove = async () => {
+    const res = await onRemove(removeTarget.id);
     setRemoveTarget(null);
+    if (res?.error) onToast?.(res.error);
   };
 
   return (
@@ -63,7 +71,7 @@ export function SavedViewsTabs({ savedViews, activeViewId, activeFilterKeys, onA
 
       <ConfirmDialog
         open={saveModalOpen} onClose={() => setSaveModalOpen(false)}
-        title="Save current filters as a view" confirmLabel="Save view" onConfirm={confirmSave}
+        title="Save current filters as a view" confirmLabel="Save view" onConfirm={confirmSave} loading={saving}
       >
         <input
           autoFocus type="text" value={saveNameInput} onChange={(e) => setSaveNameInput(e.target.value)}
@@ -71,6 +79,7 @@ export function SavedViewsTabs({ savedViews, activeViewId, activeFilterKeys, onA
           placeholder="Name this view…"
           className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20"
         />
+        {saveError && <p role="alert" className="mt-2 text-xs text-red-600">{saveError}</p>}
       </ConfirmDialog>
 
       <ConfirmDialog

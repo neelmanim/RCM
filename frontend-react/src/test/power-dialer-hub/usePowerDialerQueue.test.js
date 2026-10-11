@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { usePowerDialerQueue } from '../../features/power-dialer-hub/usePowerDialerQueue';
+import { usePowerDialerQueue, _resetQueueCacheForTests } from '../../features/power-dialer-hub/usePowerDialerQueue';
 import { LeadsService, DialerService } from '../../services/api';
 
 vi.mock('../../services/api', () => ({
@@ -19,12 +19,13 @@ function lead(id, overrides = {}) {
 }
 
 function fireResolved(leadId, detail = {}) {
-  window.dispatchEvent(new CustomEvent('rcm:call-outcome-resolved', { detail: { leadId, ...detail } }));
+  window.dispatchEvent(new CustomEvent('alternate:call-outcome-resolved', { detail: { leadId, ...detail } }));
 }
 
 describe('usePowerDialerQueue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetQueueCacheForTests();
     DialerService.getQueueStatus.mockResolvedValue({});
     DialerService.setQueueStatus.mockResolvedValue({});
     DialerService.clearQueueStatus.mockResolvedValue({});
@@ -123,6 +124,25 @@ describe('usePowerDialerQueue', () => {
     expect(DialerService.getQueueStatus).toHaveBeenCalledWith(['1', '2', '3']);
   });
 
+  it('restores queue + position across an unmount/remount instead of re-fetching (RCA 2026-08-31)', async () => {
+    // app.js unmounts Power Dialer on any navigation away (e.g. "View in
+    // CRM" on the current call) — remounting must not re-run fetchQueue,
+    // since a fresh server-side re-sort could put a different lead "next"
+    // than what was on screen a moment ago ("leads getting shuffled").
+    LeadsService.getLeads.mockResolvedValue({ data: [lead('1'), lead('2'), lead('3')] });
+    const first = renderHook(() => usePowerDialerQueue());
+    await waitFor(() => expect(first.result.current.queue).toHaveLength(3));
+    act(() => first.result.current.skip());
+    await waitFor(() => expect(first.result.current.currentIndex).toBe(1));
+    first.unmount();
+
+    LeadsService.getLeads.mockClear();
+    const second = renderHook(() => usePowerDialerQueue());
+    expect(second.result.current.currentIndex).toBe(1);
+    expect(second.result.current.queue).toHaveLength(3);
+    expect(LeadsService.getLeads).not.toHaveBeenCalled();
+  });
+
   it('fetches with exclude_dialer_done so a "called" lead does not keep reappearing', async () => {
     LeadsService.getLeads.mockResolvedValue({ data: [lead('1')] });
     renderHook(() => usePowerDialerQueue());
@@ -215,5 +235,24 @@ describe('usePowerDialerQueue', () => {
     await waitFor(() => expect(LeadsService.getLeads).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: ['Lead Assigned', 'Research', 'Calling'] })
     ));
+  });
+
+  it('setCallListId re-fetches with call_list_id forwarded to GET /leads', async () => {
+    LeadsService.getLeads.mockResolvedValue({ data: [lead('1')] });
+    const { result } = renderHook(() => usePowerDialerQueue());
+    await waitFor(() => expect(result.current.queue).toHaveLength(1));
+
+    act(() => result.current.setCallListId('list-123'));
+    await waitFor(() => expect(LeadsService.getLeads).toHaveBeenLastCalledWith(
+      expect.objectContaining({ call_list_id: 'list-123' })
+    ));
+  });
+
+  it('sends call_list_id as undefined (not empty string) when no list is selected', async () => {
+    LeadsService.getLeads.mockResolvedValue({ data: [lead('1')] });
+    renderHook(() => usePowerDialerQueue());
+
+    await waitFor(() => expect(LeadsService.getLeads).toHaveBeenCalled());
+    expect(LeadsService.getLeads).toHaveBeenCalledWith(expect.objectContaining({ call_list_id: undefined }));
   });
 });

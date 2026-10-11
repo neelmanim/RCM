@@ -207,13 +207,38 @@ class TestSSEEndpoint:
         token = create_jwt({"sub": 5, "email": "sdr5@test.com", "name": "SSE SDR", "role": "SDR"})
         assert isinstance(token, str) and len(token) > 20
 
+    def test_sse_endpoint_does_not_500_with_a_valid_token(self):
+        """
+        RCA 2026-08-19: call_events_stream() did `user["id"]` but decode_jwt()
+        only ever returns "sub" as the user-id claim — a real request with a
+        genuinely valid token hit an unhandled KeyError -> 500 every time,
+        regardless of the frontend bug (api._token never being defined) that
+        masked it. Calls the real route function directly (as the other
+        tests in this class do, to avoid TestClient hanging on the open SSE
+        stream) so a regression here fails loudly instead of being silently
+        re-masked.
+        """
+        from auth import decode_jwt
+        from routes.sse_routes import call_events_stream
+        from unittest.mock import AsyncMock, MagicMock
+
+        token = self._make_token(user_id="sse-regression-user")
+        user = decode_jwt(token)
+        request = MagicMock()
+        request.is_disconnected = AsyncMock(return_value=True)  # closes the stream immediately
+
+        response = asyncio.get_event_loop().run_until_complete(
+            call_events_stream(request=request, user=user, db=None)
+        )
+        assert response.status_code == 200
+
 
 # ── Broker integration: webhook result shape ─────────────────────────────────
 
 class TestWebhookSSEIntegration:
     """
     Verify that handle_webhook returns the user_id / status / duration fields
-    needed for SSE fan-out routing in the rcm_webhook route handler.
+    needed for SSE fan-out routing in the messenger_webhook route handler.
     """
 
     def test_handle_webhook_returns_sse_fields(self, client, db):
@@ -226,14 +251,14 @@ class TestWebhookSSEIntegration:
         import models
         import uuid
 
-        FAKE_API_KEY = "test-rcm-key"
+        FAKE_API_KEY = "test-messenger-key"
 
         # Store plain-text key; decrypt_token is patched below to return as-is
         settings = models.SyncSettings(
             id=1,
             lead_limit=1000,
-            rcm_api_key=FAKE_API_KEY,
-            rcm_user_id="user-001",
+            messenger_api_key=FAKE_API_KEY,
+            messenger_user_id="user-001",
         )
         db.add(settings)
         db.commit()
@@ -259,17 +284,17 @@ class TestWebhookSSEIntegration:
         db.add(lead)
         db.commit()
 
-        # Minimal RCM webhook payload
+        # Minimal Alternate Messenger webhook payload
         payload = {
-            # RCM webhook format: lowercase status, call_id key
+            # Alternate Messenger webhook format: lowercase status, call_id key
             "call_id":  "conv-sse-001",
-            "status":   "completed",   # RCM's 'completed' maps to CALL_ENDED
+            "status":   "completed",   # Alternate Messenger's 'completed' maps to CALL_ENDED
             "duration": 45,
         }
 
         # Patch decrypt_token at the source module so all local imports pick it up
         with patch("crypto.decrypt_token", side_effect=lambda x: x):
-            result = dialer_service.handle_webhook(db, "rcm", payload)
+            result = dialer_service.handle_webhook(db, "messenger", payload)
 
         assert "user_id" in result, f"user_id missing from handle_webhook return: {result}"
         assert "status" in result,   f"status missing from handle_webhook return: {result}"

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Phase 5: Import Leads to RCM
+Phase 5: Import Leads to Alternate CRM
 ====================================
-Reads aircall_matched.csv and creates leads in the RCM database.
+Reads aircall_matched.csv and creates leads in the Alternate CRM database.
 
 For each record:
   1. Create Lead with all enrichment fields
@@ -47,7 +47,7 @@ def safe_int(val, default=None):
 
 def main():
     print("=" * 60)
-    print("PHASE 5: Import Leads to RCM")
+    print("PHASE 5: Import Leads to Alternate CRM")
     print("=" * 60)
     
     db_url = get_db_url()
@@ -65,12 +65,12 @@ def main():
     
     print(f"\n  📊 Records to import: {len(records):,}")
     
-    # Load SDR email → RCM user ID map
+    # Load SDR email → Alternate CRM user ID map
     with open(os.path.join(DATA_DIR, "sdr_email_map.json")) as f:
         sdr_map = json.load(f)
     
     # Build email → user_id + pod_id lookup
-    with open(os.path.join(DATA_DIR, "rcm_users.json")) as f:
+    with open(os.path.join(DATA_DIR, "alternatecrm_users.json")) as f:
         ls_users = json.load(f)
     user_lookup = {}
     for u in ls_users:
@@ -139,7 +139,7 @@ def main():
                 
                 if aircall_called:
                     last_caller = record.get("last_caller_email", "").strip().lower()
-                    last_caller_in_ls = str(record.get("last_caller_in_rcm", "")).lower() == "true"
+                    last_caller_in_ls = str(record.get("last_caller_in_alternatecrm", "")).lower() == "true"
                     
                     if last_caller and last_caller_in_ls:
                         caller_info = user_lookup.get(last_caller)

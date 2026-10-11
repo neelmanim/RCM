@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 import models
 from database import get_db
 from auth import get_current_user
+from routes.lead_helpers import load_lead, child_of_lead
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +59,7 @@ def list_attachments(
     db: Session = Depends(get_db),
 ):
     """Return all attachments for a lead, visible to all users who can see the lead."""
-    lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    load_lead(db, user, lead_id)
 
     attachments = (
         db.query(models.LeadAttachment)
@@ -81,9 +80,7 @@ async def upload_attachment(
     db: Session = Depends(get_db),
 ):
     """Upload a file attachment to a lead. Max 25 MB. Allowed: PDF, DOCX, XLSX, PNG, JPG, etc."""
-    lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    load_lead(db, user, lead_id, edit=True)
 
     # Validate extension
     original_name = file.filename or "file"
@@ -100,7 +97,8 @@ async def upload_attachment(
         raise HTTPException(status_code=413, detail="File exceeds 25 MB limit.")
 
     # Determine MIME type
-    mime_type = file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+    # From the (allow-listed) extension, never the client's claimed Content-Type.
+    mime_type = mimetypes.guess_type(original_name)[0] or "application/octet-stream"
 
     # Store file on disk with a UUID name to avoid collisions
     stored_name = f"{uuid.uuid4().hex}{ext}"
@@ -136,12 +134,10 @@ def download_attachment(
     db: Session = Depends(get_db),
 ):
     """Stream a file download for a lead attachment."""
-    attachment = db.query(models.LeadAttachment).filter(
-        models.LeadAttachment.id == attachment_id,
-        models.LeadAttachment.lead_id == lead_id,
-    ).first()
-    if not attachment:
-        raise HTTPException(status_code=404, detail="Attachment not found")
+    load_lead(db, user, lead_id)
+    attachment = child_of_lead(
+        db.query(models.LeadAttachment).filter(models.LeadAttachment.id == attachment_id).first(),
+        lead_id, "Attachment")
 
     file_path = UPLOAD_ROOT / lead_id / attachment.stored_filename
     if not file_path.exists():
@@ -151,6 +147,9 @@ def download_attachment(
         path=str(file_path),
         filename=attachment.original_filename,
         media_type=attachment.mime_type or "application/octet-stream",
+        # filename= already forces Content-Disposition: attachment; nosniff
+        # stops a browser second-guessing the type.
+        headers={"X-Content-Type-Options": "nosniff"},
     )
 
 
@@ -163,13 +162,11 @@ def delete_attachment(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Delete a lead attachment. Any user who can see the lead can delete."""
-    attachment = db.query(models.LeadAttachment).filter(
-        models.LeadAttachment.id == attachment_id,
-        models.LeadAttachment.lead_id == lead_id,
-    ).first()
-    if not attachment:
-        raise HTTPException(status_code=404, detail="Attachment not found")
+    """Delete a lead attachment. Needs edit access to the lead."""
+    load_lead(db, user, lead_id, edit=True)
+    attachment = child_of_lead(
+        db.query(models.LeadAttachment).filter(models.LeadAttachment.id == attachment_id).first(),
+        lead_id, "Attachment")
 
     # Remove from disk (best-effort)
     file_path = UPLOAD_ROOT / lead_id / attachment.stored_filename

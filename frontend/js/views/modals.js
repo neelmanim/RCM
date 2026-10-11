@@ -1,6 +1,6 @@
 // ── views/modals.js — All modal wiring (call, new lead, add user, bulk import, no-show) ─
 import { currentUser } from '../auth.js';
-import { logCall, createUser, createLead, markNoShow, fetchCallOutcomes, fetchCallOutcomeStatus, createDisqualifyRequest, getEmailStatus, getCalendarAvailability, draftMeetingAgenda } from '../api.js';
+import { logCall, createUser, createLead, createReassignRequest, markNoShow, fetchCallOutcomes, fetchCallOutcomeStatus, createDisqualifyRequest, getEmailStatus, getCalendarAvailability, draftMeetingAgenda, updateLeadStatus, addDiscoveryMeeting } from '../api.js';
 import { showToast } from '../utils.js';
 import { mp } from '../mp.js';
 
@@ -43,7 +43,7 @@ let activeDialerCallId = null;   // DB UUID of the DialerCall record
 let _activeBranch      = null;   // 'no' | 'yes' | null
 let _activeOutcomeValue   = null;
 let _activeNotesRequired  = false;
-let _dialerProvider    = null;   // 'aircall' | 'rcm' | null
+let _dialerProvider    = null;   // 'aircall' | 'messenger' | null
 let _aircallPollInterval  = null;
 let _aircallPollFailures  = 0;
 let _kbHandler         = null;
@@ -96,11 +96,14 @@ function _renderChipsGrid(chips) {
 }
 
 // No/Voicemail branch — all not_answered outcomes
-function _renderNoChips(outcomes) {
-    const items = outcomes.filter(o => o.group === 'not_answered');
+export function _renderNoChips(outcomes) {
+    // Wrong Number lives in the 'terminal' group (so it also shows under Connected), but a rep who
+    // dials and gets nobody/the wrong person is on this branch: offer it here too.
+    const items = outcomes.filter(o => o.group === 'not_answered' || o.value === 'Wrong Number');
     const chips = (items.length ? items : [
         { value: 'No Answer', notes_required: false },
         { value: 'Left Voicemail', notes_required: false },
+        { value: 'Wrong Number', notes_required: false },
     ]).map(o => ({ value: o.value, icon: _chipIcon(o.value), notesRequired: o.notes_required }));
     return `<div class="clm-chips-header">What happened?</div>` + _renderChipsGrid(chips);
 }
@@ -124,7 +127,7 @@ function _renderYesChips(outcomes) {
             </div>
             <div id="meeting-date-expand" class="clm-meeting-date-expand" style="display:none;">
                 <div id="meeting-connect-warning" style="display:none;padding:10px 14px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:0.8rem;margin-bottom:8px;">
-                    ⚠️ Connect your email in Settings to book meetings from RCM.
+                    ⚠️ Connect your email in Settings to book meetings from Alternate CRM.
                 </div>
                 <div id="meeting-conflict-warning" style="display:none;padding:10px 14px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:0.8rem;margin-bottom:8px;">
                     ⚠️ You have another meeting at this time.
@@ -474,7 +477,7 @@ function _startAircallPoll(callId) {
                     activeDialerCallId = null;
                     window._clearPendingOutcome?.();
                     showToast(`✓ Outcome synced from Aircall: ${data.outcome}`, 'success', 5000);
-                    window.dispatchEvent(new CustomEvent('rcm:call-outcome-resolved',
+                    window.dispatchEvent(new CustomEvent('alternate:call-outcome-resolved',
                         { detail: { leadId: resolvedLeadId, outcome: data.outcome, resolved: 'synced' } }));
                 }
             }
@@ -503,7 +506,7 @@ function _stopAircallPoll() {
  * @param {string}      phone         - Phone number shown in the header
  * @param {object}      lead          - Lead object (for attempt warnings)
  * @param {string|null} dialerCallId  - DialerCall DB UUID (prevents duplicate log)
- * @param {string|null} dialerProvider - 'aircall' | 'rcm' | null (controls sync UI)
+ * @param {string|null} dialerProvider - 'aircall' | 'messenger' | null (controls sync UI)
  */
 export async function openCallModal(leadId, leadName, phone, lead = {}, dialerCallId = null, dialerProvider = null) {
     activeCallLeadId   = leadId;
@@ -569,7 +572,7 @@ export async function openCallModal(leadId, leadName, phone, lead = {}, dialerCa
         }
     }
 
-    // Aircall sync indicator (hidden for RCM / null — EC-1.9)
+    // Aircall sync indicator (hidden for Alternate Messenger / null — EC-1.9)
     const syncEl = document.getElementById('aircall-sync-indicator');
     if (syncEl) syncEl.style.display = _dialerProvider === 'aircall' ? 'flex' : 'none';
 
@@ -715,21 +718,32 @@ function _initCallModal(loadView, getCurrentView, getLeads) {
             _stopAircallPoll();           // EC-3.10
             window._clearPendingOutcome?.();
             activeDialerCallId = null;
+            // RCA 2026-08-21: activeCallLeadId is reset to null two lines below,
+            // but the setTimeout ~900ms further down used to read the *module*
+            // variable directly — always null by the time it ran, so the
+            // `if (callLeadId)` branch below was dead code and every submit fell
+            // through to loadView(getCurrentView()), which drops the id for
+            // 'lead-detail'. That silently no-op'd before lead-detail's
+            // undefined-id guard was a no-op too; now that guard redirects to
+            // the dashboard, so the dead branch became a visible bug. Capture
+            // the real id now, before the reset, and use this everywhere below.
+            const outcomeLeadId = activeCallLeadId;
 
             // Power Dialer hook: the one signal for "the SDR just finished
             // with this call" — fired here (Save), in the Aircall auto-sync
             // branch below, and in app.js's dismiss handler. Nothing else
             // dispatches this; a queue hook listens for it to re-enable
             // "Call Next" instead of gating on the raw call-ended event.
-            window.dispatchEvent(new CustomEvent('rcm:call-outcome-resolved',
+            window.dispatchEvent(new CustomEvent('alternate:call-outcome-resolved',
                 { detail: { leadId: activeCallLeadId, outcome, resolved: 'logged' } }));
 
             setTimeout(() => {
                 callModal.style.display = 'none';
                 btn.textContent = 'Log Call →'; btn.disabled = false;
-                const callLeadId = activeCallLeadId;
+                const callLeadId = outcomeLeadId;
                 activeCallLeadId = null;
                 if (window.PowerDialerHub?.isMounted) return; // stay put — the hub re-renders off its own state
+                if (window.LeadDetailHub?.isMounted) return; // stay put — React hub refetches off the outcome-resolved event
                 if (callLeadId) {
                     loadView('lead-detail', callLeadId);
                     // EC-4: 1200ms gives lead-detail time to render even on slow networks
@@ -820,6 +834,7 @@ function _initNewLeadModal(loadView, getCurrentView) {
             const submitBtn = newLeadForm.querySelector('button[type="submit"]');
             const oldText   = submitBtn.textContent;
             submitBtn.textContent = 'Saving...'; submitBtn.disabled = true;
+            document.getElementById('lead-dup-notice')?.remove();
             try {
                 const res = await createLead(payload);
                 if (res.ok) {
@@ -835,7 +850,8 @@ function _initNewLeadModal(loadView, getCurrentView) {
                     await loadView(getCurrentView());
                 } else {
                     const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-                    showToast(err.detail || 'Failed to create lead.', 'error', 5000);
+                    if (res.status === 409 && err.existing_lead) _showDuplicateNotice(newLeadForm, err);
+                    else showToast(err.detail || 'Failed to create lead.', 'error', 5000);
                 }
             } catch (err) {
                 console.error(err);
@@ -844,6 +860,44 @@ function _initNewLeadModal(loadView, getCurrentView) {
             finally { submitBtn.textContent = oldText; submitBtn.disabled = false; }
         });
     }
+}
+
+// Duplicate lead: say who owns it and offer a reassignment request (approved by a Pod Admin) instead of a dead end.
+// textContent only — the server text includes names typed by users.
+function _showDuplicateNotice(form, err) {
+    document.getElementById('lead-dup-notice')?.remove();
+    const box = document.createElement('div');
+    box.id = 'lead-dup-notice';
+    box.setAttribute('role', 'alert');
+    box.style.cssText = 'margin:0 0 12px;padding:10px 12px;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:8px;font-size:13px;line-height:1.45';
+    const msg = document.createElement('div');
+    msg.textContent = err.detail;
+    box.appendChild(msg);
+    if (err.existing_lead.can_request_reassignment) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Request reassignment';
+        btn.style.cssText = 'margin-top:8px;padding:6px 12px;border-radius:6px;border:0;background:#2563eb;color:#fff;font-weight:600;cursor:pointer';
+        btn.addEventListener('click', async () => {
+            btn.disabled = true; btn.textContent = 'Sending...';
+            try {
+                const r = await createReassignRequest(err.existing_lead.id);
+                const body = await r.json().catch(() => ({}));
+                if (r.ok) {
+                    msg.textContent = 'Request sent. A Pod Admin will review it and you will get a task when it is decided.';
+                    btn.remove();
+                } else {
+                    msg.textContent = body.detail || 'Could not send the request.';
+                    btn.disabled = false; btn.textContent = 'Request reassignment';
+                }
+            } catch (e) {
+                msg.textContent = 'Could not send the request. Please try again.';
+                btn.disabled = false; btn.textContent = 'Request reassignment';
+            }
+        });
+        box.appendChild(btn);
+    }
+    form.insertBefore(box, form.firstChild);
 }
 
 // ── Add User modal ────────────────────────────────────────────────────────────
@@ -985,25 +1039,38 @@ function _initNoShowModal(loadView, getCurrentView) {
         submitBtn.addEventListener('click', async () => {
             const reason = reasonEl.value.trim();
             if (!activeNoShowLeadId || reason.length < 10) return;
+            // RCA 2026-08-20: snapshot which lead this submission is for.
+            // The 800ms setTimeout below used to read the live module-level
+            // activeNoShowLeadId / hidden-input value — if the modal was
+            // reopened for a DIFFERENT lead within that window, the stale
+            // timeout would close the reopened modal and navigate to the
+            // wrong lead (same stale-closure shape as the dialer widget bug).
+            const _leadIdAtSubmit = activeNoShowLeadId;
 
             submitBtn.textContent = 'Processing...';
             submitBtn.disabled = true;
 
             try {
-                const result = await markNoShow(activeNoShowLeadId, reason);
+                const result = await markNoShow(_leadIdAtSubmit, reason);
                 submitBtn.textContent = '✅ Done!';
                 mp.track('No Show Marked', {
-                    lead_id:       activeNoShowLeadId,
+                    lead_id:       _leadIdAtSubmit,
                     reason_length: reason.length,
                     role:          currentUser?.role || '',
                 });
                 showToast(`No-show recorded. Lead moved back to Calling. (Total: ${result.no_show_count})`, 'success', 5000);
                 setTimeout(() => {
+                    // Modal was reopened for a different lead in the meantime — leave it alone.
+                    if (activeNoShowLeadId !== _leadIdAtSubmit) return;
                     modal.style.display = 'none';
                     activeNoShowLeadId = null;
-                    // Reload lead detail view
-                    const leadId = document.getElementById('no-show-lead-id').value;
-                    loadView('lead-detail', leadId);
+                    if (window.LeadDetailHub?.isMounted) {
+                        // Stay put — same guard as the call-outcome save path above —
+                        // but the hub still needs telling so it refetches the new status.
+                        window.dispatchEvent(new CustomEvent('alternate:lead-detail-refresh', { detail: { leadId: _leadIdAtSubmit } }));
+                        return;
+                    }
+                    loadView('lead-detail', _leadIdAtSubmit);
                 }, 800);
             } catch (err) {
                 showToast(err.message || 'Failed to mark no-show', 'error', 5000);
@@ -1096,5 +1163,109 @@ function _initDisqualifyModal() {
     });
     window.addEventListener('click', e => {
         if (e.target === modal) { modal.style.display = 'none'; }
+    });
+}
+
+// ── Stage-progression actions (Demo Success, Meeting Complete, Add/Complete
+//    Discovery, Schedule Demo) — shared by both the classic Lead Detail page
+//    and the Lead Detail Hub (window._runLeadStageAction bridge, app.js).
+//    Each is a single API call + toast; centralised here instead of
+//    duplicated per button so both callers stay in sync.
+const _STAGE_ACTIONS = {
+    demoSuccess:       { run: (leadId) => updateLeadStatus(leadId, 'Demo Done'),
+                          fallbackError: 'Failed to mark demo as done',
+                          successMessage: '🎉 Demo marked as successful! Lead will be pushed to Salesforce.' },
+    meetingComplete:   { run: (leadId) => logCall(leadId, { outcome: 'Meeting Complete', notes: '', phone: '' }),
+                          fallbackError: 'Failed to log meeting outcome',
+                          successMessage: '✅ Meeting confirmed! Lead advanced to Discovery stage.' },
+    addDiscovery:      { run: (leadId) => addDiscoveryMeeting(leadId),
+                          fallbackError: 'Failed to log discovery meeting',
+                          successMessage: 'Discovery meeting logged!' },
+    completeDiscovery: { run: (leadId) => updateLeadStatus(leadId, 'Discovery Complete'),
+                          fallbackError: 'Failed to complete discovery',
+                          successMessage: 'Discovery marked complete!' },
+    scheduleDemo:      { run: (leadId) => updateLeadStatus(leadId, 'Demo Scheduled'),
+                          fallbackError: 'Failed to schedule demo',
+                          successMessage: 'Demo scheduled!' },
+};
+
+export async function runLeadStageAction(leadId, actionKey) {
+    const action = _STAGE_ACTIONS[actionKey];
+    if (!action) throw new Error(`Unknown stage action: ${actionKey}`);
+    const res = await action.run(leadId);
+    // updateLeadStatus returns a raw fetch Response; logCall/addDiscoveryMeeting
+    // already throw on failure and return parsed JSON — only check .ok when present.
+    if (res && typeof res.ok === 'boolean' && !res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || action.fallbackError);
+    }
+    showToast(action.successMessage, 'success', 4000);
+    window.dispatchEvent(new CustomEvent('alternate:lead-detail-refresh', { detail: { leadId } }));
+}
+
+// ── Demo Failed modal — extracted from lead_detail.js so it's reusable from
+//    the Lead Detail Hub (window._openDemoFailedModal bridge, app.js).
+export function openDemoFailedModal(leadId, lead, { onResolved } = {}) {
+    const existing = document.getElementById('demo-failed-modal');
+    if (existing) { existing.remove(); }
+
+    const modal = document.createElement('div');
+    modal.id = 'demo-failed-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease;';
+    modal.innerHTML = `
+        <div style="background:white;border-radius:16px;padding:32px;width:480px;max-width:90vw;box-shadow:0 20px 40px rgba(0,0,0,0.18);">
+            <div style="text-align:center;margin-bottom:16px;">
+                <span style="font-size:2.5rem;">❌</span>
+            </div>
+            <h3 style="margin:0 0 12px;font-size:1.1rem;font-weight:700;text-align:center;color:#1a202c;">Demo Failed / Customer No-Show</h3>
+            <p style="font-size:0.85rem;color:#4a5568;line-height:1.5;margin:0 0 16px;text-align:center;">
+                This lead will be sent to <strong>Pending Review</strong>. Your Pod Admin will decide next steps.
+            </p>
+            <div style="margin-bottom:16px;">
+                <label style="font-weight:600;font-size:0.82rem;display:block;margin-bottom:6px;">Failure Reason</label>
+                <select id="demo-fail-reason" class="filter-select" style="width:100%;padding:10px 14px;border:1px solid #e4e4e7;border-radius:10px;font-size:0.88rem;">
+                    <option value="Customer No-Show">Customer No-Show</option>
+                    <option value="Customer Not Ready">Customer Not Ready</option>
+                    <option value="Technical Issues">Technical Issues</option>
+                    <option value="Rescheduled">Rescheduled</option>
+                    <option value="Lost Interest">Lost Interest</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div style="margin-bottom:16px;">
+                <label style="font-weight:600;font-size:0.82rem;display:block;margin-bottom:6px;">Notes (optional)</label>
+                <textarea id="demo-fail-notes" rows="2" style="width:100%;padding:10px 14px;border:1px solid #e4e4e7;border-radius:10px;font-size:0.85rem;resize:vertical;box-sizing:border-box;" placeholder="Any additional context..."></textarea>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button class="btn btn-outline" id="demo-fail-cancel" style="font-size:0.85rem;padding:8px 18px;">Cancel</button>
+                <button class="btn btn-primary" id="demo-fail-confirm" style="font-size:0.85rem;padding:8px 18px;background:#ef4444;border-color:#ef4444;">Confirm Failure</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    document.getElementById('demo-fail-cancel').addEventListener('click', () => modal.remove());
+    document.getElementById('demo-fail-confirm').addEventListener('click', async () => {
+        const reason = document.getElementById('demo-fail-reason').value;
+        const notes = document.getElementById('demo-fail-notes').value;
+        const confirmBtn = document.getElementById('demo-fail-confirm');
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = '⏳ Processing...';
+        try {
+            const phone = lead?.phone || lead?.phone_secondary || lead?.company_phone || '';
+            await logCall(leadId, {
+                outcome: 'Demo Failed',
+                notes: notes ? `[${reason}] ${notes}` : `[${reason}]`,
+                phone,
+            });
+            showToast(`Demo failure recorded: ${reason}. Lead sent to Pending Review.`, 'warning', 5000);
+            modal.remove();
+            window.dispatchEvent(new CustomEvent('alternate:lead-detail-refresh', { detail: { leadId } }));
+            onResolved?.();
+        } catch (e) {
+            showToast('Error: ' + (e.message || e), 'error');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Confirm Failure';
+        }
     });
 }

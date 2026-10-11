@@ -11,6 +11,9 @@ const archive = vi.fn(() => Promise.resolve({ id: 'j1', status: 'archived', enro
 const pause = vi.fn(() => Promise.resolve({ id: 'j1', status: 'paused' }));
 const resume = vi.fn(() => Promise.resolve({ id: 'j1', status: 'active' }));
 const getFailedEnrollments = vi.fn(() => Promise.resolve([]));
+const getEnrollmentRoster = vi.fn(() => Promise.resolve({ total: 0, offset: 0, limit: 500, enrollments: [], status_counts: {}, stage_breakdown: [] }));
+const getStatsByRep = vi.fn(() => Promise.resolve({ reps: [] }));
+const getStatsTrend = vi.fn(() => Promise.resolve({ bucket: 'week', points: [] }));
 const retryEnrollment = vi.fn(() => Promise.resolve({ enrollment_id: 'e1', status: 'active' }));
 const skipEnrollment = vi.fn(() => Promise.resolve({ enrollment_id: 'e1', status: 'failed', exited_reason: 'manually_skipped' }));
 const updateSettings = vi.fn(() => Promise.resolve({ id: 'j1', pod_id: null }));
@@ -26,6 +29,9 @@ vi.mock('../../services/api', () => ({
     resume: (...args) => resume(...args),
     getFailedEnrollments: (...args) => getFailedEnrollments(...args),
     getActivity: () => Promise.resolve([]),
+    getEnrollmentRoster: (...args) => getEnrollmentRoster(...args),
+    getStatsByRep: (...args) => getStatsByRep(...args),
+    getStatsTrend: (...args) => getStatsTrend(...args),
     retryEnrollment: (...args) => retryEnrollment(...args),
     skipEnrollment: (...args) => skipEnrollment(...args),
     updateSettings: (...args) => updateSettings(...args),
@@ -65,9 +71,8 @@ describe('JourneyBuilder', () => {
     render(<JourneyBuilder journeyName="Test Journey" journeyPodId="" onBack={() => {}} />);
 
     const podSelect = await screen.findByTitle(/Only leads in this pod/);
-    expect(await screen.findByText('POD-A')).toBeInTheDocument();
-
-    await user.selectOptions(podSelect, 'pod-1');
+    await user.click(podSelect);
+    await user.click(await screen.findByRole('menuitem', { name: 'POD-A' }));
 
     expect(updateSettings).toHaveBeenCalledWith('j1', { pod_id: 'pod-1' });
   });
@@ -79,10 +84,10 @@ describe('JourneyBuilder', () => {
     render(<JourneyBuilder journeyName="Test Journey" journeyPodId="" onBack={() => {}} />);
 
     const podSelect = await screen.findByTitle(/Only leads in this pod/);
-    await screen.findByText('POD-A');
-    await user.selectOptions(podSelect, 'pod-1');
+    await user.click(podSelect);
+    await user.click(await screen.findByRole('menuitem', { name: 'POD-A' }));
 
-    await waitFor(() => expect(podSelect.value).toBe(''));
+    await waitFor(() => expect(podSelect).toHaveTextContent('All pods'));
   });
 
   it('renames the cadence on blur and saves it', async () => {
@@ -198,6 +203,16 @@ describe('JourneyBuilder — publish/archive', () => {
     await waitFor(() => expect(screen.getByText('active')).toBeInTheDocument());
   });
 
+  it('the publish confirm says leads already in the status are not enrolled', async () => {
+    const user = userEvent.setup();
+    render(<JourneyBuilder journeyName="Test Journey" journeyStatus="draft" onBack={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /Trigger/ }));
+    await user.click(screen.getByText('Save'));
+    await waitFor(() => expect(saveDraft).toHaveBeenCalled());
+    await user.click(screen.getByText('Publish'));
+    expect(await screen.findByText(/Leads whose status changes to New after you publish will enroll\. Leads already in New are not enrolled/)).toBeInTheDocument();
+  });
+
   it('archiving fetches the active-enrollment count, confirms, then calls the API and navigates back', async () => {
     const user = userEvent.setup();
     const onArchived = vi.fn();
@@ -257,5 +272,58 @@ describe('JourneyBuilder — pause/resume and failed enrollments', () => {
   it('no failed-enrollments panel for a draft journey (nothing has run yet)', () => {
     render(<JourneyBuilder journeyName="Test Journey" journeyStatus="draft" onBack={() => {}} />);
     expect(getFailedEnrollments).not.toHaveBeenCalled();
+  });
+});
+
+describe('JourneyBuilder — readOnly (non-admin transparency view)', () => {
+  it('hides every mutating control but still shows the canvas and a read-only banner', () => {
+    render(<JourneyBuilder journeyName="Test Journey" journeyStatus="active" onBack={() => {}} readOnly />);
+
+    expect(screen.getByText('Read-only — contact your Pod Admin to request a change.')).toBeInTheDocument();
+    expect(screen.queryByText('Save')).not.toBeInTheDocument();
+    expect(screen.queryByText('Publish')).not.toBeInTheDocument();
+    expect(screen.queryByText('Archive')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pause')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Click to rename')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Trigger$/ })).not.toBeInTheDocument();
+  });
+
+  it('a node is still inspectable read-only — its fields render but are disabled, and Delete node is hidden', async () => {
+    useJourneyStore.setState({
+      journeyId: 'j1', versionId: 'v1', lastSavedAt: '2026-08-01T00:00:00Z',
+      nodes: [{ id: 'n1', type: 'email', position: { x: 0, y: 0 }, data: { subject: 'Hi' } }],
+      edges: [], selectedNodeId: 'n1', dirty: false,
+    });
+    render(<JourneyBuilder journeyName="Test Journey" journeyStatus="active" onBack={() => {}} readOnly />);
+
+    const subjectInput = await screen.findByLabelText('Subject');
+    expect(subjectInput).toBeDisabled();
+    expect(screen.queryByText('Delete node')).not.toBeInTheDocument();
+  });
+
+  it('failed-enrollments list stays visible, but its Retry/Skip actions are hidden', async () => {
+    getFailedEnrollments.mockResolvedValueOnce([
+      { enrollment_id: 'e1', lead_name: 'Jane Doe', status: 'failed', exited_reason: 'send_failed', last_error: 'Nylas 500' },
+    ]);
+    render(<JourneyBuilder journeyName="Test Journey" journeyStatus="active" onBack={() => {}} readOnly />);
+
+    expect(await screen.findByText('Jane Doe')).toBeInTheDocument();
+    expect(screen.queryByText('Retry')).not.toBeInTheDocument();
+    expect(screen.queryByText('Skip')).not.toBeInTheDocument();
+  });
+
+  it('switching to the Reporting tab hides the canvas and node palette, and shows the reporting content', async () => {
+    const user = userEvent.setup();
+    render(<JourneyBuilder journeyName="Test Journey" journeyStatus="active" onBack={() => {}} />);
+
+    // Builder view by default — node palette visible, Reporting content absent.
+    expect(screen.getByRole('button', { name: /^Trigger$/ })).toBeInTheDocument();
+    expect(screen.queryByText('Enrolled leads')).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('Reporting'));
+
+    expect(await screen.findByText(/Enrolled leads/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Trigger$/ })).not.toBeInTheDocument();
+    expect(getEnrollmentRoster).toHaveBeenCalledWith('j1', 0);
   });
 });

@@ -12,8 +12,8 @@
           manual call (no DialerCall in last 10 min)
   TC-B6   POST /api/dialer/test — no ?provider param → falls back to active provider
   TC-B7   POST /api/dialer/test?provider=aircall → tests Aircall creds specifically
-  TC-B8   POST /api/dialer/test?provider=rcm_dialer → tests RCM dialer
-  TC-B9   POST /api/dialer/test?provider=rcm_messaging → tests messaging creds
+  TC-B8   POST /api/dialer/test?provider=messenger_dialer → tests Alternate Messenger dialer
+  TC-B9   POST /api/dialer/test?provider=messaging_provider → tests messaging creds
   TC-B10  POST /api/dialer/test?provider=unknown_xyz → 400/success=False
   TC-B11  POST /api/dialer/test — 403 for non-super-admin caller
   TC-B12  PATCH /api/calls/{call_id}/outcome — attaches outcome to DialerCall record
@@ -35,7 +35,7 @@ import time
 import requests
 from datetime import datetime, timezone, timedelta
 
-BASE         = os.environ.get("TEST_BASE", "https://rcm-crm-staging.onrender.com")
+BASE         = os.environ.get("TEST_BASE", "https://messenger-crm-staging.onrender.com")
 JWT          = os.environ.get("TEST_JWT", "")
 ADMIN_JWT    = os.environ.get("ADMIN_JWT", "")
 
@@ -88,7 +88,7 @@ def api_patch(path, data=None, headers=None):
 # ═══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     print("\n" + "═" * 65)
-    print("  RCM — DIALER OUTCOME GATE TEST SUITE")
+    print("  ALTERNATE_CRM — DIALER OUTCOME GATE TEST SUITE")
     print(f"  Target: {BASE}")
     print("═" * 65)
 
@@ -227,12 +227,12 @@ if __name__ == "__main__":
                   or "credentials" in d.get("message", "").lower(),
                   f"message='{d.get('message')}'")
 
-    # ── TC-B8: POST /api/dialer/test?provider=rcm_dialer ───────────────
-    section("TC-B8 — POST /api/dialer/test?provider=rcm_dialer")
+    # ── TC-B8: POST /api/dialer/test?provider=messenger_dialer ───────────────
+    section("TC-B8 — POST /api/dialer/test?provider=messenger_dialer")
     if not ADMIN_JWT:
         s("TC-B8", "ADMIN_JWT env var not set")
     else:
-        r = requests.post(f"{BASE}/api/dialer/test?provider=rcm_dialer",
+        r = requests.post(f"{BASE}/api/dialer/test?provider=messenger_dialer",
                           json={}, headers=HDR_ADMIN, timeout=15)
         t("TC-B8.1  Returns 200", r.status_code == 200, f"status={r.status_code}")
         if r.ok:
@@ -244,12 +244,12 @@ if __name__ == "__main__":
                   or "credentials" in d.get("message", "").lower(),
                   f"message='{d.get('message')}'")
 
-    # ── TC-B9: POST /api/dialer/test?provider=rcm_messaging ────────────
-    section("TC-B9 — POST /api/dialer/test?provider=rcm_messaging")
+    # ── TC-B9: POST /api/dialer/test?provider=messaging_provider ────────────
+    section("TC-B9 — POST /api/dialer/test?provider=messaging_provider")
     if not ADMIN_JWT:
         s("TC-B9", "ADMIN_JWT env var not set")
     else:
-        r = requests.post(f"{BASE}/api/dialer/test?provider=rcm_messaging",
+        r = requests.post(f"{BASE}/api/dialer/test?provider=messaging_provider",
                           json={}, headers=HDR_ADMIN, timeout=15)
         t("TC-B9.1  Returns 200", r.status_code == 200, f"status={r.status_code}")
         if r.ok:
@@ -257,7 +257,7 @@ if __name__ == "__main__":
             t("TC-B9.2  Response has success field", "success" in d)
             # Messaging test must be INDEPENDENT of whatever the active dialer is
             t("TC-B9.3  Test ran independently (not 'Unknown provider' error)",
-              d.get("message", "") != "Unknown provider: rcm_messaging",
+              d.get("message", "") != "Unknown provider: messaging_provider",
               f"message='{d.get('message')}'")
 
     # ── TC-B10: Unknown provider → graceful error ──────────────────────────────

@@ -12,16 +12,27 @@
 /* Skip @tailwind base — no global resets that would fight the Vanilla shell */
 
 /*
- * Preflight's compositional-utility custom-property defaults (transforms/
- * rings/shadows/gradients) are skipped along with @tailwind base above, so
- * any standalone transform utility (e.g. -translate-y-1/2, used to center
- * the SDR Performance search icon) silently no-ops: the browser can't
- * resolve `translate(var(--tw-translate-x), var(--tw-translate-y))` when
- * --tw-translate-x was never initialized, so the whole `transform` property
- * falls back to `none`. Mirrors sales-journey-tailwind.css/help-tailwind.css's
- * fix for the same bug, scoped to .analytics-hub-root.
+ * Radix (DropdownMenu/Popover) portals its content to document.body, so it
+ * renders as a sibling of .analytics-hub-root rather than a descendant. The
+ * shared Popover/DropdownMenu components (components/ui/Popover.jsx,
+ * DropdownMenu.jsx) hardcode the literal class "activitymonitor-portal" on
+ * their portaled content for exactly this reason — NOT a bundle-specific
+ * name, despite how it reads. Every bundle's reset must re-apply to that
+ * same literal selector or the reset silently never matches. This bundle
+ * never had ANY of Preflight's border/transform/button reset (unlike
+ * sales-tools-tailwind.css etc., which already solved this) — every rule
+ * below is new, not just extended to the portal selector. This is the root
+ * cause of a "these look like transparent buttons" report: the POD/Batch
+ * Select pickers and Ask AI's query typeahead render with bare native OS
+ * chrome (2px outset border, default background, unresolved transforms)
+ * since neither their own .analytics-hub-root home nor their portaled
+ * dropdown content ever reset it.
  */
-.analytics-hub-root, .analytics-hub-root *, .analytics-hub-root *::before, .analytics-hub-root *::after {
+.analytics-hub-root, .analytics-hub-root *, .analytics-hub-root *::before, .analytics-hub-root *::after,
+.activitymonitor-portal, .activitymonitor-portal *, .activitymonitor-portal *::before, .activitymonitor-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
   --tw-translate-x: 0;
   --tw-translate-y: 0;
   --tw-rotate: 0;
@@ -42,16 +53,7 @@
   --tw-shadow-colored: 0 0 #0000;
 }
 
-/*
- * Preflight's <button> normalization is skipped along with @tailwind base
- * above, so buttons fall back to native OS chrome: no background reset
- * (visible native fill/focus highlight) and no color/font inheritance from
- * ambient Tailwind classes. Reproduces just that part of Preflight, at the
- * same low specificity Preflight itself uses (:where() keeps this at 0,0,1
- * — any button's own Tailwind utility class still wins), scoped to
- * .analytics-hub-root.
- */
-:where(.analytics-hub-root) button {
+:where(.analytics-hub-root, .activitymonitor-portal) button {
   -webkit-appearance: none;
   appearance: none;
   background-color: transparent;

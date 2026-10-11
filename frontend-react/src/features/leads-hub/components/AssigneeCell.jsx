@@ -1,5 +1,5 @@
 import React from 'react';
-import { InlineSelectCell } from './InlineSelectCell';
+import { Select } from '../../../components/ui/Select';
 
 /** Inline single-lead reassignment — a dropdown of SDR/AE users plus an
  * explicit "Unassigned" option. Autosaves on change, same pattern as StatusCell. */
@@ -8,9 +8,9 @@ export function AssigneeCell({ assignedTo, sdrs, onChange }) {
   const options = [{ value: '', label: 'Unassigned' }, ...sdrs.map((s) => ({ value: s.id, label: s.name }))];
 
   return (
-    <InlineSelectCell
+    <Select
       value={current?.id || ''} onChange={(v) => onChange(v || null)}
-      ariaLabel="Reassign lead" options={options} className="min-w-[120px]"
+      ariaLabel="Reassign lead" options={options} className="min-w-[120px]" searchable
     >
       {current ? (
         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
@@ -22,6 +22,6 @@ export function AssigneeCell({ assignedTo, sdrs, onChange }) {
       ) : (
         <span className="text-slate-400 italic text-sm">Unassigned</span>
       )}
-    </InlineSelectCell>
+    </Select>
   );
 }

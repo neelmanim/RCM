@@ -19,7 +19,7 @@ export async function renderSdrSettings(container) {
         window.history.replaceState({}, '', cleanUrl);
         // Show success toast after a short delay to let the UI render
         setTimeout(() => {
-            showToast('✅ Email connected successfully! You can now send and receive emails from RCM.', 'success', 5000);
+            showToast('✅ Email connected successfully! You can now send and receive emails from Alternate CRM.', 'success', 5000);
         }, 500);
     }
 
@@ -51,7 +51,7 @@ export async function renderSdrSettings(container) {
                 <div class="sdr-settings-icon" style="background:#eef2ff;color:#6366f1;">✉️</div>
                 <div class="sdr-settings-info">
                     <div class="sdr-settings-title">Email Sync</div>
-                    <div class="sdr-settings-desc">Connect your email to send and receive from RCM</div>
+                    <div class="sdr-settings-desc">Connect your email to send and receive from Alternate CRM</div>
                 </div>
                 <div class="sdr-settings-status">
                     ${emailEnabled
@@ -95,7 +95,7 @@ export async function renderSdrSettings(container) {
                 <div class="sdr-settings-icon" style="background:#fff7ed;color:#f97316;">📞</div>
                 <div class="sdr-settings-info">
                     <div class="sdr-settings-title">Dialer</div>
-                    <div class="sdr-settings-desc">Make calls directly from RCM</div>
+                    <div class="sdr-settings-desc">Make calls directly from Alternate CRM</div>
                 </div>
                 <div class="sdr-settings-status">
                     <span class="sdr-toggle ${dialerOn ? 'on' : ''}" id="sdr-dialer-toggle" style="cursor:pointer;" title="Click to toggle dialer">
@@ -137,8 +137,8 @@ export async function renderSdrSettings(container) {
             <div class="sdr-settings-card-header">
                 <div class="sdr-settings-icon" style="background:#eef2ff;color:#6366f1;">🏷️</div>
                 <div class="sdr-settings-info">
-                    <div class="sdr-settings-title">Hide "Powered by RCM"</div>
-                    <div class="sdr-settings-desc">Suppress the footer on emails you send from RCM</div>
+                    <div class="sdr-settings-title">Hide "Powered by Alternate Messenger"</div>
+                    <div class="sdr-settings-desc">Suppress the footer on emails you send from Alternate CRM</div>
                 </div>
                 <div class="sdr-settings-status">
                     <span class="sdr-toggle ${emailStatus.hide_branding_in_email ? 'on' : ''}" id="sdr-branding-toggle" style="cursor:pointer;" title="Click to toggle">
@@ -154,7 +154,7 @@ export async function renderSdrSettings(container) {
                 <div class="sdr-settings-icon" style="background:#eef2ff;color:#6366f1;">✍️</div>
                 <div class="sdr-settings-info">
                     <div class="sdr-settings-title">Email Signature</div>
-                    <div class="sdr-settings-desc">Appended automatically to every email you send from RCM</div>
+                    <div class="sdr-settings-desc">Appended automatically to every email you send from Alternate CRM</div>
                 </div>
             </div>
             <div class="sdr-settings-card-body" style="padding:14px 16px;">
@@ -163,6 +163,8 @@ export async function renderSdrSettings(container) {
                     <button type="button" class="email-rte-btn" id="sig-italic" title="Italic"><i>I</i></button>
                     <button type="button" class="email-rte-btn" id="sig-link" title="Insert link">🔗</button>
                     <button type="button" class="email-rte-btn" id="sig-image" title="Insert image">🖼️</button>
+                    <button type="button" class="email-rte-btn" id="sig-logo" title="Upload company logo">🏢</button>
+                    <input type="file" id="sig-logo-input" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none;">
                 </div>
                 <div class="email-reply-textarea" id="sig-editor" contenteditable="true"
                     data-placeholder="e.g. Cheers,&#10;Jane Doe · Account Executive&#10;Book a meeting: https://..."
@@ -240,7 +242,7 @@ export async function renderSdrSettings(container) {
             } else {
                 phoneStatus.textContent = 'No number assigned yet — contact your Admin';
                 phoneStatus.style.color = '#f59e0b';
-                // 4D: Inline warning block — leads will see RCM's number, not yours
+                // 4D: Inline warning block — leads will see Alternate Messenger's number, not yours
                 const callerIdWrap = document.getElementById('sdr-caller-id-display');
                 if (callerIdWrap) {
                     const warn = document.createElement('div');
@@ -255,7 +257,7 @@ export async function renderSdrSettings(container) {
                         <span style="font-size:1rem;flex-shrink:0;">⚠️</span>
                         <div>
                             <strong>No caller ID configured.</strong>
-                            Leads will see a RCM number instead of your number.
+                            Leads will see a Alternate Messenger number instead of your number.
                             Ask your Pod Admin or Super Admin to assign a caller ID under
                             <em>Settings → SDR Management</em>.
                         </div>`;
@@ -275,10 +277,18 @@ export async function renderSdrSettings(container) {
         
         const currentlyOn = toggleEl.classList.contains('on');
         const nextState = !currentlyOn;
-        
+
+        // v11.10.0: turning your own dialer back on is an admin grant, not a
+        // preference — the API now refuses it (PATCH /api/dialer/toggle). Say so
+        // here instead of firing a request that comes back 403.
+        if (nextState) {
+            showToast('Only an admin can enable dialer access — ask your admin to turn it on.', 'warning', 6000);
+            return;
+        }
+
         toggleEl.style.opacity = '0.5';
         toggleEl.style.pointerEvents = 'none';
-        
+
         try {
             const res = await api.toggleMyDialer(nextState);
             if (res && res.dialer_enabled !== undefined) {
@@ -349,6 +359,24 @@ export async function renderSdrSettings(container) {
         document.getElementById('sig-image')?.addEventListener('click', () => {
             const url = window.prompt('Image URL (include https://)');
             if (url) sigExec('insertImage', url);
+        });
+        // v11.3.0: "Insert image" only ever accepted a URL — no way to use a
+        // logo that's just a file on the SDR's computer. Uploads it, gets a
+        // hosted URL back, inserts it exactly like any other image URL.
+        document.getElementById('sig-logo')?.addEventListener('click', () => {
+            document.getElementById('sig-logo-input')?.click();
+        });
+        document.getElementById('sig-logo-input')?.addEventListener('change', async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';  // allow re-selecting the same file next time
+            if (!file) return;
+            try {
+                const { url } = await api.uploadSignatureLogo(file);
+                sigExec('insertImage', url);
+                mp.track('Email Signature Logo Uploaded');
+            } catch (err) {
+                showToast('Failed to upload logo: ' + (err.message || err), 'error');
+            }
         });
 
         document.getElementById('sig-save-btn')?.addEventListener('click', async () => {

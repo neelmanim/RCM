@@ -9,16 +9,36 @@ import models
 import access_db
 from database import get_db
 from auth import (
+    public_endpoint,
     create_jwt, get_current_user,
     google_auth_url, exchange_code_for_user, GOOGLE_CLIENT_ID
 )
-from salesforce import get_sf_client, push_sdr_metrics_to_salesforce
+from salesforce import get_sf_client, push_sdr_metrics_to_salesforce, backfill_sf_identity_links
 from models import log_user_login
 
 router = APIRouter(prefix="/api", tags=["Auth"])
 
 
-@router.get("/auth/login")
+def _record_access_request(db: Session, email: str, name: str) -> None:
+    """Records/refreshes a pending access request and notifies Super Admins
+    — see models.AccessRequest's docstring. Only notifies on the FIRST
+    attempt for a given email; repeated attempts (e.g. someone retrying
+    login) just bump requested_at, so a person hammering the button doesn't
+    spam admins with duplicate emails."""
+    from datetime import datetime, timezone
+    req = db.query(models.AccessRequest).filter(models.AccessRequest.email == email).first()
+    if req:
+        req.name = name or req.name
+        req.requested_at = datetime.now(timezone.utc)
+        db.commit()
+        return
+    db.add(models.AccessRequest(email=email, name=name))
+    db.commit()
+    from access_notifications import notify_new_access_request_in_background
+    notify_new_access_request_in_background(email, name)
+
+
+@router.get("/auth/login", dependencies=[Depends(public_endpoint)])
 def login(origin: str = ""):
     """Redirect the browser to Google OAuth consent screen.
     Pass ?origin=react from the React frontend so the callback
@@ -29,11 +49,11 @@ def login(origin: str = ""):
     return RedirectResponse(url=google_auth_url(state=origin))
 
 
-@router.get("/auth/callback")
+@router.get("/auth/callback", dependencies=[Depends(public_endpoint)])
 async def auth_callback(code: str = None, error: str = None, state: str = "", request: Request = None, db: Session = Depends(get_db)):
     """Google redirects here after the user approves. Exchange code → JWT.
 
-    The `state` param carries the FRONTEND ORIGIN (e.g. 'https://rcm-frontend-develop.onrender.com')
+    The `state` param carries the FRONTEND ORIGIN (e.g. 'https://messenger-frontend-develop.onrender.com')
     set by login.html so we redirect the token back to whichever frontend initiated the login.
     Falls back to FRONTEND_URL env var for backwards compatibility.
     """
@@ -79,9 +99,11 @@ async def auth_callback(code: str = None, error: str = None, state: str = "", re
             db.add(user)
             db.commit()
             db.refresh(user)
+            backfill_sf_identity_links(db, user)
             access_db.add_allowed_user(db, email, name, "Super Admin", "system-first-user")
         else:
             if not access_db.is_user_allowed(db, email):
+                _record_access_request(db, email, name)
                 _fe = _resolve_frontend(state)
                 return RedirectResponse(url=f"{_fe}/login.html?error=unauthorized" if _fe else "/frontend/login.html?error=unauthorized")
             access_info = access_db.get_allowed_user(db, email)
@@ -92,6 +114,7 @@ async def auth_callback(code: str = None, error: str = None, state: str = "", re
             db.add(user)
             db.commit()
             db.refresh(user)
+            backfill_sf_identity_links(db, user)
     else:
         no_allowed_users = db.query(models.AllowedUser).count() == 0
         if no_allowed_users:
@@ -99,6 +122,7 @@ async def auth_callback(code: str = None, error: str = None, state: str = "", re
             user.role = "Super Admin"
         else:
             if not access_db.is_user_allowed(db, email):
+                _record_access_request(db, email, name)
                 _fe = _resolve_frontend(state)
                 return RedirectResponse(url=f"{_fe}/login.html?error=unauthorized" if _fe else "/frontend/login.html?error=unauthorized")
             # Sync role from allowed_users on every login
@@ -137,7 +161,7 @@ async def auth_callback(code: str = None, error: str = None, state: str = "", re
     return RedirectResponse(url=f"{_fe}/login.html?token={token}" if _fe else f"/frontend/login.html?token={token}")
 
 
-@router.get("/health")
+@router.get("/health", dependencies=[Depends(public_endpoint)])
 def health(db: Session = Depends(get_db)):
     """Shallow health check used by Render's health probe.
     Always returns 200 to prevent restart loops during startup/migration.
@@ -152,14 +176,20 @@ def health(db: Session = Depends(get_db)):
         db_connected = False
 
     import app_state
+    from config import APP_VERSION
     return {
         "status": "ok" if db_connected else "degraded",
         "db_connected": db_connected,
         "startup_complete": app_state.startup_complete,
+        # Lets the mandatory pre-promotion check actually verify WHAT is
+        # running, not just that something is. Without it, "staging is healthy"
+        # couldn't distinguish a landed deploy from the previous build, and
+        # confirming a release needed a behavioural probe against live data.
+        "version": APP_VERSION,
     }
 
 
-@router.get("/health/deep")
+@router.get("/health/deep", dependencies=[Depends(public_endpoint)])
 def deep_health(db: Session = Depends(get_db)):
     """Deep health check — detects DB lock outages, memory, and startup state.
     Use for monitoring and debugging; NOT for Render's health probe.
@@ -250,6 +280,22 @@ def me(bg_tasks: BackgroundTasks, user: dict = Depends(get_current_user), db: Se
     return user
 
 
+@router.get("/me/capabilities")
+def my_capabilities(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """What this user may actually do — calling, SMS, WhatsApp — resolved live
+    from the DB rather than from JWT claims.
+
+    v11.10.0: the frontend used to infer messaging access from
+    /api/dialer/status's *dialer* provider, which is why an SDR on Aircall for
+    calling got no messaging UI at all. This is the one endpoint the widget and
+    the lead-detail Message button gate on, so the UI can never offer something
+    the send path will refuse. Live-read on purpose: an admin's grant takes
+    effect on the SDR's next page load, with no re-login.
+    """
+    from messaging_service import get_user_capabilities
+    return get_user_capabilities(db, user)
+
+
 def _push_user_metrics_to_sf(user_id: str, db: Session, last_login=False):
     """Computes SDR metrics and pushes to Salesforce SDR__c object."""
     from datetime import datetime, date
@@ -290,50 +336,3 @@ def _push_user_metrics_to_sf(user_id: str, db: Session, last_login=False):
         push_sdr_metrics_to_salesforce(sf, db_user, metrics)
 
 
-@router.get("/auth/demo")
-def demo_login(role: str = "SDR", db: Session = Depends(get_db)):
-    """Dev-only quick login. Returns a JWT without Google OAuth."""
-    if os.getenv("ALLOW_DEMO", "false").lower() != "true":
-        raise HTTPException(status_code=403, detail="Demo login is disabled in this environment.")
-    valid_roles = {"Super Admin", "Pod Admin", "SDR", "AE"}
-    # Map legacy "Admin" to "Super Admin" for demo compatibility
-    if role == "Admin":
-        role = "Super Admin"
-    if role not in valid_roles:
-        role = "SDR"
-
-    demo_email = f"demo.{role.lower().replace(' ', '')}@rcm.dev"
-    user = db.query(models.User).filter(models.User.email == demo_email).first()
-    if not user:
-        user = models.User(
-            google_id=f"demo-{role.lower().replace(' ', '')}",
-            email=demo_email,
-            name=f"Demo {role}",
-            role=role
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        access_db.add_allowed_user(db, demo_email, f"Demo {role}", role, "demo-system")
-    else:
-        # Ensure role matches request (handles V1→V2 upgrade case)
-        if user.role != role:
-            user.role = role
-            user.name = f"Demo {role}"
-            db.commit()
-
-    token = create_jwt({
-        "sub": user.id, "email": user.email, "name": user.name, "role": user.role,
-        "pod_id": user.pod_id,
-        "dialer_enabled": bool(getattr(user, 'dialer_enabled', False)),
-        "email_sync_enabled": bool(getattr(user, 'email_sync_enabled', False)),
-    })
-    return {"token": token, "user": {"email": user.email, "name": user.name, "role": user.role}}
-
-
-@router.get("/config")
-def get_config():
-    """Expose environment config to the frontend (safe settings only)."""
-    return {
-        "allow_demo": os.getenv("ALLOW_DEMO", "false").lower() == "true"
-    }

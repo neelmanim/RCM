@@ -178,6 +178,40 @@ export const DashboardSkeleton = () => (
   </div>
 );
 
+/* ── Lead Detail Page Skeleton ──────────────────────────────────────────── */
+export const LeadDetailSkeleton = () => (
+  <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-4 animate-[fadeIn_0.2s_ease_forwards]">
+    <div className="flex items-start justify-between gap-4">
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-7 w-56" />
+        <Skeleton className="h-3.5 w-40" />
+        <Skeleton className="h-3 w-32" />
+      </div>
+      <Skeleton className="h-8 w-24 rounded-lg" />
+    </div>
+    <Skeleton className="h-16 w-full rounded-xl" />
+    <Skeleton className="h-14 w-full rounded-xl" />
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="lg:col-span-2 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <SkeletonCard><SkeletonText lines={4} /></SkeletonCard>
+          <SkeletonCard><SkeletonText lines={4} /></SkeletonCard>
+        </div>
+        <SkeletonCard><SkeletonText lines={5} /></SkeletonCard>
+        <SkeletonCard>
+          <SkeletonCallRow /><SkeletonCallRow /><SkeletonCallRow />
+        </SkeletonCard>
+      </div>
+      <div className="space-y-4">
+        <SkeletonCard><SkeletonText lines={3} /></SkeletonCard>
+        <SkeletonCard><SkeletonText lines={3} /></SkeletonCard>
+        <SkeletonCard><SkeletonText lines={2} /></SkeletonCard>
+      </div>
+    </div>
+  </div>
+);
+
 /* ── Calls Page Skeleton ────────────────────────────────────────────────── */
 export const CallsSkeleton = () => (
   <div className="space-y-4 animate-[fadeIn_0.2s_ease_forwards]">
@@ -200,3 +234,14 @@ export const CallsSkeleton = () => (
     </div>
   </div>
 );
+
+/** A couple of menu-item-sized bars — DropdownMenuItem's own height, so a
+ *  menu doesn't jump size once its real rows load. */
+export function MenuSkeletonRows() {
+  return (
+    <div className="space-y-1 px-1.5 py-1">
+      <Skeleton className="h-6 w-full" />
+      <Skeleton className="h-6 w-3/4" />
+    </div>
+  );
+}

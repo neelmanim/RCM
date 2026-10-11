@@ -26,7 +26,7 @@ test.describe('React Frontend Migration E2E', () => {
     await page.goto('/dashboard');
     
     // Ensure the top layout shell wraps successfully
-    await expect(page.locator('.sidebar-brand')).toContainText('RCM');
+    await expect(page.locator('.sidebar-brand')).toContainText('Alternate CRM');
     await expect(page.locator('text=Dashboard Overview')).toBeVisible();
     
     // 4. Test Routing: Moving from Dashboard to Leads List

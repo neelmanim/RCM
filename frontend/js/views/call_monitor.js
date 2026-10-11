@@ -46,7 +46,7 @@ export async function renderCallMonitor(container) {
                 </select>
                 <select class="cm-filter-select" id="cm-filter-provider">
                     <option value="">All Providers</option>
-                    <option value="rcm">📞 RCM</option>
+                    <option value="messenger">📞 Alternate Messenger</option>
                     <option value="aircall">✈️ Aircall</option>
                     <option value="klenty">📲 Klenty</option>
                     <option value="manual">📋 Manual</option>
@@ -209,7 +209,12 @@ function _attachEvents(container) {
         if (_autoRefresh) _startAutoRefresh(container); else _stopAutoRefresh();
     });
 
-    container.querySelector('#cm-export-btn').addEventListener('click', () => _exportCSV(container));
+    const _exportBtn = container.querySelector('#cm-export-btn');
+    _exportBtn.addEventListener('click', () => _exportCSV(container));
+    // Export is off unless a Super Admin switched it on for this user (the shell publishes /api/me/capabilities).
+    const _syncExportBtn = () => { _exportBtn.style.display = window.__CRM_CAPS__?.export === true ? '' : 'none'; };
+    _syncExportBtn();
+    window.addEventListener('alternate:caps', _syncExportBtn);
 
     // Debounced search on Enter
     container.querySelector('#cm-filter-search').addEventListener('keydown', (e) => {
@@ -440,7 +445,7 @@ function _buildExpandPanel(c) {
         transcriptSection = `<div class="cm-transcript-empty">
             <span style="opacity:0.45;">📝</span>
             <em style="opacity:0.5;">Transcript not available for this call</em>
-            <span class="cm-transcript-hint" style="opacity:0.5;">Call transcription requires RCM or Aircall transcription to be enabled on your account.</span>
+            <span class="cm-transcript-hint" style="opacity:0.5;">Call transcription requires Alternate Messenger or Aircall transcription to be enabled on your account.</span>
         </div>`;
     } else {
         transcriptSection = `<div class="cm-transcript-body">${
@@ -654,6 +659,8 @@ async function _exportCSV(container) {
         a.href = URL.createObjectURL(blob);
         a.download = `call-monitor-${new Date().toISOString().slice(0,10)}.csv`;
         a.click();
+        // built in the browser, so tell the server — it goes into the permanent export record
+        fetch(`${API}/api/me/export-event`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ what: 'call-monitor', rows: (data.items || []).length }) }).catch(() => {});
         showToast(`Exported ${(data.items || []).length} calls`, 'success');
     } catch(e) {
         console.error('[CallMonitor] export error:', e);
@@ -683,7 +690,7 @@ function _timeAgo(iso) {
 function _providerBadge(p) {
     if (!p) return '<span class="cm-muted">—</span>';
     const lp = p.toLowerCase();
-    if (lp === 'rcm') return `<span class="cm-badge cm-badge--indigo">📞 RCM</span>`;
+    if (lp === 'messenger') return `<span class="cm-badge cm-badge--indigo">📞 Alternate Messenger</span>`;
     if (lp === 'aircall')    return `<span class="cm-badge cm-badge--purple">✈️ Aircall</span>`;
     if (lp === 'klenty')     return `<span class="cm-badge cm-badge--teal">📲 Klenty</span>`;
     return `<span class="cm-badge cm-badge--grey">${_esc(p)}</span>`;

@@ -1,7 +1,7 @@
 """
 Tests for messaging_sync.py — the inbound-message reconciliation job.
 
-RCM Built-in Messaging's Converse Desk API has no push webhook for inbound
+Alternate Messenger/Messaging Provider's Converse Desk API has no push webhook for inbound
 messages, unlike calls or email — a lead's reply previously had no path into
 our own DB at all. These tests cover the fix.
 """
@@ -15,7 +15,7 @@ from tests.conftest import create_test_lead
 
 def _provider(conversations, messages_by_conversation=None):
     mock = MagicMock()
-    mock.provider_name = "rcm"
+    mock.provider_name = "messenger"
     mock.list_recent_conversations.return_value = conversations
     mock.get_inbound_messages.side_effect = lambda conv_id: (messages_by_conversation or {}).get(conv_id, [])
     return mock
@@ -50,7 +50,7 @@ class TestSyncRecentConversations:
         assert log.direction == "inbound"
         assert log.status == "received"
         assert log.channel == "whatsapp"
-        assert log.provider == "rcm"
+        assert log.provider == "messenger"
         assert log.conversation_id == "42"
         assert log.message_text == "Sounds good, thanks!"
 
@@ -87,7 +87,7 @@ class TestSyncRecentConversations:
         db.add(models.SmsLog(
             message_id="msg-1", lead_id=lead.id, direction="inbound",
             status="received", phone_number="919876543210", channel="whatsapp",
-            provider="rcm",
+            provider="messenger",
         ))
         db.commit()
 

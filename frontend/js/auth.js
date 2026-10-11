@@ -39,7 +39,7 @@ const isTokenExpired = currentUser && currentUser.exp && (currentUser.exp * 1000
 if (!currentUser || isTokenExpired) {
     sessionStorage.removeItem('crm_view_as_token');
     localStorage.removeItem('crm_token');
-    window.location.href = 'signup.html';
+    window.location.href = isTokenExpired ? 'login.html?expired=1' : 'login.html';
     throw new Error('Not authenticated or session expired, redirecting to login...');
 }
 
@@ -56,11 +56,15 @@ export const dialerEnabled    = isAdmin ? true : (currentUser?.dialer_enabled ??
 export const emailSyncEnabled = isAdmin ? true : (currentUser?.email_sync_enabled ?? false);
 
 
-export function authHeaders() {
+export function getAuthToken() {
     // View-As tab uses sessionStorage token; original tab uses localStorage token.
     // This ensures admin's real session is never overwritten by View-As.
-    const token = sessionStorage.getItem('crm_view_as_token')
-               || localStorage.getItem('crm_token')
-               || CRM_TOKEN;
+    return sessionStorage.getItem('crm_view_as_token')
+        || localStorage.getItem('crm_token')
+        || CRM_TOKEN;
+}
+
+export function authHeaders() {
+    const token = getAuthToken();
     return token ? { 'Authorization': `Bearer ${token}` } : {};
 }

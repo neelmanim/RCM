@@ -104,12 +104,12 @@ class TestGetMessagingProviderForOrgAircall:
         assert isinstance(provider, AircallMessagingProvider)
         assert provider.provider_name == "aircall"
 
-    def test_rcm_stays_the_default_when_messaging_provider_unset(self, db):
-        from rcm_messaging_provider import RCMMessagingProvider
+    def test_messenger_stays_the_default_when_messaging_provider_unset(self, db):
+        from messaging_provider_provider import AlternateMessenger
         db.add(models.SyncSettings(
-            id=1, rcm_enabled=True, rcm_api_key="k",
-            rcm_user_id="u", rcm_account_id="a",
+            id=1, messenger_enabled=True, messenger_api_key="k",
+            messenger_user_id="u", messenger_account_id="a",
         ))
         db.commit()
         provider = get_messaging_provider_for_org(db)
-        assert isinstance(provider, RCMMessagingProvider)
+        assert isinstance(provider, AlternateMessenger)

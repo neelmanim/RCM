@@ -1,0 +1,32 @@
+/*
+ * login-tailwind.css
+ *
+ * Tailwind entry for the Login bundle. Unlike every other bundle's
+ * *-tailwind.css, this one is the ONLY document on the page — there's no
+ * surrounding Vanilla JS shell to protect from Preflight leaking — so it's
+ * the one bundle that can safely include @tailwind base in full instead of
+ * hand-reproducing a border/button reset slice scoped to a root class.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes login-float-spark {
+  0%   { opacity: 0; transform: translateY(16px) scale(0.5); }
+  20%  { opacity: 0.8; }
+  50%  { opacity: 0.45; transform: translateY(-32px) scale(1); }
+  80%  { opacity: 0.6; }
+  100% { opacity: 0; transform: translateY(-64px) scale(0.3); }
+}
+
+@keyframes login-orbit-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-spark,
+  .login-loader-ring,
+  .login-loader-spark {
+    animation: none !important;
+  }
+}

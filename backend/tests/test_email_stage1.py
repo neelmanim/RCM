@@ -296,7 +296,7 @@ class TestFullMailboxSync:
 
     def test_picks_assigned_sdrs_mailbox_when_no_prior_outbound(self, db):
         """2026-08-05: a lead only ever contacted via native Gmail (never
-        through RCM's own compose) has no outbound activity with a
+        through Alternate CRM's own compose) has no outbound activity with a
         user_id yet, so the mailbox fallback used to pick "any connected
         mailbox" — in a multi-SDR org that's frequently the WRONG SDR's
         grant, so the Nylas call searches the wrong inbox and finds nothing.
@@ -455,6 +455,49 @@ class TestFullMailboxSync:
         ).first()
         assert activity is not None
         assert activity.direction == "outbound"
+
+
+class TestFullMailboxSyncConcurrencyCap:
+    """RCA 2026-08-24 (staging OOM investigation): GET .../emails fires
+    _sync_full_mailbox_background on every call with no concurrency limit —
+    each run can hold up to 100 full message bodies in memory, so a burst of
+    lead-detail views (real traffic spike or E2E test traffic) could run
+    dozens at once on a memory-constrained box. Bounded with a semaphore;
+    over-the-cap calls skip (best-effort catch-up, not user-facing) rather
+    than queue or block."""
+
+    def test_skips_when_over_concurrency_cap(self, db):
+        # `db` fixture isn't used directly, but its SessionLocal monkeypatch
+        # (conftest.py) is needed since _sync_full_mailbox_background opens
+        # its own session even though _sync_full_mailbox itself is mocked out.
+        from routes import email_routes
+
+        sem = email_routes._full_mailbox_sync_semaphore
+        held = [sem.acquire(blocking=False) for _ in range(4)]
+        assert all(held), "expected exactly 4 permits available"
+
+        try:
+            with patch("routes.email_routes._sync_full_mailbox") as mock_sync:
+                email_routes._sync_full_mailbox_background("lead-over-cap")
+                mock_sync.assert_not_called()
+        finally:
+            sem.release()
+            sem.release()
+            sem.release()
+            sem.release()
+
+    def test_releases_permit_after_run_so_next_call_is_not_blocked(self, db):
+        from routes import email_routes
+
+        with patch("routes.email_routes._sync_full_mailbox") as mock_sync:
+            email_routes._sync_full_mailbox_background("lead-a")
+            mock_sync.assert_called_once()
+
+        # The permit taken above must have been released — a second call
+        # right after must still run, not silently skip.
+        with patch("routes.email_routes._sync_full_mailbox") as mock_sync:
+            email_routes._sync_full_mailbox_background("lead-b")
+            mock_sync.assert_called_once()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

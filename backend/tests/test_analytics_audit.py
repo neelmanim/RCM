@@ -15,7 +15,7 @@ Covers the 3 bugs found during the 2026-05-28 prod DB audit:
                      to None (all-time). On initial load (no filter sent),
                      both should show the same scope. Fixed: preset=None.
 
-Prod audit summary (2026-05-28, Render PostgreSQL rcm-db-prod):
+Prod audit summary (2026-05-28, Render PostgreSQL messenger-db-prod):
   ✅ Leads 12,057 | Research 5,604 | Meetings 80 | Disqualified 722
   ✅ Calls 17,253 (12,063 dialer + 5,202 call_logs − 12 overlap)
   ✅ Funnel connects 27 | Connect rate 0.2%
@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch, MagicMock
-from conftest import create_test_user, create_test_lead, SUPER_ADMIN
+from conftest import create_test_user, create_test_lead, create_test_booking, SUPER_ADMIN
 import models
 import routes.analytics_routes as ar_module
 
@@ -107,9 +107,9 @@ class TestSdrConnectRateDenominator:
         lead = create_test_lead(db)
         _assign_lead(db, lead, sdr)
 
-        # 10 outbound dialer calls — 2 connects, 4 with outcome, 6 with nothing
+        # 10 outbound dialer calls — 2 connects, 4 explicitly not-answered, 4 with nothing
         for i in range(10):
-            outcome = "Call Back Later" if i < 2 else ("Not Interested" if i < 6 else None)
+            outcome = "Call Back Later" if i < 2 else ("No Answer" if i < 6 else None)
             _make_dialer_call(db, sdr.id, lead.id, outcome=outcome)
 
         resp = client.get("/api/admin/analytics/sdr-table?page_size=100")
@@ -167,10 +167,10 @@ class TestSdrConnectRateDenominator:
         lead = create_test_lead(db)
         _assign_lead(db, lead, sdr)
 
-        # 8 dialer calls: 1 CALL_ANSWERED + 5 with outcome + 2 null
+        # 8 dialer calls: 1 CALL_ANSWERED + 5 explicitly not-answered + 2 null
         _make_dialer_call(db, sdr.id, lead.id, outcome="Call Back Later")
         for _ in range(5):
-            _make_dialer_call(db, sdr.id, lead.id, outcome="Not Interested")
+            _make_dialer_call(db, sdr.id, lead.id, outcome="No Answer")
         for _ in range(2):
             _make_dialer_call(db, sdr.id, lead.id)
 
@@ -214,6 +214,7 @@ class TestSdrMeetingsDateFilter:
         lead.lead_closed_at = datetime.now(timezone.utc) - timedelta(days=days_ago)
         db.commit()
         _assign_lead(db, lead, sdr)
+        create_test_booking(db, lead, sdr.id, booked_at=lead.lead_closed_at)
         return lead
 
     def test_old_meeting_excluded_from_30d_filter(self, client, db):

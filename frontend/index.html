@@ -4,31 +4,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RCM · Powered by RCM</title>
-    <meta name="description" content="RCM — Powered by RCM. SDR-focused CRM with POD teams, enriched leads, and pipeline management.">
-    <!-- RCM Brand Icons -->
+    <title>Alternate CRM · Powered by Alternate Messenger</title>
+    <meta name="description" content="Alternate CRM — Powered by Alternate Messenger. SDR-focused CRM with POD teams, enriched leads, and pipeline management.">
+    <!-- Alternate CRM Brand Icons -->
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="img/icons/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="img/icons/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/icons/apple-touch-icon.png">
     <!-- Preload Dashboard React bundle so it's ready when user clicks Dashboard -->
-    <link rel="preload" href="js/dashboard-hub.js?v=20260729a" as="script">
-    <link rel="preload" href="js/dashboard-hub.css?v=20260618d" as="style">
-    <link rel="preload" href="js/nav-hub.js?v=20260812a" as="script">
-    <link rel="preload" href="js/nav-hub.css?v=20260812a" as="style">
+    <link rel="preload" href="js/dashboard-hub.js?v=20261011v1439" as="script">
+    <link rel="preload" href="js/dashboard-hub.css?v=20261011v1439" as="style">
+    <link rel="preload" href="js/nav-hub.js?v=20261011v1439" as="script">
+    <link rel="preload" href="js/nav-hub.css?v=20261011v1439" as="style">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#5B50E8">
     <meta property="og:image" content="img/icons/og-image.png">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="RCM · Powered by RCM">
+    <meta property="og:title" content="Alternate CRM · Powered by Alternate Messenger">
     <!-- Preconnect for Google Fonts to save ~100ms DNS+TLS (perf audit P6) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=20260811a">
-    <link rel="stylesheet" href="css/digest.css">
-    <link rel="stylesheet" href="css/rcm_widget.css?v=20260729a">
-    <link rel="stylesheet" href="js/nav-hub.css?v=20260812a">
+    <link rel="stylesheet" href="css/style.css?v=20260819a">
+    <link rel="stylesheet" href="css/messenger_widget.css?v=20260729a">
+    <link rel="stylesheet" href="js/nav-hub.css?v=20261011v1439">
     <!-- livekit + PapaParse: defer so they don't block first paint (perf audit P3) -->
     <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.9.1/dist/livekit-client.umd.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js" defer></script>
@@ -524,6 +523,14 @@
             .upload-stats-grid { grid-template-columns: repeat(2, 1fr); }
             .upload-toggle-row { flex-direction: column; gap: 14px; align-items: flex-start; }
         }
+        /* Daily Digest print export (DailyDigestHub.jsx's Export button calls
+           window.print()) — hides the shell chrome so only the digest content
+           prints; the digest's own header controls hide themselves via
+           Tailwind's print: variant. */
+        @media print {
+            #app-sidebar, #nav-topbar-root { display: none !important; }
+            #view-container { margin: 0 !important; padding: 0 !important; }
+        }
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -571,39 +578,86 @@
             sidebar.addEventListener('click', () => tip.classList.remove('visible'), true);
         })();
     </script>
-    <script src="js/dialer_machine.js?v=20260603"></script><!-- Phase 1: state machine — must load before both widgets -->
-    <script src="js/rcm_widget.js?v=20260615a"></script>
-    <!-- React port of the RCM widget (Call + Message tabs) — gated by
-         localStorage 'rcmWidgetReact'. Off by default: does nothing,
-         the vanilla widget above stays fully in control. Loads after it so
-         its conditional window.RCMWidget takeover (when flag is on)
-         happens last. -->
-    <link rel="stylesheet" href="js/rcm-widget.css?v=20260810a">
-    <script src="js/rcm-widget.js?v=20260810a"></script>
-    <link rel="stylesheet" href="js/analytics-hub.css?v=20260803a">
-    <script src="js/analytics-hub.js?v=20260803a" defer></script>
-    <link rel="stylesheet" href="js/calendar-hub.css?v=20260723a">
-    <script src="js/calendar-hub.js?v=20260723a" defer></script>
-    <!-- Leads Hub React IIFE — redesigned All Leads (Beta), gated by localStorage 'leadsBeta' -->
-    <link rel="stylesheet" href="js/leads-hub.css?v=20260810b">
-    <script src="js/leads-hub.js?v=20260810b" defer></script>
-    <link rel="stylesheet" href="js/email-hub.css?v=20260805d">
-    <script src="js/email-hub.js?v=20260805d" defer></script>
+    <script src="js/dialer_machine.js?v=20261011v1439"></script><!-- Phase 1: state machine — must load before both widgets -->
+    <script src="js/messenger_widget.js?v=20261011v1439"></script>
+    <!-- React port of the Alternate Messenger widget (Call + Message tabs) — the
+         React widget is on by default; set localStorage
+         'messengerWidgetReact' to 'false' as a per-browser kill switch to
+         fall back to the vanilla widget above. Loads after it so its
+         window.MessengerWidget takeover happens last. -->
+    <link rel="stylesheet" href="js/messenger-widget.css?v=20261011v1439">
+    <script src="js/messenger-widget.js?v=20261011v1439"></script>
+    <link rel="stylesheet" href="js/analytics-hub.css?v=20261011v1439">
+    <script src="js/analytics-hub.js?v=20261011v1439" defer></script>
+    <link rel="stylesheet" href="js/calendar-hub.css?v=20261011v1439">
+    <script src="js/calendar-hub.js?v=20261011v1439" defer></script>
+    <!-- Leads Hub React IIFE — redesigned All Leads (v11.5.4: now the only Leads view; the
+         classic view + 'leadsBeta' toggle are deprecated but kept in the codebase) -->
+    <link rel="stylesheet" href="js/leads-hub.css?v=20261011v1439">
+    <script src="js/leads-hub.js?v=20261011v1439" defer></script>
+    <!-- Lead Detail Hub React IIFE — opt-in redesign of the Lead Details page
+         (localStorage 'leadDetailHub' = 'on'); classic lead_detail.js stays
+         the default and fully functional, same dual-view pattern as Leads Hub -->
+    <link rel="stylesheet" href="js/lead-detail-hub.css?v=20261011v1439">
+    <script src="js/lead-detail-hub.js?v=20261011v1439" defer></script>
+    <!-- Pods Hub React IIFE — POD Management: team roster (active-lead
+         staleness per rep) + pod/admin CRUD, replacing the classic view -->
+    <link rel="stylesheet" href="js/pods-hub.css?v=20261011v1439">
+    <script src="js/pods-hub.js?v=20261011v1439" defer></script>
+    <!-- Activity Monitor React IIFE — Calls/Email/Messages monitoring for
+         Super Admin + Pod Admin, replacing the classic Call Monitor view -->
+    <link rel="stylesheet" href="js/activity-monitor-hub.css?v=20261011v1439">
+    <script src="js/activity-monitor-hub.js?v=20261011v1439" defer></script>
+    <!-- Control Center React IIFE — personal, additive settings/admin
+         consolidation, visible only to one account (see
+         .claude/skills/settings-architecture/skill.md) -->
+    <link rel="stylesheet" href="js/control-center-hub.css?v=20261011v1439">
+    <script src="js/control-center-hub.js?v=20261011v1439" defer></script>
+    <link rel="stylesheet" href="js/email-hub.css?v=20261011v1439">
+    <script src="js/email-hub.js?v=20261011v1439" defer></script>
     <!-- Dashboard Hub React IIFE (v9.7.6) -->
-    <link rel="stylesheet" href="js/dashboard-hub.css?v=20260618d">
-    <script src="js/dashboard-hub.js?v=20260729a" defer fetchpriority="high"></script>
+    <link rel="stylesheet" href="js/dashboard-hub.css?v=20261011v1439">
+    <script src="js/dashboard-hub.js?v=20261011v1439" defer fetchpriority="high"></script>
     <!-- Help Hub React IIFE (v10.6.38) — replaces the classic Help & User Guide view -->
-    <link rel="stylesheet" href="js/help-hub.css?v=20260810b">
-    <script src="js/help-hub.js?v=20260812a" defer></script>
-    <!-- Sales Journey Hub React IIFE — visual workflow builder -->
-    <link rel="stylesheet" href="js/sales-journey-hub.css?v=20260810a">
-    <script src="js/sales-journey-hub.js?v=20260810a" defer></script>
+    <link rel="stylesheet" href="js/help-hub.css?v=20261011v1439">
+    <script src="js/help-hub.js?v=20261011v1439" defer></script>
+    <!-- Sales Tools Hub React IIFE (v12) — Cadence (visual workflow builder) + Email Campaigns, supersedes the standalone sales-journey-hub bundle -->
+    <link rel="stylesheet" href="js/sales-tools-hub.css?v=20261011v1439">
+    <script src="js/sales-tools-hub.js?v=20261011v1439" defer></script>
+    <link rel="stylesheet" href="js/daily-digest-hub.css?v=20261011v1439">
+    <script src="js/daily-digest-hub.js?v=20261011v1439" defer></script>
+    <link rel="stylesheet" href="js/my-settings-hub.css?v=20261011v1439">
+    <script src="js/my-settings-hub.js?v=20261011v1439" defer></script>
+    <link rel="stylesheet" href="js/leaderboard-hub.css?v=20261011v1439">
+    <script src="js/leaderboard-hub.js?v=20261011v1439" defer></script>
+    <!-- SDR Performance Hub React IIFE — replaces views/sdr_performance.js -->
+    <link rel="stylesheet" href="js/sdr-performance-hub.css?v=20261011v1439">
+    <script src="js/sdr-performance-hub.js?v=20261011v1439" defer></script>
+    <!-- AE Pipeline Hub React IIFE (Phase 1) -->
+    <link rel="stylesheet" href="js/ae-pipeline-hub.css?v=20261011v1439">
+    <script src="js/ae-pipeline-hub.js?v=20261011v1439" defer></script>
+    <!-- CSM Portal Hub React IIFE (Phase 2) -->
+    <link rel="stylesheet" href="js/csm-portal-hub.css?v=20261011v1439">
+    <script src="js/csm-portal-hub.js?v=20261011v1439" defer></script>
+    <!-- Pipeline Hub React IIFE — Super-Admin merge of AE Pipeline + CSM Portal -->
+    <link rel="stylesheet" href="js/pipeline-hub.css?v=20261011v1439">
+    <script src="js/pipeline-hub.js?v=20261011v1439" defer></script>
+    <!-- My Tasks Hub React IIFE — consolidated task list across every lead -->
+    <link rel="stylesheet" href="js/my-tasks-hub.css?v=20261011v1439">
+    <script src="js/my-tasks-hub.js?v=20261011v1439" defer></script>
     <!-- Power Dialer Hub React IIFE — replaces the classic Today's Calls view -->
-    <link rel="stylesheet" href="js/power-dialer-hub.css?v=20260811h">
-    <script src="js/power-dialer-hub.js?v=20260811h" defer></script>
+    <link rel="stylesheet" href="js/power-dialer-hub.css?v=20261011v1439">
+    <script src="js/power-dialer-hub.js?v=20261011v1439" defer></script>
     <!-- NavHub React IIFE (v9.8.0) — Sidebar + Topbar -->
-    <script src="js/nav-hub.js?v=20260812a" defer></script>
-    <script type="module" src="js/app.js?v=20260811b"></script>
+    <script src="js/nav-hub.js?v=20261011v1439" defer></script>
+    <script type="module" src="js/app.js?v=20261011v1439"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
 </body>
 
 </html>

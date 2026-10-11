@@ -1,0 +1,182 @@
+{
+  "harshith.b@screen-magic.com": {
+    "aircall_id": 1566648,
+    "aircall_name": "Harshith Beecha",
+    "alternatecrm_id": "65661975-67a0-4642-b50c-d10acd1410fa",
+    "alternatecrm_name": "Harshith",
+    "alternatecrm_role": "Super Admin",
+    "alternatecrm_pod_id": null,
+    "email": "harshith.b@screen-magic.com"
+  },
+  "ankit.bakshi@screen-magic.com": {
+    "aircall_id": 1733719,
+    "aircall_name": "Ankit Bakshi",
+    "alternatecrm_id": "8f982d9e-3b6b-4edb-87c2-36f13d2c3501",
+    "alternatecrm_name": "Ankit Bakshi",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "41340b44-7dec-42d7-b45e-de9670483a42",
+    "email": "ankit.bakshi@screen-magic.com"
+  },
+  "aman.birthal@screen-magic.com": {
+    "aircall_id": 1733720,
+    "aircall_name": "Aman Birthal",
+    "alternatecrm_id": "ec8e8308-c970-4b03-b4ad-294bfafac328",
+    "alternatecrm_name": "Aman Birthal",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": null,
+    "email": "aman.birthal@screen-magic.com"
+  },
+  "tanya.batra@screen-magic.com": {
+    "aircall_id": 1733721,
+    "aircall_name": "Tanya Batra",
+    "alternatecrm_id": "442199b2-1d54-4108-877c-4662da5bc8c9",
+    "alternatecrm_name": "Tanya Batra",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "41340b44-7dec-42d7-b45e-de9670483a42",
+    "email": "tanya.batra@screen-magic.com"
+  },
+  "ananya.bains@screen-magic.com": {
+    "aircall_id": 1733722,
+    "aircall_name": "Ananya Bains",
+    "alternatecrm_id": "a6287bf1-7d9b-420a-97ab-52ee7ca3784a",
+    "alternatecrm_name": "Ananya Bains",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "41340b44-7dec-42d7-b45e-de9670483a42",
+    "email": "ananya.bains@screen-magic.com"
+  },
+  "aratrika.chattopadhyay@screen-magic.com": {
+    "aircall_id": 1733737,
+    "aircall_name": "Aratrika Chattopadhyay",
+    "alternatecrm_id": "77064eaf-7d00-4e21-8e21-6e5fa6fc1706",
+    "alternatecrm_name": "Aratrika Chattopadhyay",
+    "alternatecrm_role": "Super Admin",
+    "alternatecrm_pod_id": "41340b44-7dec-42d7-b45e-de9670483a42",
+    "email": "aratrika.chattopadhyay@screen-magic.com"
+  },
+  "jemimah.roselin@screen-magic.com": {
+    "aircall_id": 1759110,
+    "aircall_name": "Jemimah Roselin",
+    "alternatecrm_id": "abf2d9f7-a6fe-4075-8166-7df992e96191",
+    "alternatecrm_name": "Jemimah Roselin",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "b22f17bd-d06e-4f04-9a9f-306958a2b335",
+    "email": "jemimah.roselin@screen-magic.com"
+  },
+  "evaneucharist.rohit@screen-magic.com": {
+    "aircall_id": 1759126,
+    "aircall_name": "Evan S",
+    "alternatecrm_id": "34b39dec-7357-4695-a0da-355d2649fc7a",
+    "alternatecrm_name": "Evan Eucharist Rohit Sasikumar",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "b22f17bd-d06e-4f04-9a9f-306958a2b335",
+    "email": "evaneucharist.rohit@screen-magic.com"
+  },
+  "damini.kumari@screen-magic.com": {
+    "aircall_id": 1759139,
+    "aircall_name": "Damini Kumari",
+    "alternatecrm_id": "1b38db56-792e-4fd8-b491-d663755694fb",
+    "alternatecrm_name": "Damini kumari",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "41340b44-7dec-42d7-b45e-de9670483a42",
+    "email": "damini.kumari@screen-magic.com"
+  },
+  "mayukh.pattanayak@screen-magic.com": {
+    "aircall_id": 1759142,
+    "aircall_name": "Mayukh Pattanayak",
+    "alternatecrm_id": "1e344f8f-ccb2-4693-a5a7-12558d2e8e0b",
+    "alternatecrm_name": "Mayukh Pattanayak",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "b22f17bd-d06e-4f04-9a9f-306958a2b335",
+    "email": "mayukh.pattanayak@screen-magic.com"
+  },
+  "siddhant.rai@screen-magic.com": {
+    "aircall_id": 1759143,
+    "aircall_name": "Siddhant Rai",
+    "alternatecrm_id": "dc7ca2a8-7a2b-4f13-9c34-b5d6f68f2e58",
+    "alternatecrm_name": "Siddhant Rai",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "b22f17bd-d06e-4f04-9a9f-306958a2b335",
+    "email": "siddhant.rai@screen-magic.com"
+  },
+  "himanshu.prasad@screen-magic.com": {
+    "aircall_id": 1759145,
+    "aircall_name": "Himanshu Prasad",
+    "alternatecrm_id": "9f4683dc-4961-4ebc-9774-d1c4774cbdb0",
+    "alternatecrm_name": "Himanshu Prasad",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "b22f17bd-d06e-4f04-9a9f-306958a2b335",
+    "email": "himanshu.prasad@screen-magic.com"
+  },
+  "aditya.sharma@screen-magic.com": {
+    "aircall_id": 1759148,
+    "aircall_name": "Aditya Sharma",
+    "alternatecrm_id": "89e00349-8498-49d8-8387-730cf9169c15",
+    "alternatecrm_name": "Aditya Sharma",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "41340b44-7dec-42d7-b45e-de9670483a42",
+    "email": "aditya.sharma@screen-magic.com"
+  },
+  "vanshika.koli@screen-magic.com": {
+    "aircall_id": 1759177,
+    "aircall_name": "Vanshika Koli",
+    "alternatecrm_id": "4328334c-ee8e-40ac-b325-352caf0e89ee",
+    "alternatecrm_name": "Vanshika Koli",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "b22f17bd-d06e-4f04-9a9f-306958a2b335",
+    "email": "vanshika.koli@screen-magic.com"
+  },
+  "gauri.sharma@screen-magic.com": {
+    "aircall_id": 1759178,
+    "aircall_name": "Gauri Sharma",
+    "alternatecrm_id": "b6e7bde1-6224-40e7-b22f-5e9217e06b65",
+    "alternatecrm_name": "Gauri Sharma",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "b22f17bd-d06e-4f04-9a9f-306958a2b335",
+    "email": "gauri.sharma@screen-magic.com"
+  },
+  "monisha.sharma@screen-magic.com": {
+    "aircall_id": 1759179,
+    "aircall_name": "Monisha Sharma",
+    "alternatecrm_id": "3cebac82-9189-4c64-a3b5-f4a5a933d9f3",
+    "alternatecrm_name": "Monisha Sharma",
+    "alternatecrm_role": "SDR",
+    "alternatecrm_pod_id": "b22f17bd-d06e-4f04-9a9f-306958a2b335",
+    "email": "monisha.sharma@screen-magic.com"
+  },
+  "nitin@screen-magic.com": {
+    "aircall_id": 1767635,
+    "aircall_name": "Nitin Seth",
+    "alternatecrm_id": "8bbf0739-b0a1-428b-aaae-6895ecef10cc",
+    "alternatecrm_name": "Nitin Seth",
+    "alternatecrm_role": "Super Admin",
+    "alternatecrm_pod_id": null,
+    "email": "nitin@screen-magic.com"
+  },
+  "pankaj.tripathi@screen-magic.com": {
+    "aircall_id": 1778454,
+    "aircall_name": "Pankaj Tripathi",
+    "alternatecrm_id": "26cd6143-18aa-4ca6-b153-4f9156176c29",
+    "alternatecrm_name": "Pankaj Tripathi",
+    "alternatecrm_role": "Super Admin",
+    "alternatecrm_pod_id": null,
+    "email": "pankaj.tripathi@screen-magic.com"
+  },
+  "diwakar.varadharajan@screen-magic.com": {
+    "aircall_id": 1879152,
+    "aircall_name": "Diwakar Varadharajan",
+    "alternatecrm_id": "4f317433-5d6f-4e3b-bf8b-13ca0ebf9af2",
+    "alternatecrm_name": "Diwakar Varadharajan",
+    "alternatecrm_role": "Pod Admin",
+    "alternatecrm_pod_id": "b22f17bd-d06e-4f04-9a9f-306958a2b335",
+    "email": "diwakar.varadharajan@screen-magic.com"
+  },
+  "neelmani.mishra@screen-magic.com": {
+    "aircall_id": 1902890,
+    "aircall_name": "Neelmani Mishra",
+    "alternatecrm_id": "7947d681-0c91-464e-9e84-4ff6d862d3c1",
+    "alternatecrm_name": "Neelmani Mishra",
+    "alternatecrm_role": "Super Admin",
+    "alternatecrm_pod_id": null,
+    "email": "neelmani.mishra@screen-magic.com"
+  }
+}

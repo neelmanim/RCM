@@ -43,7 +43,7 @@ _subscribers: Dict[int, Set[asyncio.Queue]] = defaultdict(set)
 QUEUE_MAXSIZE = 50  # events; drop oldest if client is lagging
 
 
-def subscribe(user_id: int) -> asyncio.Queue:
+def subscribe(user_id: str) -> asyncio.Queue:
     """
     Register a new SSE subscriber for the given user.
     Returns a bounded asyncio.Queue the caller should read from.
@@ -57,7 +57,7 @@ def subscribe(user_id: int) -> asyncio.Queue:
     return q
 
 
-def unsubscribe(user_id: int, queue: asyncio.Queue) -> None:
+def unsubscribe(user_id: str, queue: asyncio.Queue) -> None:
     """
     Remove the subscriber queue after the SSE connection closes.
     Safe to call even if the queue was already removed.
@@ -71,7 +71,7 @@ def unsubscribe(user_id: int, queue: asyncio.Queue) -> None:
     )
 
 
-async def publish(user_id: int, event: dict) -> int:
+async def publish(user_id: str, event: dict) -> int:
     """
     Fan-out an event dict to all active SSE queues for user_id.
 
@@ -104,7 +104,7 @@ async def publish(user_id: int, event: dict) -> int:
     return delivered
 
 
-def subscriber_count(user_id: int) -> int:
+def subscriber_count(user_id: str) -> int:
     """Return number of active SSE connections for a user (for testing/monitoring)."""
     return len(_subscribers.get(user_id, set()))
 

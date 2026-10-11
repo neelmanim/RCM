@@ -12,10 +12,17 @@
  * leaking Preflight resets into the Vanilla JS shell (NavSidebar/NavTopbar
  * already have their own hand-written CSS and must not be affected), and
  * reproduces just the border-reset/button-reset half of Preflight, scoped
- * to .nh-feedback-portal (the one place in this bundle that actually
- * consumes Tailwind-based components).
+ * to every root Tailwind-based content actually renders into in this bundle
+ * — .nh-feedback-portal and .nh-viewas-banner (ViewAsBanner.jsx). Forgetting
+ * to add a new Tailwind-based root here is a real, silent failure mode: its
+ * gradient/border/ring utilities read unset --tw-* custom properties, which
+ * invalidates the whole declaration rather than just not applying (confirmed
+ * live 2026-09-10 — ViewAsBanner's bg-gradient-to-r rendered as no
+ * background at all, and its button showed the browser's default border,
+ * until .nh-viewas-banner was added below).
  */
-.nh-feedback-portal, .nh-feedback-portal *, .nh-feedback-portal *::before, .nh-feedback-portal *::after {
+.nh-feedback-portal, .nh-feedback-portal *, .nh-feedback-portal *::before, .nh-feedback-portal *::after,
+.nh-viewas-banner, .nh-viewas-banner *, .nh-viewas-banner *::before, .nh-viewas-banner *::after {
   border-width: 0;
   border-style: solid;
   border-color: currentColor;
@@ -48,7 +55,7 @@
   --tw-shadow-colored: 0 0 #0000;
 }
 
-:where(.nh-feedback-portal) button {
+:where(.nh-feedback-portal, .nh-viewas-banner) button {
   -webkit-appearance: none;
   appearance: none;
   background-color: transparent;

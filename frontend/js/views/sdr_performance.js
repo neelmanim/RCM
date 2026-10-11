@@ -1,6 +1,6 @@
 // ── views/sdr_performance.js — SDR performance drill-down ─────────────────────
 import { fetchSdrPerformance } from '../api.js';
-import { showLoader } from '../utils.js';
+import { showLoader, icon as _icon } from '../utils.js';
 
 export async function renderSdrPerformance(container, sdrId, loadView, filters = {}) {
     showLoader(container);
@@ -11,7 +11,7 @@ export async function renderSdrPerformance(container, sdrId, loadView, filters =
         data = await fetchSdrPerformance(sdrId, { period, start_date: filters.start_date, end_date: filters.end_date });
     } catch (e) {
         container.innerHTML = `<div style="padding:60px;text-align:center;color:var(--text-muted);">
-            <div style="font-size:2.5rem;margin-bottom:12px;">⚠️</div>
+            <div style="margin-bottom:12px;">${_icon('triangle-alert', 40, '#f59e0b')}</div>
             <p>${e.message || 'Failed to load SDR performance.'}</p>
             <button class="btn btn-outline" style="margin-top:16px;" id="sdr-perf-back">← Back to Leaderboard</button>
         </div>`;
@@ -87,7 +87,7 @@ export async function renderSdrPerformance(container, sdrId, loadView, filters =
             ${Object.entries(periodLabels).map(([key, label]) => `
                 <button class="btn ${key === activePeriod ? 'btn-primary' : 'btn-outline'}" data-period="${key}" style="padding:6px 16px;font-size:0.82rem;">${label}</button>
             `).join('')}
-            <button class="btn ${activePeriod === 'custom' ? 'btn-primary' : 'btn-outline'}" data-period="custom" style="padding:6px 16px;font-size:0.82rem;">📅 Custom</button>
+            <button class="btn ${activePeriod === 'custom' ? 'btn-primary' : 'btn-outline'}" data-period="custom" style="padding:6px 16px;font-size:0.82rem;display:inline-flex;align-items:center;gap:6px;">${_icon('calendar', 14)} Custom</button>
         </div>
         <div id="sdr-perf-date-range" style="display:${activePeriod === 'custom' ? 'flex' : 'none'};gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap;">
             <div style="display:flex;align-items:center;gap:6px;">
@@ -103,14 +103,14 @@ export async function renderSdrPerformance(container, sdrId, loadView, filters =
 
         <!-- Metric Cards -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px;">
-            ${_metricCard('📋', 'Leads Assigned', prod.total_leads_assigned, '#6366f1')}
-            ${_metricCard('🔥', 'Active Leads', prod.active_leads, '#3b82f6')}
-            ${_metricCard('✅', 'Leads Closed', prod.leads_closed, '#10b981')}
-            ${_metricCard('📞', 'Calls Made', prod.calls_made, '#8b5cf6')}
-            ${_metricCard('📊', 'Avg Calls/Lead', prod.avg_calls_per_lead, '#f59e0b')}
-            ${_metricCard('🤝', 'Meetings', conv.meetings_scheduled, '#10b981')}
-            ${_metricCard('📈', 'Conv. Rate', conv.conversion_rate + '%', conv.conversion_rate >= 20 ? '#10b981' : conv.conversion_rate >= 10 ? '#f59e0b' : '#ef4444')}
-            ${_metricCard('⏱️', 'Avg Time/Lead', avgTimeDisplay, '#64748b')}
+            ${_metricCard('clipboard-list', 'Leads Assigned', prod.total_leads_assigned, '#6366f1')}
+            ${_metricCard('flame', 'Active Leads', prod.active_leads, '#3b82f6')}
+            ${_metricCard('circle-check', 'Leads Closed', prod.leads_closed, '#10b981')}
+            ${_metricCard('phone', 'Calls Made', prod.calls_made, '#8b5cf6')}
+            ${_metricCard('chart-column', 'Avg Calls/Lead', prod.avg_calls_per_lead, '#f59e0b')}
+            ${_metricCard('calendar-check', 'Meetings', conv.meetings_scheduled, '#10b981')}
+            ${_metricCard('trending-up', 'Conv. Rate', conv.conversion_rate + '%', conv.conversion_rate >= 20 ? '#10b981' : conv.conversion_rate >= 10 ? '#f59e0b' : '#ef4444')}
+            ${_metricCard('timer', 'Avg Time/Lead', avgTimeDisplay, '#64748b')}
         </div>
 
         <!-- Funnel -->
@@ -178,7 +178,7 @@ function _metricCard(icon, label, value, color) {
     return `
     <div style="background:var(--surface-color);border:1px solid var(--border-color);border-radius:14px;padding:20px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-            <span style="font-size:1.2rem;">${icon}</span>
+            ${_icon(icon, 16, color)}
             <span style="font-size:0.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;">${label}</span>
         </div>
         <div style="font-size:1.6rem;font-weight:800;color:${color};line-height:1;">${value}</div>

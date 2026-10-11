@@ -5,7 +5,7 @@ import { hasSeen, markSeen } from '../../utils/seenFlag';
 
 const BODY_OPEN_CLASS = 'aircall-drawer-open';
 
-const TOUR_SEEN_KEY = 'rcm:aircall-drawer-tour-seen';
+const TOUR_SEEN_KEY = 'alternate:aircall-drawer-tour-seen';
 
 const HeadsetIcon = ({ spinning }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -188,7 +188,7 @@ export function AircallEverywhereDrawer({ status, callActive }) {
       {tourRect && createPortal(
         <div className="nh-aircall-tour" style={{ top: tourRect.bottom + 10, left: Math.min(window.innerWidth - 300, tourRect.right - 288) }}>
           <p className="nh-aircall-tour__body">
-            Calls now ring right here — log in once and clicking Call on any lead rings in this drawer automatically, no need to keep the Desktop app open. Still dial from the lead's Call button, not the pad in here, so calls stay attached to the right record.
+            Calls now ring right here — log in once and clicking Call on any lead rings in this drawer automatically. <strong>Log out of the Aircall Desktop app once you're connected</strong> — Aircall rings every device you're logged into at once, so keeping both open means every call rings twice. Still dial from the lead's Call button, not the pad in here, so calls stay attached to the right record.
           </p>
           <button type="button" className="nh-btn nh-btn--primary nh-aircall-tour__dismiss" onClick={finishTour}>Got it</button>
         </div>,

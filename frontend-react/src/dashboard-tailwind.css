@@ -1,0 +1,32 @@
+/*
+ * dashboard-tailwind.css
+ *
+ * Tailwind entry for the Dashboard IIFE bundle ONLY, so the page can use the shared component library
+ * (components/ui/*) instead of its own hand-written db-* stylesheet. Mirrors sdr-performance-tailwind.css: no
+ * @tailwind base (it would leak resets into the Vanilla JS shell); only the border-reset half of Preflight,
+ * scoped to .dashboard-hub-root. Radix (DropdownMenu/Select) portals its content to document.body, outside this
+ * root, so the shared `activitymonitor-portal` class carries the same reset for those.
+ */
+.dashboard-hub-root, .dashboard-hub-root *, .dashboard-hub-root *::before, .dashboard-hub-root *::after,
+.activitymonitor-portal, .activitymonitor-portal *, .activitymonitor-portal *::before, .activitymonitor-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.dashboard-hub-root, .activitymonitor-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+.dashboard-hub-root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@tailwind components;
+@tailwind utilities;

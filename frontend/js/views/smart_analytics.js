@@ -1,5 +1,5 @@
 /**
- * Smart Analytics v2 — RCM AI Analytics Assistant
+ * Smart Analytics v2 — Alternate CRM AI Analytics Assistant
  *
  * Supports 5 query modes:
  *   standard  — single metric chart + table
@@ -230,7 +230,7 @@ function _buildShell() {
       <div class="sa-header-icon">✦</div>
       <div class="sa-header-text">
         <h2 class="sa-title">Smart Analytics</h2>
-        <p class="sa-subtitle">Ask anything about your RCM data</p>
+        <p class="sa-subtitle">Ask anything about your Alternate CRM data</p>
       </div>
     </div>
 
@@ -1248,7 +1248,7 @@ function _injectStyles() {
     s.id = 'sa-styles';
     s.textContent = `
 /* ================================================================
-   Smart Analytics v2 — RCM AI Assistant
+   Smart Analytics v2 — Alternate CRM AI Assistant
    Uses app CSS variables: --primary-color, --surface-color, etc.
    ================================================================ */
 

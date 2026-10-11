@@ -10,6 +10,12 @@ import pytest
 _backend_dir = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, _backend_dir)
 
+# Set here rather than per-module (several test files already did their own
+# os.environ.setdefault) because SyncSettings.messenger_api_key is now an
+# encrypting property — any test that assigns it needs a key, not just the
+# ones that exercise crypto directly. Same throwaway value those files use.
+os.environ.setdefault("APP_ENCRYPTION_KEY", "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q=")
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -51,10 +57,19 @@ def _build_test_app():
     from routes.admin_user_routes import router as admin_user_router
     from routes.admin_assignment_routes import router as admin_assignment_router
     from routes.disqualify_routes import router as disqualify_router
+    from routes.reassign_routes import router as reassign_router
+    from routes.my_day_routes import router as my_day_router
+    from routes.export_routes import router as export_router
+    from routes.error_log_routes import router as error_log_router
+    from routes.saved_view_routes import router as saved_view_router
+    from routes.data_quality_routes import router as data_quality_router
     from routes.admin_sync_routes import router as admin_sync_router
     from routes.analytics_ai_routes import router as analytics_ai_router
     from routes.analytics_digest_routes import router as analytics_digest_router
+    from routes.analytics_funnel_routes import router as analytics_funnel_router
+    from routes.audit_routes import router as audit_router
     from routes.activity_feed_routes import router as activity_feed_router
+    from routes.activity_monitor_routes import router as activity_monitor_router
     from routes.sms_routes import router as sms_router
     from routes.monitoring_routes import router as monitoring_router
     from routes.sse_routes import router as sse_router  # Phase 3
@@ -89,10 +104,19 @@ def _build_test_app():
     app.include_router(admin_user_router)
     app.include_router(admin_assignment_router)
     app.include_router(disqualify_router)
+    app.include_router(reassign_router)
+    app.include_router(my_day_router)
+    app.include_router(export_router)
+    app.include_router(error_log_router)
+    app.include_router(saved_view_router)
+    app.include_router(data_quality_router)
     app.include_router(admin_sync_router)
     app.include_router(analytics_ai_router)
     app.include_router(analytics_digest_router)
+    app.include_router(analytics_funnel_router)
+    app.include_router(audit_router)
     app.include_router(activity_feed_router)
+    app.include_router(activity_monitor_router)
     app.include_router(sms_router)
     app.include_router(monitoring_router)
     app.include_router(sse_router)  # Phase 3
@@ -102,6 +126,24 @@ def _build_test_app():
     app.include_router(conversations_router)
     from routes.journey_routes import router as journey_router
     app.include_router(journey_router)
+    from routes.instantly_inbox_routes import router as instantly_inbox_router
+    app.include_router(instantly_inbox_router)
+    from routes.report_routes import router as report_router  # v11.4.0: Automated Analytics Reports
+    app.include_router(report_router)
+    from routes.call_list_routes import router as call_list_router  # Call Lists (Power Dialer)
+    app.include_router(call_list_router)
+    from routes.analytics_vnext_routes import router as analytics_vnext_router  # Analytics Hub vNext (Phase 1)
+    app.include_router(analytics_vnext_router)
+    from routes.analytics_governance_routes import router as analytics_governance_router  # Metric Governance (Phase 3)
+    app.include_router(analytics_governance_router)
+    from routes.email_campaign_routes import router as email_campaign_router  # v12: Email Campaigns (Sales Tools)
+    app.include_router(email_campaign_router)
+    from routes.ae_pipeline_routes import router as ae_pipeline_router  # Phase 1: AE Pipeline
+    app.include_router(ae_pipeline_router)
+    from routes.csm_portal_routes import router as csm_portal_router  # Phase 2: CSM Portal Beta
+    app.include_router(csm_portal_router)
+    from routes.mcp_routes import router as mcp_router  # v13.4.0: Claude connector
+    app.include_router(mcp_router)
 
     from exception_handlers import register_exception_handlers
     register_exception_handlers(app)
@@ -147,7 +189,13 @@ def _suppress_daemon_threads():
                 super().__init__(*args, **kwargs)
 
     _threading.Thread = _SafeThread
+    # The perf writer is a ThreadPoolExecutor (non-daemon pool threads the
+    # guard above can't see) — keep its DB writes out of tests the same way.
+    from middleware import timing as _timing
+    _original_writer = _timing._perf_writer
+    _timing._perf_writer = type("_NoOpPool", (), {"submit": lambda self, fn, *a: _timing._perf_write_semaphore.release()})()
     yield
+    _timing._perf_writer = _original_writer
     _threading.Thread = _original_thread_cls
 
 
@@ -158,6 +206,19 @@ def _suppress_daemon_threads():
 
 @pytest.fixture()
 def engine():
+    # Opt-in real Postgres for what SQLite can't run (date_trunc trends, schema
+    # drift): TEST_DATABASE_URL=postgresql:///crm_test pytest -n0 -k ...
+    # Each test gets a fresh public schema; -n0 because workers would share it.
+    pg_url = os.environ.get("TEST_DATABASE_URL")
+    if pg_url:
+        from sqlalchemy import text
+        eng = create_engine(pg_url)
+        with eng.begin() as conn:
+            conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public"))
+        Base.metadata.create_all(bind=eng)
+        yield eng
+        eng.dispose()
+        return
     eng = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -226,6 +287,15 @@ def db(engine):
     _database_module.SessionLocal = TestSession
     _database_module.engine = engine
 
+    # Same patch for the AI-route bulkhead pool (database.AiSessionLocal /
+    # ai_engine, added 2026-09-01) — any code that imports AiSessionLocal
+    # (e.g. admin_routes.py's bulk-research background job) must also land
+    # on the in-memory test engine, not the real Postgres/on-disk one.
+    _orig_ai_session_local = _database_module.AiSessionLocal
+    _orig_ai_engine = _database_module.ai_engine
+    _database_module.AiSessionLocal = TestSession
+    _database_module.ai_engine = engine
+
     # Also patch sf_logger which imports SessionLocal at module load
     import sf_logger
     _orig_sf_session = getattr(sf_logger, "SessionLocal", None)
@@ -236,6 +306,8 @@ def db(engine):
     session.close()
     _database_module.SessionLocal = _orig_session_local
     _database_module.engine = _orig_engine
+    _database_module.AiSessionLocal = _orig_ai_session_local
+    _database_module.ai_engine = _orig_ai_engine
     if _orig_sf_session is not None:
         sf_logger.SessionLocal = _orig_sf_session
 
@@ -250,19 +322,21 @@ SUPER_ADMIN = _make_user_payload("Super Admin")
 POD_ADMIN   = _make_user_payload("Pod Admin", "pod-admin-id", "podadmin@test.com", "Pod Admin")
 SDR_USER    = _make_user_payload("SDR", "sdr-user-id", "sdr@test.com", "SDR User")
 AE_USER     = _make_user_payload("AE", "ae-user-id", "ae@test.com", "AE User")
+CSM_USER    = _make_user_payload("CSM", "csm-user-id", "csm@test.com", "CSM User")
 
 
 @pytest.fixture()
 def client(db):
     """FastAPI TestClient with dependency overrides."""
     app = _build_test_app()
-    from database import get_db
+    from database import get_db, get_ai_db
     from auth import get_current_user, require_admin, require_super_admin, require_pod_admin_or_above
 
     def _override_db():
         yield db
 
     app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_ai_db] = _override_db
     app.dependency_overrides[get_current_user] = lambda: SUPER_ADMIN
     app.dependency_overrides[require_admin] = lambda: SUPER_ADMIN
     app.dependency_overrides[require_super_admin] = lambda: SUPER_ADMIN
@@ -277,7 +351,7 @@ def client(db):
 def client_as_sdr(db):
     """TestClient authenticated as an SDR."""
     app = _build_test_app()
-    from database import get_db
+    from database import get_db, get_ai_db
     from auth import get_current_user, require_admin, require_super_admin
 
     def _override_db():
@@ -292,6 +366,7 @@ def client_as_sdr(db):
         raise HTTPException(status_code=403, detail="Super Admin access required")
 
     app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_ai_db] = _override_db
     app.dependency_overrides[get_current_user] = lambda: SDR_USER
     app.dependency_overrides[require_admin] = _deny_admin
     app.dependency_overrides[require_super_admin] = _deny_super
@@ -305,7 +380,7 @@ def client_as_sdr(db):
 def client_as_pod_admin(db):
     """TestClient authenticated as a Pod Admin."""
     app = _build_test_app()
-    from database import get_db
+    from database import get_db, get_ai_db
     from auth import get_current_user, require_admin, require_super_admin
 
     pod_admin = _make_user_payload("Pod Admin", "pod-admin-id", "podadmin@test.com", "Pod Admin", pod_id="test-pod-id")
@@ -318,6 +393,7 @@ def client_as_pod_admin(db):
         raise HTTPException(status_code=403, detail="Super Admin access required")
 
     app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_ai_db] = _override_db
     app.dependency_overrides[get_current_user] = lambda: pod_admin
     app.dependency_overrides[require_admin] = lambda: pod_admin
     app.dependency_overrides[require_super_admin] = _deny_super
@@ -331,7 +407,7 @@ def client_as_pod_admin(db):
 def client_as_ae(db):
     """TestClient authenticated as an AE — Analytics Hub self-scope only."""
     app = _build_test_app()
-    from database import get_db
+    from database import get_db, get_ai_db
     from auth import get_current_user, require_super_admin
 
     def _override_db():
@@ -342,7 +418,32 @@ def client_as_ae(db):
         raise HTTPException(status_code=403, detail="Super Admin access required")
 
     app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_ai_db] = _override_db
     app.dependency_overrides[get_current_user] = lambda: AE_USER
+    app.dependency_overrides[require_super_admin] = _deny_super
+
+    yield TestClient(app)
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def client_as_csm(db):
+    """TestClient authenticated as a CSM — own-account-portfolio scope only."""
+    app = _build_test_app()
+    from database import get_db, get_ai_db
+    from auth import get_current_user, require_super_admin
+
+    def _override_db():
+        yield db
+
+    def _deny_super():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Super Admin access required")
+
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_ai_db] = _override_db
+    app.dependency_overrides[get_current_user] = lambda: CSM_USER
     app.dependency_overrides[require_super_admin] = _deny_super
 
     yield TestClient(app)
@@ -358,6 +459,17 @@ def create_test_user(db, email="user@test.com", name="Test User", role="SDR", po
     db.commit()
     db.refresh(user)
     return user
+
+
+def grant_export(db, user_id, role="SDR"):
+    """Switch on the per-user export permission (users.export_enabled), creating the user row if the test has none."""
+    u = db.query(models.User).filter(models.User.id == user_id).first()
+    if u is None:
+        u = models.User(id=user_id, email=f"{user_id}@test.com", name=user_id, role=role)
+        db.add(u)
+    u.export_enabled = True
+    db.commit()
+    return u
 
 
 def create_test_lead(db, last_name="Doe", first_name="John", email="john@example.com",
@@ -452,7 +564,7 @@ def create_test_dialer_call(
 ):
     """Create a DialerCall record for account-level connect % tests.
 
-    Pass outcome=<value from analytics_routes.CONNECT_OUTCOMES> (e.g. "Call Back Later")
+    Pass outcome=<anything other than models.NOT_ANSWERED_OUTCOMES, e.g. "Call Back Later">
     to simulate a connected call (matches Bulk Query 5a). status only ever reflects
     CALL_STARTED/CALL_ANSWERED/CALL_ENDED/FAILED lifecycle, not the connect signal —
     real completed calls always end up CALL_ENDED regardless of whether they connected.
@@ -490,6 +602,22 @@ def create_test_dialer_call(
     return dc
 
 
+def create_test_journey_enrollment(db, lead_id, journey_id, status="active", current_node_id="node-1"):
+    """FK constraints aren't enforced in this SQLite test setup (no PRAGMA
+    foreign_keys=ON — see test_cadence_sandbox.py's own note on this), so
+    journey_id/version_id don't need a real Journey/JourneyVersion row."""
+    enrollment = models.JourneyEnrollment(
+        journey_id=journey_id,
+        version_id="test-version-1",
+        lead_id=lead_id,
+        current_node_id=current_node_id,
+        status=status,
+    )
+    db.add(enrollment)
+    db.commit()
+    db.refresh(enrollment)
+    return enrollment
+
 
 def create_test_upload_log(db, uploaded_by=None, filename="leads.csv", total_rows=10, created_at=None):
     kwargs = dict(uploaded_by=uploaded_by, filename=filename, total_rows=total_rows)
@@ -500,6 +628,24 @@ def create_test_upload_log(db, uploaded_by=None, filename="leads.csv", total_row
     db.commit()
     db.refresh(log)
     return log
+
+
+def ensure_pods(db, *ids):
+    """Real pod rows for fixed pod ids — Postgres enforces users.pod_id / leads.pod_id foreign keys, SQLite doesn't."""
+    for pid in ids:
+        if not db.query(models.Pod).filter_by(id=pid).first():
+            db.add(models.Pod(id=pid, name=pid))
+    db.commit()
+
+
+def create_test_booking(db, lead, user_id, status="booked", booked_at=None):
+    """A meeting booking record (what the Leaderboard now counts: meetings BOOKED by a person, not leads they hold)."""
+    m = models.LeadMeeting(lead_id=lead.id, booked_by_user_id=user_id, status=status, source="app")
+    if booked_at is not None:
+        m.booked_at = booked_at
+    db.add(m)
+    db.commit()
+    return m
 
 
 def create_test_status_log(db, lead_id, from_status, to_status, changed_by="system", changed_at=None):
@@ -586,3 +732,18 @@ def create_email_thread(db, lead_id, nylas_thread_id="thread-abc"):
     db.commit()
     db.refresh(thread)
     return thread
+
+
+# Webhook-processing tests aren't about sender verification; they run with
+# the WEBHOOK layer in monitor mode. tests/test_security_access.py switches it
+# to enforce and proves unverified webhooks are refused. Every other security
+# layer is pinned to enforce for the whole suite, so tests prove the rules
+# regardless of whatever rollout default auth.security_enforcing falls back to.
+@pytest.fixture(autouse=True)
+def _webhook_verification_monitor(monkeypatch):
+    for layer in ("AUTH_GATE", "IDENTITY", "LEAD_ACCESS"):
+        monkeypatch.setenv(f"SECURITY_{layer}_MODE", "enforce")
+    monkeypatch.setenv("SECURITY_WEBHOOK_MODE", "monitor")
+    import access_db
+    access_db.forget_identity()
+

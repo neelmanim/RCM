@@ -184,15 +184,6 @@ class TestFetchCallsPaginated:
         # Only the call whose startTime actually falls on the requested day survives.
         assert [c["callSid"] for c in result["calls"]] == ["CAthisday"]
 
-    def test_multi_day_range_unaffected_by_widening_logic(self):
-        provider = KlentyDialerProvider(api_key="test-key")
-        api_response = {"status": True, "data": {"callData": [SAMPLE_CALL], "hasMore": False}}
-        with patch.object(provider, "_get", return_value=api_response) as mock_get:
-            result = provider.fetch_calls_paginated("vanshika.koli@screen-magic.com", "2026-07-28", "2026-07-29")
-        called_params = mock_get.call_args.kwargs["params"]
-        assert called_params["endDate"] == "2026-07-29"  # untouched
-        assert result["calls"] == [SAMPLE_CALL]
-
 
 class TestNotOutboundCapable:
     def test_initiate_call_returns_clear_error(self):

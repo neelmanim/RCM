@@ -90,6 +90,20 @@ body {
     min-width: 72px;
 }
 
+/* Below NavHub.css's mobile breakpoint the sidebar itself goes off-canvas
+ * (position:fixed, see .nh-sidebar's @media rule there) — its wrapper must
+ * stop reserving row space so .main-content gets the full viewport width. */
+@media (max-width: 768px) {
+    #nav-sidebar-root {
+        width: 0;
+        min-width: 0;
+    }
+    #nav-sidebar-root:has(.nh-sidebar--collapsed) {
+        width: 0;
+        min-width: 0;
+    }
+}
+
 /* Pre-reserve NavHub topbar height (60px = --nh-topbar-height) to prevent
  * the vertical CLS shift when the React topbar mounts ~870ms into load.
  * Matched to NavHub.css :root --nh-topbar-height. */
@@ -109,6 +123,39 @@ body {
  * the container height doesn't change → zero CLS shift. */
 #dashboard-react-root {
     min-height: 985px;
+}
+
+/* Same technique as #dashboard-react-root above, generalized to the other
+ * highest-traffic routes (RCA 2026-08-19, Clarity CLS score of 0.71/"poor"):
+ * every OTHER route swapped the generic showLoader() skeleton for its real
+ * content at a completely different height, on every single navigation —
+ * the Dashboard's own fix was never extended past the Dashboard itself.
+ * Heights measured the same way — real logged-in DOM, production — via a
+ * headless-browser pass against https://alternatecrm.staging.in.
+ *
+ * Leads Hub's table height depends on how many rows fit the viewport at a
+ * given page size (paginated, not all-rows-at-once), so this reservation is
+ * a real single measurement, not a guaranteed-exact match for every screen
+ * size/user — same caveat doesn't apply to Analytics (fixed dashboard-style
+ * layout) or Calendar (a month grid is a fixed row count), which are much
+ * closer to a hard guarantee. */
+#leads-react-root {
+    /* 1296px: All Leads table, one full page of rows, 1440×900 viewport. */
+    min-height: 1296px;
+}
+/* Analytics Hub is NOT reserved here — it already sets its own inline
+ * min-height on #analytics-react-root (app.js's EC-14 skeleton), which as
+ * an inline style would silently win over anything set here anyway. That
+ * inline value was undersized (600px vs a real ~1215px) — fixed directly
+ * in app.js instead of adding a second, always-overridden number here. */
+#calendar-react-root {
+    /* 877px: Calendar Hub, Month view — row count is stable regardless of
+     * how many meetings exist on a given day. */
+    min-height: 877px;
+}
+#power-dialer-react-root {
+    /* 1371px: Power Dialer Hub with an active queue loaded. */
+    min-height: 1371px;
 }
 
 /* Sidebar */
@@ -497,8 +544,8 @@ body {
 .view-container {
     flex: 1;
     padding: 32px;
-    /* Extra bottom padding reserves space for the RCM dialer FAB
-       (fixed, bottom:24px, 56px circle — see rcm_widget.css's --cw-fab-size),
+    /* Extra bottom padding reserves space for the Alternate Messenger dialer FAB
+       (fixed, bottom:24px, 56px circle — see messenger_widget.css's --cw-fab-size),
        which is rendered globally on every page. Without this, a scrolled-to-bottom
        table's last row can land directly under the FAB, which sits on top with a
        very high z-index and silently swallows clicks meant for the row beneath it.
@@ -518,7 +565,7 @@ body {
        targeting). This container was never meant to scroll sideways. */
     overflow-x: hidden;
     background-color: var(--background-color);
-    /* Same idea as the RCM FAB padding above, one better: instead of
+    /* Same idea as the Alternate Messenger FAB padding above, one better: instead of
        just reserving a gap so a floating call element doesn't cover content,
        actually shrink to make room for the Aircall Everywhere drawer while
        it's open (see AircallEverywhereDrawer.jsx toggling this class on body)
@@ -1057,19 +1104,19 @@ body.aircall-drawer-open .view-container {
 /* ── Z-Index Budget ────────────────────────────────────────────────────────
    ALWAYS update this table when adding a new stacking context.
    New overlays must sit below 100,000 unless they need to cover the outcome
-   modal AND the RCM widget simultaneously — in that case use 100,001+.
+   modal AND the Alternate Messenger widget simultaneously — in that case use 100,001+.
 
    Layer                           z-index     Notes
    ─────────────────────────────── ─────────── ────────────────────────────────
-   #call-log-modal (outcome)        100,000     Must beat RCM widget
-   .rcm-widget-panel          99,999     RCM SDK (cannot change)
-   #dialer-widget (.standalone)      10,000     RCM floating dialer
+   #call-log-modal (outcome)        100,000     Must beat Alternate Messenger widget
+   .messenger-widget-panel          99,999     Alternate Messenger SDK (cannot change)
+   #dialer-widget (.standalone)      10,000     Alternate CRM floating dialer
    .overlay / backdrop                5,000     Generic page overlays
    .lead-nav-bar (sticky header)      1,100
    .header (top nav)                    100
    ──────────────────────────────────────────────────────────────────────── */
 
-/* Outcome modal must sit above the RCM widget (z-index:99999)
+/* Outcome modal must sit above the Alternate Messenger widget (z-index:99999)
    and the standalone dialer overlay (z-index:10000) */
 #call-log-modal {
     z-index: 100000;
@@ -1896,9 +1943,15 @@ tr.priority-new td:first-child {
 
 /* ── Responsive Design ─────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
-    .app-container {
-        flex-direction: column;
-    }
+    /* RCA 2026-08-26: this used to make the pre-NavHub sidebar wrap into a
+       horizontal top bar on mobile (see the now-dead .sidebar rules right
+       below — that element hasn't existed since the sidebar was rebuilt in
+       React). Left in place, it silently applied to the CURRENT
+       #nav-sidebar-root/.main-content pair too: with .app-container stacked
+       in a column and the sidebar's full-height first child, the actual
+       page content was pushed entirely below the fold on any phone-width
+       screen. NavHub's own mobile drawer (NavHub.css) now needs the
+       row layout — the sidebar goes off-canvas via position:fixed instead. */
 
     .sidebar {
         width: 100% !important; /* Override collapsed width on mobile */
@@ -4839,7 +4892,7 @@ div.email-reply-textarea[contenteditable] a { color: var(--primary-color, #6366f
     50%      { opacity: 0.4; }
 }
 
-/* ── In-Browser Dialer Widget (RCM/LiveKit) ────────────────────── */
+/* ── In-Browser Dialer Widget (Alternate Messenger/LiveKit) ────────────────────── */
 #dialer-widget {
     position: fixed;
     bottom: 24px;
@@ -5026,8 +5079,8 @@ div.email-reply-textarea[contenteditable] a { color: var(--primary-color, #6366f
     }
 }
 
-/* Provider badge for RCM in call cards */
-.call-provider-badge.rcm {
+/* Provider badge for Alternate Messenger in call cards */
+.call-provider-badge.messenger {
     background: linear-gradient(135deg, #312e81, #4338ca);
     color: #c7d2fe;
     font-weight: 600;

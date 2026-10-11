@@ -2,6 +2,7 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 import json
 import io
@@ -231,6 +232,35 @@ class TestSendEmailJson:
         db.refresh(mb)
         assert mb.status == "error"
 
+    @patch("routes.email_routes.decrypt_token", return_value="fake-api-key")
+    @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
+    def test_send_forbidden_403_marks_mailbox_error(self, mock_post, mock_decrypt, client, db):
+        """RCA: a 403 (commonly a missing send scope on the Nylas connector)
+        previously fell into the generic 502 branch and mailbox.status stayed
+        "connected" forever — the UI had no way to ever notice or prompt a
+        reconnect. Now it's handled like 401: mailbox flips to error, and the
+        response is a clear, actionable message instead of a raw 502."""
+        forbidden_resp = MagicMock()
+        forbidden_resp.status_code = 403
+        forbidden_resp.text = "Forbidden — missing scope"
+        mock_post.return_value = forbidden_resp
+
+        create_nylas_config(db)
+        lead = create_test_lead(db, email="to@test.com")
+        user = create_test_user(db, email="admin@test.com")
+        user.id = "test-user-id"
+        db.commit()
+        mb = create_user_mailbox(db, user_id=user.id, email_address="admin@test.com")
+
+        resp = client.post("/api/email/send", json={
+            "lead_id": lead.id, "subject": "Hi", "body": "Test"
+        })
+        assert resp.status_code == 403
+        assert "not authorized to send" in resp.json()["detail"].lower()
+
+        db.refresh(mb)
+        assert mb.status == "error"
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 4. Send Email — Multipart (with attachments)
@@ -356,6 +386,31 @@ class TestGetLeadEmails:
         subjects = [e["subject"] for e in data["emails"]]
         assert "First" in subjects
         assert "Second" in subjects
+
+    @patch("routes.email_routes._sync_thread_messages_background")
+    def test_get_emails_includes_nylas_thread_id(self, mock_sync, client, db):
+        """RCA 2026-08-17: the serializer used to drop nylas_thread_id, so the
+        frontend always thought a message hadn't been sent via Alternate CRM and
+        disabled reply — see ReplyComposer.jsx's canReply check."""
+        lead = create_test_lead(db, email="threaded@test.com")
+        create_email_activity(db, lead.id, subject="Sent via Alternate CRM", nylas_thread_id="thread-xyz")
+
+        resp = client.get(f"/api/email/lead/{lead.id}/emails")
+        data = resp.json()
+        assert data["emails"][0]["nylas_thread_id"] == "thread-xyz"
+
+    @patch("routes.email_routes._sync_thread_messages_background")
+    def test_get_emails_marks_inbound_read(self, mock_sync, client, db):
+        """Opening the thread is the 'seen it' signal for the reply-notification bell."""
+        lead = create_test_lead(db, email="markread@test.com")
+        inbound = create_email_activity(db, lead.id, direction="inbound", subject="Reply")
+        assert inbound.read_at is None
+
+        resp = client.get(f"/api/email/lead/{lead.id}/emails")
+        assert resp.status_code == 200
+
+        db.refresh(inbound)
+        assert inbound.read_at is not None
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -591,7 +646,7 @@ class TestHideBrandingToggle:
         })
         assert resp.status_code == 200
         sent_payload = mock_post.call_args.kwargs["json"]
-        assert "Powered by RCM" not in sent_payload["body"]
+        assert "Powered by Alternate Messenger" not in sent_payload["body"]
 
     @patch("routes.email_routes.decrypt_token", return_value="fake-api-key")
     @patch("httpx.AsyncClient.post", new_callable=AsyncMock)
@@ -608,7 +663,7 @@ class TestHideBrandingToggle:
         })
         assert resp.status_code == 200
         sent_payload = mock_post.call_args.kwargs["json"]
-        assert "Powered by RCM" in sent_payload["body"]
+        assert "Powered by Alternate Messenger" in sent_payload["body"]
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -709,6 +764,74 @@ class TestSignatureEndpoints:
         create_test_user(db, email="admin@test.com", id="test-user-id")
         resp = client.patch("/api/email/signature", json={"signature_html": 123})
         assert resp.status_code == 400
+
+
+class TestSignatureLogo:
+    """Insert-image already worked for any hosted URL — the gap was a logo
+    that's a FILE on the SDR's computer. Upload gives it a hosted URL."""
+
+    @pytest.fixture(autouse=True)
+    def _isolated_logo_dir(self, tmp_path, monkeypatch):
+        import routes.email_routes as email_routes
+        monkeypatch.setattr(email_routes, "_SIGNATURE_LOGO_DIR", tmp_path / "signature_logos")
+
+    def test_upload_rejects_non_image_extension(self, client, db):
+        create_test_user(db, email="admin@test.com", id="test-user-id")
+        resp = client.post(
+            "/api/email/signature/logo",
+            files={"file": ("logo.exe", b"not-an-image", "application/octet-stream")},
+        )
+        assert resp.status_code == 400
+
+    def test_upload_rejects_oversized_file(self, client, db):
+        create_test_user(db, email="admin@test.com", id="test-user-id")
+        big = b"0" * (2 * 1024 * 1024 + 1)
+        resp = client.post(
+            "/api/email/signature/logo",
+            files={"file": ("logo.png", big, "image/png")},
+        )
+        assert resp.status_code == 400
+
+    def test_upload_then_serve_roundtrip(self, client, db):
+        create_test_user(db, email="admin@test.com", id="test-user-id")
+        resp = client.post(
+            "/api/email/signature/logo",
+            files={"file": ("logo.png", b"\x89PNG-fake-bytes", "image/png")},
+        )
+        assert resp.status_code == 200
+        url = resp.json()["url"]
+        assert "/api/email/signature/logo/test-user-id" in url
+
+        serve_resp = client.get("/api/email/signature/logo/test-user-id")
+        assert serve_resp.status_code == 200
+        assert serve_resp.content == b"\x89PNG-fake-bytes"
+
+    def test_reupload_replaces_previous_logo(self, client, db):
+        create_test_user(db, email="admin@test.com", id="test-user-id")
+        client.post("/api/email/signature/logo", files={"file": ("logo.png", b"first", "image/png")})
+        client.post("/api/email/signature/logo", files={"file": ("logo.jpg", b"second", "image/jpeg")})
+
+        resp = client.get("/api/email/signature/logo/test-user-id")
+        assert resp.content == b"second"
+
+    def test_serve_404s_when_no_logo_uploaded(self, client, db):
+        resp = client.get("/api/email/signature/logo/no-such-user")
+        assert resp.status_code == 404
+
+    def test_uploaded_logo_url_survives_signature_sanitizer(self, client, db):
+        """The hosted logo URL is a plain https:// <img src>, already inside
+        the sanitizer's default allowed protocols — no sanitizer change was
+        needed for this feature, confirmed here rather than just assumed."""
+        create_test_user(db, email="admin@test.com", id="test-user-id")
+        upload = client.post(
+            "/api/email/signature/logo",
+            files={"file": ("logo.png", b"fake", "image/png")},
+        )
+        logo_url = upload.json()["url"]
+        resp = client.patch("/api/email/signature", json={
+            "signature_html": f'<p>Cheers</p><img src="{logo_url}">'
+        })
+        assert logo_url.split("?")[0] in resp.json()["signature_html"]
 
 
 class TestComposeRichHtml:

@@ -36,7 +36,8 @@ describe('SkipReasonsPanel', () => {
 
     const { default: userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
-    await user.selectOptions(screen.getByLabelText('Date range'), '30');
+    await user.click(screen.getByRole('button', { name: 'Date range' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Last 30 days' }));
     await waitFor(() => expect(DialerService.getSkipSummary).toHaveBeenLastCalledWith(30));
   });
 

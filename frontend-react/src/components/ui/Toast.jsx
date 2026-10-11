@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 // No shared React toast exists anywhere in this codebase today — every hub
 // reinvents one locally (LeadsHub.jsx, SettingsAI.jsx, AdminUsers.jsx, etc.).
-// This one is driven by a 'rcm:toast' CustomEvent (not props) so
+// This one is driven by a 'alternate:toast' CustomEvent (not props) so
 // non-React modules (dialerEngine.js) can trigger a toast without importing
 // React or being coupled to a specific mounted consumer — mirrors the
-// existing rcm:* event-bus convention already used for call events.
+// existing alternatecrm:* event-bus convention already used for call events.
 
 const THEMES = {
   error: { icon: '⚠️', bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700' },
@@ -31,8 +31,8 @@ export const ToastHost = () => {
       setToasts((prev) => [...prev, { id, message, type }]);
       setTimeout(() => dismiss(id), duration);
     };
-    window.addEventListener('rcm:toast', handler);
-    return () => window.removeEventListener('rcm:toast', handler);
+    window.addEventListener('alternate:toast', handler);
+    return () => window.removeEventListener('alternate:toast', handler);
   }, [dismiss]);
 
   if (!toasts.length) return null;

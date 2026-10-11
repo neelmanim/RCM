@@ -79,6 +79,45 @@ class TestKlentyHealth:
         assert "401" in body["checks"]["api_reachable"]["message"]
 
 
+class TestChatHealth:
+    """Mitigation: /api/chat/health's live-ping step called a method
+    (list_conversations) that doesn't exist on AlternateMessenger
+    (the real method is get_conversations) — every ping raised AttributeError
+    and reported "unreachable" even with fully valid credentials."""
+
+    def _configure(self, db):
+        settings = _get_settings(db)
+        settings.messenger_enabled = True
+        settings.messenger_api_key = "encrypted-placeholder"
+        settings.messenger_user_id = "user-1"
+        settings.messenger_account_id = "acct-1"
+        settings.messenger_sender_id = "15550001111"
+        db.commit()
+        return settings
+
+    def test_all_configured_ping_succeeds(self, client, db):
+        self._configure(db)
+        with patch(
+            "conversations_service.AlternateMessenger.get_conversations",
+            return_value=[],
+        ):
+            resp = client.get("/api/chat/health")
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["checks"]["api_reachable"]["ok"] is True
+
+    def test_missing_account_id_skips_ping(self, client, db):
+        settings = self._configure(db)
+        settings.messenger_account_id = None
+        db.commit()
+
+        resp = client.get("/api/chat/health")
+        body = resp.json()
+        assert body["status"] == "degraded"
+        assert body["checks"]["account_id_present"]["ok"] is False
+        assert body["checks"]["api_reachable"]["ok"] is False
+
+
 def _get_nylas_config(db):
     config = db.query(models.NylasConfig).filter(models.NylasConfig.id == 1).first()
     if not config:
@@ -114,6 +153,7 @@ class TestNylasHealth:
         config = _get_nylas_config(db)
         config.client_id = "some-client-id"
         config.api_key_encrypted = "encrypted-placeholder"
+        config.webhook_secret_encrypted = "encrypted-secret"
         db.commit()
 
         with patch("crypto.decrypt_token", return_value="real-nylas-key"), \
@@ -138,3 +178,57 @@ class TestNylasHealth:
         assert body["status"] == "degraded"
         assert body["checks"]["api_reachable"]["ok"] is False
         assert "decrypt" in body["checks"]["api_reachable"]["message"].lower()
+
+
+class TestNylasTrackingHealth:
+    """RCA 2026-10-07: a prod cadence showed 0% opens/clicks/replies and nobody could tell a broken
+    webhook from nobody opening. The health check now says which."""
+
+    def _configured(self, db, secret=True):
+        config = _get_nylas_config(db)
+        config.client_id, config.api_key_encrypted = "cid", "enc"
+        config.webhook_secret_encrypted = "enc-secret" if secret else None
+        db.commit()
+
+    def _sent(self, db, n, hours_ago=5, opened=0):
+        from datetime import datetime, timedelta, timezone
+        from conftest import create_test_lead
+        lead = create_test_lead(db)
+        for i in range(n):
+            db.add(models.LeadEmailActivity(
+                lead_id=lead.id, direction="outbound", source="nylas", nylas_message_id=f"m{i}",
+                timestamp=datetime.now(timezone.utc) - timedelta(hours=hours_ago),
+                opened_at=datetime.now(timezone.utc) if i < opened else None))
+        db.commit()
+
+    def _health(self, client):
+        with patch("crypto.decrypt_token", return_value="k"), \
+             patch("httpx.get", return_value=type("R", (), {"status_code": 200})()):
+            return client.get("/api/email/health").json()
+
+    def test_a_missing_webhook_secret_is_flagged(self, client, db):
+        self._configured(db, secret=False)
+        body = self._health(client)
+        assert body["status"] == "degraded" and body["checks"]["webhook_secret_present"]["ok"] is False
+
+    def test_mail_sent_but_no_event_ever_arrived_is_flagged(self, client, db):
+        self._configured(db)
+        self._sent(db, 12)
+        body = self._health(client)
+        assert body["checks"]["tracking_events_arriving"]["ok"] is False and body["status"] == "degraded"
+        assert "message.link_clicked" in body["checks"]["tracking_events_arriving"]["message"]
+
+    def test_events_arriving_is_healthy(self, client, db):
+        self._configured(db)
+        self._sent(db, 12, opened=1)
+        assert self._health(client)["status"] == "ok"
+
+    def test_too_little_mail_to_judge_is_not_a_failure(self, client, db):
+        self._configured(db)
+        self._sent(db, 3)
+        assert self._health(client)["checks"]["tracking_events_arriving"]["ok"] is True
+
+    def test_mail_sent_in_the_last_hour_is_not_judged_yet(self, client, db):
+        self._configured(db)
+        self._sent(db, 12, hours_ago=0)
+        assert self._health(client)["checks"]["tracking_events_arriving"]["ok"] is True

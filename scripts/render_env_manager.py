@@ -23,8 +23,10 @@ import urllib.request
 import urllib.error
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-RENDER_API_KEY = os.getenv("RENDER_API_KEY", "rnd_uKpndOd3nQjnc2xiwsiuTxChVuyw")
-SERVICE_ID     = os.getenv("RENDER_SERVICE_ID", "srv-d6ncc2p5pdvs73aacr6g")
+RENDER_API_KEY = os.getenv("RENDER_API_KEY") or sys.exit("Set RENDER_API_KEY in the environment (never commit it).")
+# No default on purpose: the old default was PROD, so a forgotten env var silently
+# edited production. prod = srv-d6ncc2p5pdvs73aacr6g, staging = srv-d6ncbt95pdvs73aacpsg.
+SERVICE_ID     = os.getenv("RENDER_SERVICE_ID") or sys.exit("Set RENDER_SERVICE_ID (see comment above).")
 BASE_URL       = f"https://api.render.com/v1/services/{SERVICE_ID}/env-vars"
 
 HEADERS = {

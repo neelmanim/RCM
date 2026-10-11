@@ -22,7 +22,7 @@ from sqlalchemy import func, inspect as sa_inspect
 
 import models
 from database import get_db, engine
-from auth import require_super_admin
+from auth import require_super_admin, authenticates_itself
 from crypto import encrypt_token, decrypt_token
 from routes._admin_helpers import _get_or_create_sync_settings
 
@@ -229,7 +229,7 @@ def _anonymize_table(table_name: str, rows: list) -> list:
     return rows
 
 
-@router.get("/export/tables")
+@router.get("/export/tables", dependencies=[Depends(authenticates_itself)])
 def export_table_list(
     request: Request,
     db: Session = Depends(get_db),
@@ -256,7 +256,7 @@ def export_table_list(
     }
 
 
-@router.get("/export/table/{table_name}")
+@router.get("/export/table/{table_name}", dependencies=[Depends(authenticates_itself)])
 def export_single_table(
     table_name: str,
     request: Request,
@@ -287,7 +287,7 @@ def export_single_table(
     return {"success": True, "table": table_name, "row_count": len(rows), "rows": rows}
 
 
-@router.get("/export")
+@router.get("/export", dependencies=[Depends(authenticates_itself)])
 def export_anonymized_data(
     request: Request,
     db: Session = Depends(get_db),
@@ -304,7 +304,7 @@ def export_anonymized_data(
     }
 
 
-@router.get("/export/count")
+@router.get("/export/count", dependencies=[Depends(authenticates_itself)])
 def export_record_count(
     request: Request,
     db: Session = Depends(get_db),
@@ -379,7 +379,7 @@ def save_connection(
                 status_code=400,
                 detail=(
                     "The URL returned HTML instead of JSON — it points to a frontend, not the backend API. "
-                    "Use the direct backend API URL (e.g. https://api.alternatecrm.com)."
+                    "Use the direct backend API URL (e.g. https://api.alternatecrm.messenger.ai)."
                 )
             )
         try:

@@ -7,6 +7,8 @@ Auth: Basic Auth (base64(api_id:api_token))
 import base64
 import json
 import logging
+import re
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -24,6 +26,50 @@ from phone_utils import strip_extension, validate_phone_dialable
 logger = logging.getLogger(__name__)
 
 AIRCALL_API_BASE = "https://api.aircall.io/v1"
+
+# RCA 2026-09-03: Aircall answers POST /users/{id}/calls with a 405 on a
+# meaningful share of outbound dials (665 in 14 prod days across 13 SDRs)
+# even for SDRs who are demonstrably reachable, and it is transient — see
+# initiate_call's step 5. The shortest observed re-click that then connected
+# was 4.7s after the failure, so retry once at 5s. A real-world timing knob,
+# not a derived constant: raise it if 405s still leak through to SDRs.
+_RETRY_405_DELAY_S = 5
+
+
+def _error_status(e: requests.HTTPError) -> int:
+    """Status code behind an HTTPError, or 0.
+
+    Never test `e.response` for truthiness: requests' Response.__bool__
+    returns self.ok, so every error response — the only kind an HTTPError
+    carries — is falsy. Doing so silently skipped status and body extraction
+    on exactly the failures we were trying to explain.
+    """
+    resp = getattr(e, "response", None)
+    return resp.status_code if resp is not None else 0
+
+
+def _is_405(e: requests.HTTPError) -> bool:
+    return _error_status(e) == 405
+
+
+def _aircall_detail(e: requests.HTTPError) -> str:
+    """Aircall's own explanation for a failure, from its response body.
+
+    Aircall puts it in 'troubleshoot' (sometimes 'message'/'error'). We used
+    to discard this for 405s and hardcode "open your Desktop app" guidance
+    instead — which is why the true cause of the 405s above went unknown for
+    months. Always log what Aircall actually said.
+    """
+    resp = getattr(e, "response", None)
+    if resp is None:
+        return ""
+    try:
+        body = resp.json()
+    except Exception:
+        return (resp.text or "")[:200]
+    if not isinstance(body, dict):
+        return ""
+    return str(body.get("troubleshoot") or body.get("message") or body.get("error") or "")[:200]
 
 
 class AircallDialerProvider(DialerProvider):
@@ -54,7 +100,6 @@ class AircallDialerProvider(DialerProvider):
         honouring Aircall's 'Retry-After' header (or doubling the wait
         each attempt if the header is absent).
         """
-        import time
         MAX_RETRIES = 5
         url = f"{AIRCALL_API_BASE}{path}"
         wait = 10   # initial backoff seconds
@@ -283,25 +328,13 @@ class AircallDialerProvider(DialerProvider):
         user_numbers = aircall_user.get("numbers", [])
         user_name = aircall_user.get("name", user_email)
 
-        # 2. Availability pre-check — surface a friendly error before hitting the API
-        # Aircall availability_status values: "available", "custom", "do_not_disturb", "offline"
-        # We only hard-block on states Aircall itself will reject — unavailable states
-        availability = aircall_user.get("availability_status", "available")
-        UNAVAILABLE_STATES = {"do_not_disturb", "offline"}
-        if availability in UNAVAILABLE_STATES:
-            logger.warning(
-                f"[Aircall] Pre-call availability check: {user_email} is '{availability}'. "
-                f"Blocking call attempt to avoid confusing 405."
-            )
-            return InitiateCallResult(
-                success=False,
-                provider=self.provider_name,
-                error=(
-                    f"{user_name} is currently marked as '{availability}' in Aircall "
-                    f"and cannot receive a new outbound call. "
-                    f"Ask them to set their status to Available in the Aircall Desktop app."
-                ),
-            )
+        # 2. No availability pre-check, deliberately (RCA 2026-09-03). One
+        # used to block on availability_status in {"do_not_disturb",
+        # "offline"} — values Aircall only ever emits on a *number*, never a
+        # user, so it had never once fired. The real flag, `available`, does
+        # not predict dialability either: the SDR with the highest 405 rate
+        # (38%) reads available:true, while two reading available:false placed
+        # 766 and 596 successful calls. Just dial, and retry a 405 (step 5).
 
         # 3. Determine which number to use — user MUST be assigned to it in Aircall
         if not user_numbers:
@@ -336,12 +369,34 @@ class AircallDialerProvider(DialerProvider):
                 error=validation_error,
             )
 
-        # 5. Initiate the call
+        # 5. Initiate the call.
+        #
+        # RCA 2026-09-03: Aircall 405s a large minority of these POSTs
+        # transiently. Prod evidence over 14 days: of 665 such failures, 593
+        # (89%) were followed by a connected call to the same number by the
+        # same SDR — median 10.9s later, because the SDR simply clicked dial
+        # again — and 90% needed only that one retry. Aircall's own call log
+        # has no call object at all for a 405, so nothing was placed and a
+        # retry cannot double-dial. Retry once here instead of surfacing an
+        # error and making 23 SDRs re-click by hand ~665 times a fortnight.
         try:
-            result = self._post(f"/users/{aircall_user_id}/calls", data={
-                "number_id": number_id,
-                "to": formatted_phone,
-            })
+            payload = {"number_id": number_id, "to": formatted_phone}
+            try:
+                result = self._post(f"/users/{aircall_user_id}/calls", data=payload)
+            except requests.HTTPError as first_err:
+                if not _is_405(first_err):
+                    raise
+                logger.warning(
+                    f"[Aircall] 405 on first dial attempt for {user_email} → "
+                    f"{formatted_phone} (Aircall said: "
+                    f"{_aircall_detail(first_err) or '<no detail in body>'}). "
+                    f"Retrying once in {_RETRY_405_DELAY_S}s."
+                )
+                time.sleep(_RETRY_405_DELAY_S)
+                result = self._post(f"/users/{aircall_user_id}/calls", data=payload)
+                logger.info(
+                    f"[Aircall] Retry after 405 succeeded for {user_email} → {formatted_phone}"
+                )
             call_data = result.get("call", result)
             logger.info(
                 f"[Aircall] Call initiated: user={aircall_user_id}, "
@@ -354,21 +409,26 @@ class AircallDialerProvider(DialerProvider):
                 phone_number=formatted_phone,
             )
         except requests.HTTPError as e:
-            status = e.response.status_code if e.response else 0
+            status = _error_status(e)
             err_str = str(e)
+            detail = _aircall_detail(e)
 
-            # 405: user not available in Aircall Desktop (most common cause)
-            # Also match on str(e) in case e.response is None or status lookup fails.
-            if status == 405 or "405" in err_str:
+            # 405: Aircall refused to ring the SDR. Reached only when the
+            # step-5 retry ALSO 405'd (~10% of 405s). The true cause is still
+            # unknown — Aircall's body is logged above and here so we can
+            # finally attribute it; do not add confident guidance we can't
+            # support. dialer_service.initiate_call rewrites the last sentence
+            # verbatim when Aircall Everywhere is on — change both together.
+            if _is_405(e):
                 logger.error(
-                    f"[Aircall] 405 for user {aircall_user_id} ({user_email}): "
-                    f"likely not logged into Aircall Desktop or already on a call."
+                    f"[Aircall] 405 twice for user {aircall_user_id} ({user_email}) → "
+                    f"{formatted_phone}. Aircall said: {detail or '<no detail in body>'}"
                 )
                 return InitiateCallResult(
                     success=False,
                     provider=self.provider_name,
                     error=(
-                        f"{aircall_user.get('name', user_email)} could not receive the call. "
+                        f"{user_name} could not receive the call. "
                         f"Please ensure their Aircall Desktop app is open and status is "
                         f"set to Available, then try again."
                     ),
@@ -376,11 +436,6 @@ class AircallDialerProvider(DialerProvider):
 
             # 400: invalid phone number or payload — give a clear fix hint
             if status == 400 or "400" in err_str:
-                try:
-                    body = e.response.json() if e.response else {}
-                    detail = body.get("troubleshoot") or body.get("message") or body.get("error") or ""
-                except Exception:
-                    detail = e.response.text[:200] if e.response else ""
                 logger.error(f"[Aircall] 400 for {formatted_phone}: {detail}")
                 return InitiateCallResult(
                     success=False,
@@ -392,13 +447,8 @@ class AircallDialerProvider(DialerProvider):
                     ),
                 )
 
-            # Other HTTP errors — extract Aircall's troubleshoot message
-            error_detail = err_str
-            try:
-                body = e.response.json() if e.response else {}
-                error_detail = body.get("troubleshoot") or body.get("message") or body.get("error") or err_str
-            except Exception:
-                error_detail = e.response.text if e.response else err_str
+            # Other HTTP errors — surface Aircall's own explanation
+            error_detail = detail or err_str
             logger.error(f"[Aircall] Call initiation failed (HTTP {status}): {error_detail}")
             return InitiateCallResult(
                 success=False,
@@ -434,7 +484,12 @@ class AircallDialerProvider(DialerProvider):
                         "id": u["id"],
                         "name": u.get("name", ""),
                         "email": u.get("email", ""),
-                        "available": u.get("availability_status") == "available",
+                        # `available` is Aircall's real reachability boolean.
+                        # availability_status is NOT a substitute — it reads
+                        # "available" on users who are not reachable (RCA
+                        # 2026-09-03), so deriving from it reported virtually
+                        # the whole org as available.
+                        "available": bool(u.get("available")),
                     })
                 # Aircall returns 'total' and 'per_page' in meta, not 'total_pages'
                 meta = result.get("meta", {})
@@ -487,6 +542,16 @@ class AircallDialerProvider(DialerProvider):
         event_map = {
             "call.created":          CallEventType.CALL_STARTED,
             "call.answered":         CallEventType.CALL_ANSWERED,
+            # RCA 2026-08-21 (LIVE, prod): call.hungup fires the instant the line
+            # disconnects; call.ended (this org's Aircall account) only follows
+            # ~30s later, once Aircall finishes its own post-call processing.
+            # Every outcome-modal "delay" reported this session was this exact
+            # 30s gap — the frontend/SSE path itself resolves in ~2ms once it
+            # receives a terminal event. Treat hungup as the real end signal;
+            # the later call.ended still arrives and safely backfills duration/
+            # recording/tags via the same idempotency guards already in place
+            # for Alternate Messenger's own webhook retries (ended_at/times_called below).
+            "call.hungup":           CallEventType.CALL_ENDED,
             "call.ended":            CallEventType.CALL_ENDED,
             "call.tagged":           CallEventType.CALL_TAGGED,      # V39: mandatory tagging → auto-log outcome
             "transcription.created": CallEventType.TRANSCRIPTION_READY,
@@ -529,11 +594,15 @@ class AircallDialerProvider(DialerProvider):
         else:
             call_id = str(data.get("id", ""))
 
-        # For call.tagged events, extract tags list
-        tags = None
-        if event == "call.tagged":
-            tags_data = data.get("tags", [])
-            tags = [t.get("name", "") for t in tags_data if isinstance(t, dict)] if isinstance(tags_data, list) else []
+        # RCA 2026-08-18 (LIVE, prod): grepped 0 [AutoLog] lines across a full
+        # evening's worth of genuinely-tagged calls. Root cause: this org's
+        # Aircall account never delivers a standalone `call.tagged` webhook at
+        # all — tags only ever arrive bundled inside `call.ended`'s own payload
+        # (confirmed directly against raw_payload in prod). Extract tags off
+        # ANY event that carries them, not just the literal "call.tagged" type,
+        # so auto-log actually gets a chance to run.
+        tags_data = data.get("tags", [])
+        tags = [t.get("name", "") for t in tags_data if isinstance(t, dict)] if isinstance(tags_data, list) else []
 
         return NormalizedCallEvent(
             event_type=event_type,
@@ -552,6 +621,107 @@ class AircallDialerProvider(DialerProvider):
             raw_payload=payload,
             tags=tags,
         )
+
+    def get_call_status(self, call_id: str, fast: bool = False) -> dict:
+        """Get the latest status of a call.
+
+        fast=True: single attempt, short timeout, no 429 backoff loop — for the
+        live self-heal check in dialer_service._get_active_call_for_user, which
+        runs on the hot dial path and must never turn a real Aircall outage into
+        a long hang (the default _get() retries up to 5x with up to 60s backoff
+        on rate-limits). Any error/timeout is caught by the caller and falls
+        back to today's behavior (treat the call as still active).
+        """
+        if not fast:
+            result = self.fetch_call(call_id)
+            return {"status": result["status"]} if result else {"status": "unknown"}
+        try:
+            resp = requests.get(
+                f"{AIRCALL_API_BASE}/calls/{call_id}",
+                headers=self._auth_header(), timeout=4,
+            )
+            resp.raise_for_status()
+            call = resp.json().get("call", {})
+            return {"status": "completed" if call.get("ended_at") else "active"}
+        except Exception as e:
+            logger.debug(f"[Aircall] get_call_status(fast) failed for {call_id}: {e}")
+            return {"status": "unknown", "error": str(e)}
+
+    def find_recent_call_by_phone(self, phone_number: str, since: datetime,
+                                  user_email: str) -> Optional[dict]:
+        """Best-effort lookup of a real Aircall call placed to `phone_number`
+        no earlier than `since`, for self-healing a local DialerCall row
+        that never got a provider_call_id (bridge-mode dials often don't
+        return one synchronously — see initiate_call's comment). Same
+        digit-suffix matching dialer_service._digits_suffix_match uses for
+        webhook reconciliation, just pulled proactively via REST instead of
+        waiting on a webhook that may never arrive for this specific call.
+
+        Single short-timeout attempt, no 429 backoff loop — same fast-path
+        contract as get_call_status(fast=True): any error/timeout returns
+        None and the caller falls back to today's behavior (treat as active).
+
+        Aircall's started_at/ended_at are unix epoch seconds (see
+        dialer_service.py's historical-sync parsing) — compared directly
+        against `since` as a timestamp, never as strings.
+
+        `user_email` is required, not optional. GET /calls is company-wide
+        (Aircall ignores a user_id query param — verified against the live
+        API), so without it this matched a *teammate's* call to the same
+        number and healed the wrong SDR's row. Two SDRs dialing one lead is
+        routine after a reassignment, so this was reachable, not theoretical.
+        Introduced in v11.11.2; caught auditing that release.
+        """
+        # RCA 2026-09-04: phone_number here is the DialerCall's raw stored value,
+        # which still carries an "ext. NNNN" suffix when the lead has one — every
+        # one of the 105 extension numbers dialed in the last 30 days had those
+        # extension digits appended into target_digits, so no call_digits from
+        # Aircall's own log (which never has an extension) could ever match,
+        # and self-heal silently failed 100% of the time for these leads. Strip
+        # the extension the same way initiate_call() already does before dialing.
+        base_phone, _ext = strip_extension(phone_number or "")
+        target_digits = re.sub(r"\D", "", base_phone)
+        # Suffix matching on a short string matches far too much company-wide
+        # (Aircall extensions are 3 digits and appear in raw_digits). Real
+        # dialable numbers are 10+; below that, decline to guess.
+        if len(target_digits) < 10:
+            return None
+        if not user_email:
+            return None
+        since_ts = since.timestamp() if since.tzinfo else since.replace(tzinfo=timezone.utc).timestamp()
+        try:
+            resp = requests.get(
+                f"{AIRCALL_API_BASE}/calls",
+                headers=self._auth_header(),
+                # 50 is Aircall's max page size; at peak team volume that is
+                # ~15 minutes of company-wide calls, comfortably covering the
+                # window a call being self-healed can have started in.
+                params={"order": "desc", "per_page": 50},
+                timeout=4,
+            )
+            resp.raise_for_status()
+            calls = resp.json().get("calls", [])
+        except Exception as e:
+            logger.debug(f"[Aircall] find_recent_call_by_phone failed for {phone_number}: {e}")
+            return None
+
+        for call in calls:
+            started_at = call.get("started_at")
+            if started_at and started_at < since_ts:
+                continue  # calls are already newest-first; anything older is a no-match
+            call_user = (call.get("user") or {}).get("email") or ""
+            if call_user.lower() != user_email.lower():
+                continue  # a teammate's call to the same number is not ours
+            call_digits = re.sub(r"\D", "", str(call.get("raw_digits") or ""))
+            if not call_digits:
+                continue
+            if call_digits.endswith(target_digits) or target_digits.endswith(call_digits):
+                return {
+                    "id": str(call.get("id", "")),
+                    "ended": bool(call.get("ended_at")),
+                    "duration": call.get("duration"),
+                }
+        return None
 
     def fetch_call(self, call_id: str) -> Optional[dict]:
         """Fetch full call details from Aircall API for enrichment."""
@@ -598,12 +768,18 @@ class AircallDialerProvider(DialerProvider):
                 },
             }
         except requests.HTTPError as e:
-            status = e.response.status_code if e.response else 0
-            body = e.response.text if e.response else str(e)
-            logger.error(f"[Aircall] Connection test failed ({status}): {body}")
+            # Same falsy-Response trap as _error_status documents: the old
+            # `if e.response` here made this report "HTTP 0" for every real
+            # failure and log str(e) in place of Aircall's own message.
+            status = _error_status(e)
+            detail = _aircall_detail(e)
+            logger.error(f"[Aircall] Connection test failed ({status}): {detail or e}")
             return {
                 "success": False,
-                "message": f"Authentication failed (HTTP {status}). Check your API ID and Token.",
+                "message": (
+                    f"Authentication failed (HTTP {status}). "
+                    f"{(detail + ' ') if detail else ''}Check your API ID and Token."
+                ),
                 "details": {},
             }
         except Exception as e:

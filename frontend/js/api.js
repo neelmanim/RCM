@@ -5,9 +5,17 @@ import { API_BASE, authHeaders, isAdmin } from './auth.js';
 function handleUnauthorized(res) {
     if (res.status === 401) {
         localStorage.removeItem('crm_token');
-        window.location.href = 'signup.html';
+        window.location.href = 'login.html?expired=1';
         throw new Error('Session expired. Redirecting to login...');
     }
+}
+
+/** Shared handleUnauthorized + res.ok check for the common "throw a fixed
+ * message on any non-ok response" shape — the handful of call sites that
+ * parse a JSON error body for a server-provided detail message stay inline. */
+async function _checkOk(res, errMsg) {
+    handleUnauthorized(res);
+    if (!res.ok) throw new Error(errMsg);
 }
 
 export async function fetchLeads({ page = 1, per_page = 20, search = '', status = '', source = '', company = '', date_from = '', date_to = '', outcome = '', assigned_to = '', ids_only = false, global_view = false } = {}) {
@@ -24,8 +32,7 @@ export async function fetchLeads({ page = 1, per_page = 20, search = '', status 
     if (ids_only) params.set('ids_only', 'true');
     if (global_view) params.set('global_view', 'true');
     const res = await fetch(`${base}?${params}`, { headers: authHeaders() });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Failed to fetch leads');
+    await _checkOk(res, 'Failed to fetch leads');
     return res.json();  // { data, total, page, per_page, pages }
 }
 
@@ -35,12 +42,6 @@ export async function fetchLeadCompanies() {
     if (!res.ok) return [];
     const data = await res.json();
     return data.companies || [];
-}
-
-export async function fetchKanbanLeads() {
-    const res = await fetch(`${API_BASE}/api/leads/kanban`, { headers: authHeaders() });
-    if (!res.ok) throw new Error('Failed to fetch kanban leads');
-    return res.json();  // array of lead summaries
 }
 
 export async function fetchDashboardStats(globalView = false) {
@@ -66,8 +67,15 @@ export async function fetchLeadStatusHistory(leadId) {
     return res.json();  // array of status change objects
 }
 
+export async function fetchLeadFieldHistory(leadId) {
+    const res = await fetch(`${API_BASE}/api/leads/${leadId}/field-history`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to fetch field history');
+    return res.json();  // array of field change objects
+}
+
 export async function fetchLead(leadId) {
     const res = await fetch(`${API_BASE}/api/leads/${leadId}`, { headers: authHeaders() });
+    await _checkOk(res, 'Failed to fetch lead');
     return res.json();
 }
 
@@ -134,6 +142,14 @@ export async function createLead(payload) {
     });
 }
 
+export async function createReassignRequest(leadId, note = '') {
+    return fetch(`${API_BASE}/api/reassign-requests`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: leadId, note })
+    });
+}
+
 // ── Research ──────────────────────────────────────────────────────────────────
 export async function patchLeadResearch(leadId, fields) {
     const res = await fetch(`${API_BASE}/api/leads/${leadId}/research`, {
@@ -161,6 +177,7 @@ export async function addLeadNote(leadId, content, author) {
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, author })
     });
+    await _checkOk(res, 'Failed to add note');
     return res.json();
 }
 
@@ -172,6 +189,12 @@ export async function deleteLeadNote(leadId, noteId) {
 export async function fetchLeadJourneyEnrollments(leadId) {
     const res = await fetch(`${API_BASE}/api/journeys/by-lead/${leadId}`, { headers: authHeaders() });
     return res.ok ? res.json() : [];
+}
+
+export async function removeJourneyEnrollment(enrollmentId) {
+    const res = await fetch(`${API_BASE}/api/journeys/enrollments/${enrollmentId}/remove`, { method: 'POST', headers: authHeaders() });
+    if (!res.ok) throw new Error('Failed to remove enrollment');
+    return res.json();
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
@@ -186,6 +209,7 @@ export async function addLeadTask(leadId, title, due_date, due_time = null) {
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, due_date, ...(due_time ? { due_time } : {}) })
     });
+    await _checkOk(res, 'Failed to add task');
     return res.json();
 }
 
@@ -239,6 +263,10 @@ export async function deleteUser(userId) {
     return fetch(`${API_BASE}/api/admin/users/${userId}`, { method: 'DELETE', headers: authHeaders() });
 }
 
+export async function getUserPodAdminOf(userId) {
+    return fetch(`${API_BASE}/api/admin/users/${userId}/pod-admin-of`, { headers: authHeaders() });
+}
+
 export async function patchUserAccess(userId, action) {
     return fetch(`${API_BASE}/api/admin/users/${userId}/access`, {
         method: 'PATCH',
@@ -263,12 +291,11 @@ export async function patchUserSettings(userId, settings) {
     });
 }
 
-/** Fetch all SDR RCM dialer assignments (Super Admin only). */
+/** Fetch all SDR Alternate Messenger dialer assignments (Super Admin only). */
 export async function fetchSdrDialerConfigs() {
     const res = await fetch(`${API_BASE}/api/admin/dialer/sdr-configs`, { headers: authHeaders() });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Failed to fetch SDR dialer configs');
-    return res.json();   // [{id, name, email, rcm_user_id, rcm_from_number, rcm_email, ...}]
+    await _checkOk(res, 'Failed to fetch SDR dialer configs');
+    return res.json();   // [{id, name, email, messenger_user_id, messenger_from_number, messenger_email, ...}]
 }
 
 export async function fetchUserToken(userId) {
@@ -276,14 +303,30 @@ export async function fetchUserToken(userId) {
     return res.ok ? res.json() : null;
 }
 
+// Both list endpoints became paginated ({data,total,page,per_page,pages})
+// when the Control Center's unpaginated LIMIT-5000 fetch was fixed — this
+// page still wants the full flat array, so page through and concatenate.
+async function _fetchAllPaginated(url) {
+    let all = [];
+    let page = 1;
+    const per_page = 200;
+    for (;;) {
+        const res = await fetch(`${url}?page=${page}&per_page=${per_page}`, { headers: authHeaders() });
+        if (!res.ok) return all;
+        const body = await res.json();
+        all = all.concat(body.data || []);
+        if (page >= (body.pages || 1)) break;
+        page++;
+    }
+    return all;
+}
+
 export async function fetchUnassignedLeads() {
-    const res = await fetch(`${API_BASE}/api/admin/leads/unassigned`, { headers: authHeaders() });
-    return res.ok ? res.json() : [];
+    return _fetchAllPaginated(`${API_BASE}/api/admin/leads/unassigned`);
 }
 
 export async function fetchAssignedLeads() {
-    const res = await fetch(`${API_BASE}/api/admin/leads/assigned`, { headers: authHeaders() });
-    return res.ok ? res.json() : [];
+    return _fetchAllPaginated(`${API_BASE}/api/admin/leads/assigned`);
 }
 
 export async function bulkAssign(userId, leadIds) {
@@ -292,6 +335,7 @@ export async function bulkAssign(userId, leadIds) {
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, lead_ids: leadIds })
     });
+    await _checkOk(res, 'Failed to bulk assign leads');
     return res.json();
 }
 
@@ -313,6 +357,7 @@ export async function bulkUnassign(leadIds) {
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ lead_ids: leadIds })
     });
+    await _checkOk(res, 'Failed to bulk unassign leads');
     return res.json();
 }
 
@@ -322,6 +367,7 @@ export async function bulkDeleteLeads(leadIds) {
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ lead_ids: leadIds })
     });
+    await _checkOk(res, 'Failed to bulk delete leads');
     return res.json();
 }
 
@@ -409,8 +455,7 @@ export async function uploadLeadSheet(csvText, mapping, skipUnmatched = true, fi
 export async function fetchUploadLogs(page = 1, perPage = 10) {
     const params = new URLSearchParams({ page, per_page: perPage });
     const res = await fetch(`${API_BASE}/api/admin/leads/upload-logs?${params}`, { headers: authHeaders() });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Failed to fetch upload logs');
+    await _checkOk(res, 'Failed to fetch upload logs');
     return res.json();
 }
 
@@ -418,8 +463,7 @@ export async function fetchUploadBatchMetrics({ date_range = 'all', pod_id = '' 
     const params = new URLSearchParams({ date_range });
     if (pod_id) params.set('pod_id', pod_id);
     const res = await fetch(`${API_BASE}/api/admin/leads/upload-batch-metrics?${params}`, { headers: authHeaders() });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Failed to fetch upload batch metrics');
+    await _checkOk(res, 'Failed to fetch upload batch metrics');
     return res.json();
 }
 
@@ -427,8 +471,7 @@ export async function fetchBatchLeadDetail(logId, { pod_id = '', page = 1, per_p
     const params = new URLSearchParams({ page, per_page });
     if (pod_id) params.set('pod_id', pod_id);
     const res = await fetch(`${API_BASE}/api/admin/leads/upload-batch-metrics/${logId}/leads?${params}`, { headers: authHeaders() });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Failed to fetch batch lead detail');
+    await _checkOk(res, 'Failed to fetch batch lead detail');
     return res.json();
 }
 
@@ -468,6 +511,7 @@ export async function importGoogleSheet(url, mapping, updateExisting = false, sh
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
+    await _checkOk(res, 'Failed to import Google Sheet');
     return res.json();
 }
 
@@ -483,6 +527,7 @@ export async function createPod(name, adminId, timezone) {
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, admin_id: adminId, timezone: timezone || null })
     });
+    await _checkOk(res, 'Failed to create pod');
     return res.json();
 }
 
@@ -575,8 +620,8 @@ export async function fetchSdrPerformance(sdrId, { period = 'all_time', start_da
 }
 
 // ── Search ────────────────────────────────────────────────────────────────────
-export async function globalSearch(q) {
-    const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`, { headers: authHeaders() });
+export async function globalSearch(q, signal) {
+    const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`, { headers: authHeaders(), signal });
     return res.ok ? res.json() : { leads: [], users: [] };
 }
 
@@ -683,7 +728,7 @@ export async function reconnectSalesforce() {
     return res.json();
 }
 
-// ── RCM / RCM Messaging Messaging ──────────────────────────────────────────
+// ── Alternate Messenger / Messaging Provider Messaging ──────────────────────────────────────────
 export async function fetchMessagingConfig(leadId) {
     const res = await fetch(`${API_BASE}/api/leads/${leadId}/messaging/config`, { headers: authHeaders() });
     return res.ok ? res.json() : { enabled: false, reason: 'Failed to load messaging config' };
@@ -733,6 +778,7 @@ export async function saveNylasConfig(config) {
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
     });
+    await _checkOk(res, 'Failed to save email config');
     return res.json();
 }
 
@@ -768,6 +814,19 @@ export async function saveMySignature(signatureHtml) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data?.detail || data?.message || `Failed to save (${res.status})`);
+    return data;
+}
+
+export async function uploadSignatureLogo(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/api/email/signature/logo`, {
+        method: 'POST',
+        headers: authHeaders(),  // No Content-Type — browser auto-sets multipart boundary
+        body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.detail || data?.message || `Failed to upload logo (${res.status})`);
     return data;
 }
 
@@ -858,14 +917,38 @@ export async function downloadEmailAttachment(attachmentId, messageId, filename)
 }
 
 // ── Dialer Integration ──────────────────────────────────────────────────────
-export async function startDialerCall(leadId, phoneNumber, callMode = 'browser') {
+// RCA 2026-08-18 (LIVE, prod): "Blocked concurrent call" fired 111 times in one
+// evening across 5 SDRs. Checked every one of the blocking DialerCall rows in
+// the DB afterward — every single one reached CALL_ENDED on its own within
+// seconds, none were ever actually stuck. This is real webhook latency (the
+// provider's call.ended event arriving a few seconds after the SDR moved to
+// the next lead), not a stale/orphaned lock — the backend's staleness auto-heal
+// (5-15 min) is a different, correctly-designed backstop for genuinely
+// abandoned calls, not this window. A short bounded retry absorbs the race
+// without weakening the one-call-at-a-time guarantee.
+const _ACTIVE_CALL_MSG = 'already have an active call in progress';
+const _RETRY_DELAYS_MS = [1500, 3000, 5000]; // ~9.5s total — comfortably covers the observed lag
+
+async function _postCallStart(leadId, phoneNumber, callMode) {
     const res = await fetch(`${API_BASE}/api/calls/start`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ lead_id: leadId, phone_number: phoneNumber, call_mode: callMode })
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Call initiation failed');
+    return { ok: res.ok, data };
+}
+
+export async function startDialerCall(leadId, phoneNumber, callMode = 'browser') {
+    for (const delay of _RETRY_DELAYS_MS) {
+        const { ok, data } = await _postCallStart(leadId, phoneNumber, callMode);
+        if (ok) return data;
+        if (!(data.detail || '').includes(_ACTIVE_CALL_MSG)) throw new Error(data.detail || 'Call initiation failed');
+        await new Promise((r) => setTimeout(r, delay));
+    }
+    // Final attempt — surface whatever it returns (success or the real error)
+    const { ok, data } = await _postCallStart(leadId, phoneNumber, callMode);
+    if (!ok) throw new Error(data.detail || 'Call initiation failed');
     return data;
 }
 
@@ -970,6 +1053,17 @@ export async function setMyPhone(phoneNumber) {
     return data;
 }
 
+// v11.10.0: the single source of truth for what this user may do — calling,
+// SMS, WhatsApp. Replaces inferring messaging access from the *dialer*
+// provider, which used to hide messaging entirely from anyone on Aircall.
+// Shape: { calling:{enabled,provider}, sms:{enabled,ready,reason},
+//          whatsapp:{...}, messaging_provider, any }
+export async function getMyCapabilities() {
+    const res = await fetch(`${API_BASE}/api/me/capabilities`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`Failed to load capabilities (${res.status})`);
+    return res.json();
+}
+
 export async function toggleMyDialer(enabled) {
     const res = await fetch(`${API_BASE}/api/dialer/toggle`, {
         method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -980,7 +1074,7 @@ export async function toggleMyDialer(enabled) {
     return data;
 }
 
-// ── RCM Call Actions ──────────────────────────────────────────────
+// ── Alternate Messenger Call Actions ──────────────────────────────────────────────
 
 export async function callAction(callId, action, roomName = null) {
     const body = { action };
@@ -1062,6 +1156,24 @@ export async function dismissTask(taskId) {
     return res.json();
 }
 
+// ── Reply Notifications ─────────────────────────────────────────────────────
+export async function fetchPendingReplies() {
+    const res = await fetch(`${API_BASE}/api/my/replies/pending`, { headers: authHeaders() });
+    if (!res.ok) {
+        console.error(`[ReplyNotifications] /my/replies/pending failed: ${res.status}`);
+        throw new Error(`Failed to fetch pending replies (${res.status})`);
+    }
+    return res.json();
+}
+
+export async function dismissReply(activityId) {
+    const res = await fetch(`${API_BASE}/api/my/replies/${activityId}/dismiss`, {
+        method: 'PATCH',
+        headers: authHeaders()
+    });
+    return res.json();
+}
+
 // ── Lead Deprioritization (V22) ───────────────────────────────────────────────
 export async function reprioritizeLead(leadId, score = 100) {
     const res = await fetch(`${API_BASE}/api/leads/${leadId}/priority`, {
@@ -1078,8 +1190,7 @@ export async function fetchAdminActivityFeed(params = {}) {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) { if (v !== undefined && v !== '') qs.set(k, v); }
     const res = await fetch(`${API_BASE}/api/admin/activity-feed?${qs}`, { headers: authHeaders() });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Failed to fetch activity feed');
+    await _checkOk(res, 'Failed to fetch activity feed');
     return res.json();
 }
 
@@ -1100,8 +1211,7 @@ export async function createDisqualifyRequest(company, leadIds, reason) {
 
 export async function fetchDisqualifyRequests(status = 'pending') {
     const res = await fetch(`${API_BASE}/api/disqualify-requests?status=${status}`, { headers: authHeaders() });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Failed to fetch disqualify requests');
+    await _checkOk(res, 'Failed to fetch disqualify requests');
     return res.json();
 }
 
@@ -1109,8 +1219,7 @@ export async function fetchDisqualifyRequests(status = 'pending') {
 // pending/rejected badge without checker (Pod Admin+) access.
 export async function fetchMyDisqualifyRequests(status = 'pending') {
     const res = await fetch(`${API_BASE}/api/disqualify-requests/mine?status=${status}`, { headers: authHeaders() });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Failed to fetch my disqualify requests');
+    await _checkOk(res, 'Failed to fetch my disqualify requests');
     return res.json();
 }
 
@@ -1156,8 +1265,7 @@ export async function fetchAnalyticsFunnel(filters = {}) {
     const res = await fetch(`${API_BASE}/api/admin/analytics/funnel?${_analyticsQs(filters)}`, {
         headers: authHeaders(),
     });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Analytics funnel fetch failed');
+    await _checkOk(res, 'Analytics funnel fetch failed');
     return res.json();
 }
 
@@ -1166,8 +1274,7 @@ export async function fetchAnalyticsTrend(filters = {}) {
     const res = await fetch(`${API_BASE}/api/admin/analytics/trend?${_analyticsQs(filters)}`, {
         headers: authHeaders(),
     });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Analytics trend fetch failed');
+    await _checkOk(res, 'Analytics trend fetch failed');
     return res.json();
 }
 
@@ -1177,8 +1284,7 @@ export async function fetchAnalyticsSdrTable(filters = {}, page = 1, sortBy = 'c
     const res = await fetch(`${API_BASE}/api/admin/analytics/sdr-table?${qs}`, {
         headers: authHeaders(),
     });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Analytics SDR table fetch failed');
+    await _checkOk(res, 'Analytics SDR table fetch failed');
     return res.json();
 }
 
@@ -1187,8 +1293,7 @@ export async function fetchAnalyticsEmailBreakdown(filters = {}) {
     const res = await fetch(`${API_BASE}/api/admin/analytics/email-breakdown?${_analyticsQs(filters)}`, {
         headers: authHeaders(),
     });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Analytics email breakdown fetch failed');
+    await _checkOk(res, 'Analytics email breakdown fetch failed');
     return res.json();
 }
 
@@ -1198,8 +1303,7 @@ export async function fetchAnalyticsFilters({ pod_id, date_from, date_to } = {})
     const res = await fetch(`${API_BASE}/api/admin/analytics/filters?${qs}`, {
         headers: authHeaders(),
     });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Analytics filters fetch failed');
+    await _checkOk(res, 'Analytics filters fetch failed');
     return res.json();
 }
 
@@ -1222,8 +1326,7 @@ export async function fetchAnalyticsBatchSummary(filters = {}) {
     const res = await fetch(`${API_BASE}/api/admin/analytics/batch-summary?${_analyticsQs(filters)}`, {
         headers: authHeaders(),
     });
-    handleUnauthorized(res);
-    if (!res.ok) throw new Error('Analytics batch summary fetch failed');
+    await _checkOk(res, 'Analytics batch summary fetch failed');
     return res.json();
 }
 

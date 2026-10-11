@@ -7,10 +7,10 @@ import sys
 from sqlalchemy import create_engine, text
 
 DB_URL = (
-    "postgresql://rcm_db_staging_user:"
+    "postgresql://messenger_db_staging_user:"
     "n3oJxSZtWAIBcWERT6B0oHsR5lwg6jWs"
     "@dpg-d6ncblh5pdvs73aacni0-a.ohio-postgres.render.com"
-    "/rcm_db_staging"
+    "/messenger_db_staging"
 )
 
 NO_PHONE_FILTER = """

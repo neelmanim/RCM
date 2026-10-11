@@ -55,3 +55,33 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# ── AI-route bulkhead pool (RCA: 2026-09-01) ────────────────────────────────
+# A request that calls an LLM provider (Groq) holds its DB connection open,
+# idle, for however long that provider takes to answer — including retries
+# and a rate-limit backoff sleep. Confirmed live: a Groq outage made
+# ai-research requests take 16-93s each; enough of those in flight
+# simultaneously (routine — ai-research auto-fires on every lead-detail
+# page view) exhausted the shared pool, and a COMPLETELY UNRELATED request
+# (GET /api/leads/{id}) then queued for pool_timeout and failed with
+# "Couldn't load this lead" — an AI-provider outage taking down an
+# unrelated, non-AI feature. A dedicated, separate pool for every
+# LLM-calling route means an AI-provider outage, however long or however
+# concurrent, can never take a connection away from the rest of the app.
+ai_engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args=connect_args,
+    pool_size=3,
+    max_overflow=5,
+    pool_recycle=1800,
+    pool_pre_ping=True,
+    pool_timeout=30,
+)
+AiSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=ai_engine)
+
+def get_ai_db():
+    db = AiSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

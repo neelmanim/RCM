@@ -12,21 +12,93 @@ API routes for the dialer integration:
 """
 import logging
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from database import get_db
-from auth import get_current_user, require_admin
+from auth import get_current_user, require_admin, require_super_admin, authenticates_itself, public_endpoint
+from routes.lead_helpers import load_lead
 from error_logger import log_error
+from cache import get_cached, set_cached
 import dialer_service
+import access_db
 import models
 import sse_broker  # Phase 3: real-time SSE fan-out
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Dialer"])
+
+
+def _verify_dialer_webhook(db, request, payload: dict, source: str) -> None:
+    """Every dialer webhook must carry the shared webhook token (Settings →
+    Dialer → Webhook token; Aircall sends it as the payload's "token").
+    RCA 2026-09-29: /webhooks/aircall and /webhooks/messenger checked
+    nothing, and /webhooks/dialer only when a token happened to be set — a
+    forged Aircall "Meeting Set" tag could move a lead to Meeting Scheduled
+    and on to Salesforce. SECURITY_WEBHOOK_MODE=monitor logs instead."""
+    import hmac
+    from auth import security_deny
+    expected = dialer_service.get_dialer_config(db).get("webhook_token") or ""
+    incoming = str(payload.get("token") or request.headers.get("X-Webhook-Token", ""))
+    if not expected:
+        security_deny("WEBHOOK", 401, "Webhook token not configured", source=source)
+    elif not hmac.compare_digest(incoming, expected):
+        security_deny("WEBHOOK", 401, "Invalid webhook token", source=source)
+
+
+def _authorize_dialer_call(db, user, dc, edit: bool = False, own_only: bool = False):
+    """A DialerCall is the caller's own, or reachable through its lead's
+    access rule (domain.lead_access). own_only: controlling a live call
+    (mute/hang-up) — only the rep on it, or a Super Admin."""
+    if user.get("role") in ("Super Admin", "Admin") or dc.user_id == user.get("sub"):
+        return dc
+    if not own_only and dc.lead_id:
+        load_lead(db, user, dc.lead_id, edit=edit)
+        return dc
+    from auth import security_deny
+    security_deny("LEAD_ACCESS", 404, "Call not found", user=user.get("sub"), call=dc.id)
+    return dc
+
+
+# ── Aircall phone-match self-heal throttle ───────────────────────────────────
+# RCA 2026-09-03 (pre-prod review): the frontend polls GET /calls/{id}/status
+# every 10s for up to 10 minutes (app.js _startAircallOutcomePolling,
+# MAX_POLLS=60) and the phone-match fallback below fired on EVERY poll for any
+# Aircall call whose provider_call_id was still empty — up to 60 extra Aircall
+# GET /calls per call. In prod 762 of 7,122 Aircall calls (10.7%) sit in that
+# state, Aircall's ceiling is 60 requests/min for the whole company, and prod
+# has already logged a 429. Left unbounded this could throttle dialling for all
+# 23 SDRs, which is precisely the symptom the self-heal exists to prevent. It
+# was invisible on staging because one caller never approaches the limit.
+#
+# Two cheap bounds: give the webhook a grace period first (it wins the race
+# almost always — a typical call is ~20s end to end), then at most one lookup
+# per minute per call.
+_PHONE_MATCH_MIN_AGE_S = 45
+_PHONE_MATCH_COOLDOWN_S = 60
+_phone_match_last_attempt: dict = {}
+
+
+def _should_try_phone_match(call_id: str, age_seconds: float) -> bool:
+    """True at most once per _PHONE_MATCH_COOLDOWN_S per call, and never before
+    the webhook has had _PHONE_MATCH_MIN_AGE_S to arrive."""
+    if age_seconds < _PHONE_MATCH_MIN_AGE_S:
+        return False
+    import time as _time
+    now = _time.monotonic()
+    last = _phone_match_last_attempt.get(call_id)
+    if last is not None and (now - last) < _PHONE_MATCH_COOLDOWN_S:
+        return False
+    # Bound the bookkeeping: entries only matter for the 10-minute poll window.
+    if len(_phone_match_last_attempt) > 500:
+        cutoff = now - 900
+        for k in [k for k, v in _phone_match_last_attempt.items() if v < cutoff]:
+            _phone_match_last_attempt.pop(k, None)
+    _phone_match_last_attempt[call_id] = now
+    return True
 
 
 # ── Call initiation ──────────────────────────────────────────────────────────
@@ -50,10 +122,12 @@ def start_call(request: Request, body: dict, user: dict = Depends(get_current_us
     if call_mode not in ("bridge", "browser"):
         raise HTTPException(status_code=400, detail="call_mode must be 'bridge' or 'browser'")
 
+    if lead_id:
+        load_lead(db, user, lead_id, edit=True)  # calling a lead is a change to it
+
     # BUG-04: Auto-resolve lead when no lead_id is provided
     if not lead_id:
         import models as _m, uuid
-        from datetime import datetime, timezone
         # Normalise: strip spaces/dashes for lookup
         def _norm(n): return (n or "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
         _phone_norm = _norm(phone_number)
@@ -79,7 +153,7 @@ def start_call(request: Request, body: dict, user: dict = Depends(get_current_us
                 sf_lead_id=f"MANUAL-{uuid.uuid4().hex[:16]}",   # unique sentinel, not a real SF ID
                 first_name="Unknown",
                 last_name="Caller",
-                email=f"unknown.{uuid.uuid4().hex[:12]}@rcm.auto",
+                email=f"unknown.{uuid.uuid4().hex[:12]}@alternatecrm.auto",
                 phone=phone_number,
                 status="Calling",
                 lead_source="Manual Dial",
@@ -109,8 +183,12 @@ def start_call(request: Request, body: dict, user: dict = Depends(get_current_us
         # errors, unexpected API errors) stay "critical".
         _user_unavailable = any(phrase in error_msg for phrase in (
             "could not receive the call",
-            "is currently marked as",
             "not assigned to any phone number",
+            # RCA 2026-09-07: same category as the two phrases above (SDR-side
+            # operational condition, not a system fault) — omitted originally
+            # only because the outcome-log self-heal RCA that made this a
+            # common, expected message postdates this list.
+            "You already have an active call in progress",
         ))
         _log_severity = "warning" if _user_unavailable else "critical"
         # A DNC/unsubscribed skip is policy working as designed, not an
@@ -202,19 +280,20 @@ def get_call_status(call_id: str, user: dict = Depends(get_current_user), db: Se
     dialer_call = db.query(models.DialerCall).filter(models.DialerCall.id == call_id).first()
     if not dialer_call:
         raise HTTPException(status_code=404, detail="Call not found")
+    _authorize_dialer_call(db, user, dialer_call)
 
     # Start with the DB status as a baseline
     effective_status = dialer_call.status
     provider_raw = None
 
-    # ── Webhook-first architecture: no provider API polling for RCM ───────
+    # ── Webhook-first architecture: no provider API polling for Alternate Messenger ───────
     #
-    # RCA 2026-06-11: RCM's POST /calls/{id}/status endpoint is an internal
+    # RCA 2026-06-11: Alternate Messenger's POST /calls/{id}/status endpoint is an internal
     # endpoint not designed for repeated polling — it returns 502 "Internal API error"
     # consistently under load and cannot accept a notify_url per-call (returns 422).
     #
-    # The correct architecture for RCM is:
-    #   RCM platform → POST /api/webhooks/dialer (push, reliable, 200 OK)
+    # The correct architecture for Alternate Messenger is:
+    #   Alternate Messenger platform → POST /api/webhooks/dialer (push, reliable, 200 OK)
     #                       → SSE broker fans out to the SDR's browser
     #                       → HTTP polling fallback reads DB (already webhook-updated)
     #
@@ -247,10 +326,8 @@ def get_call_status(call_id: str, user: dict = Depends(get_current_user), db: Se
                         effective_status = mapped
                         dialer_call.status = mapped
                         if mapped == "CALL_ANSWERED" and not dialer_call.answered_at:
-                            from datetime import datetime, timezone
                             dialer_call.answered_at = datetime.now(timezone.utc)
                         if mapped == "CALL_ENDED" and not dialer_call.ended_at:
-                            from datetime import datetime, timezone
                             dialer_call.ended_at = datetime.now(timezone.utc)
                             if provider_raw.get("duration"):
                                 dialer_call.duration = provider_raw["duration"]
@@ -261,22 +338,59 @@ def get_call_status(call_id: str, user: dict = Depends(get_current_user), db: Se
                             logger.warning(f"[DialerRoutes] Aircall status commit failed: {commit_err}")
         except Exception as e:
             logger.warning(f"[DialerRoutes] Aircall status poll failed for call {call_id}: {e}")
+    elif (
+        _is_aircall
+        and dialer_call.status == "CALL_STARTED"
+        and not dialer_call.provider_call_id
+        and dialer_call.phone_number
+    ):
+        # RCA 2026-09-03 (staging test session, real DB evidence): bridge-mode
+        # Aircall dials often don't return an id synchronously, and this
+        # frontend poll (the one driving the outcome modal, app.js's
+        # _startAircallOutcomePolling) had no way to progress such a call
+        # past CALL_STARTED without a webhook — it would sit unresolved for
+        # the full 10-minute MAX_POLLS timeout. Ask Aircall directly by
+        # phone + recency, same reconciliation dialer_service._try_live_self_heal
+        # now does on the pre-dial guard.
+        try:
+            provider = dialer_service.get_provider_for_user(db, user)
+            since = dialer_call.started_at or dialer_call.created_at
+            # Scope to the call's OWNER, not the authed poller: Aircall's call
+            # log is company-wide, and this route is not restricted to the
+            # call's own user, so `user` here is not reliably the SDR who
+            # dialled. Matching on the wrong email heals the wrong row.
+            _owner = db.query(models.User).filter(models.User.id == dialer_call.user_id).first()
+            _owner_email = _owner.email if _owner else None
+            _since_aware = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+            _age = (datetime.now(timezone.utc) - _since_aware).total_seconds()
+            if (provider and hasattr(provider, "find_recent_call_by_phone")
+                    and since and _owner_email
+                    and _should_try_phone_match(dialer_call.id, _age)):
+                match = provider.find_recent_call_by_phone(
+                    dialer_call.phone_number, since, _owner_email
+                )
+                # Shared with _try_live_self_heal's pre-dial guard — this
+                # copy's blind id write failed on every poll, so the call
+                # never left CALL_STARTED and the modal sat unresolved.
+                if match and match.get("ended") and dialer_service.apply_phone_match(db, dialer_call, match):
+                    effective_status = "CALL_ENDED"
+        except Exception as e:
+            logger.warning(f"[DialerRoutes] Aircall phone-match poll failed for call {call_id}: {e}")
 
-    # RCM: DB is already authoritative — webhooks update it in real-time.
+    # Alternate Messenger: DB is already authoritative — webhooks update it in real-time.
     # No provider API call needed. effective_status stays as DB status.
 
 
     # ── Guard 1: ended_at override ────────────────────────────────────────────
     # If ended_at is already set (by webhook or disconnect endpoint) but the
-    # RCM REST API is still returning 'ringing', trust ended_at over
+    # Alternate Messenger REST API is still returning 'ringing', trust ended_at over
     # the stale provider response. This happens when a call is declined.
     #
-    # EC-3: This guard intentionally applies to ALL providers (not just RCM).
+    # EC-3: This guard intentionally applies to ALL providers (not just Alternate Messenger).
     # For Aircall, ended_at and status=CALL_ENDED are written atomically by the
     # webhook, so Guard 1 never fires for a healthy Aircall call. It is retained
     # as a safety net for any provider where ended_at is set before status is updated.
     if dialer_call.ended_at and effective_status not in ("CALL_ENDED", "CALL_FAILED"):
-        from datetime import datetime, timezone
         effective_status = "CALL_ENDED"
         if dialer_call.status not in ("CALL_ENDED", "CALL_FAILED"):
             dialer_call.status = "CALL_ENDED"
@@ -289,22 +403,21 @@ def get_call_status(call_id: str, user: dict = Depends(get_current_user), db: Se
             f"provider={dialer_call.provider!r}, overriding to CALL_ENDED"
         )
 
-    # ── Guard 2: RCM ringing timeout ────────────────────────────────────
-    # If a RCM call has been in CALL_STARTED for >50 seconds with no
+    # ── Guard 2: Alternate Messenger ringing timeout ────────────────────────────────────
+    # If a Alternate Messenger call has been in CALL_STARTED for >50 seconds with no
     # answer and no ended_at, auto-end it. Declined calls ring for ~20-30s
     # max; 50s ensures legitimate long-ring scenarios still work.
     #
     # EC-7 (order dependency): Guard 2 checks effective_status == "CALL_STARTED"
     # which is already the *normalized* canonical status. This guard MUST run
-    # AFTER the status normalizer block above — RCM returns raw strings
+    # AFTER the status normalizer block above — Alternate Messenger returns raw strings
     # like "ringing" which are mapped to "CALL_STARTED" by that block.
     if (
-        dialer_call.provider == "rcm"
+        dialer_call.provider == "messenger"
         and effective_status == "CALL_STARTED"
         and dialer_call.started_at
         and not dialer_call.ended_at
     ):
-        from datetime import datetime, timezone, timedelta
         # EC-1: safe for both tz-aware (PostgreSQL TIMESTAMPTZ) and tz-naive (SQLite)
         _started = dialer_call.started_at
         if _started.tzinfo is None:
@@ -320,7 +433,7 @@ def get_call_status(call_id: str, user: dict = Depends(get_current_user), db: Se
                 db.rollback()
             # EC-1: use total_seconds() not .seconds — .seconds is sub-minute only (0-59)
             logger.warning(
-                f"[DialerRoutes] Guard2: RCM call {call_id} stuck in "
+                f"[DialerRoutes] Guard2: Alternate Messenger call {call_id} stuck in "
                 f"CALL_STARTED for {int(age.total_seconds())}s — auto-ending (declined/no-answer)"
             )
 
@@ -332,13 +445,13 @@ def get_call_status(call_id: str, user: dict = Depends(get_current_user), db: Se
         "direction":    dialer_call.direction,
         "started_at":   dialer_call.started_at.isoformat() if dialer_call.started_at else None,
         "ended_at":     dialer_call.ended_at.isoformat() if dialer_call.ended_at else None,
-        "provider_status": provider_raw,            # raw RCM response for debugging
+        "provider_status": provider_raw,            # raw Alternate Messenger response for debugging
     }
 
 
 # ── Webhook background processor ──────────────────────────────────────────────
 
-def _process_dialer_webhook_bg(provider_name: str, payload: dict) -> None:
+async def _process_dialer_webhook_bg(provider_name: str, payload: dict) -> None:
     """
     Process a dialer webhook event in a FastAPI BackgroundTask.
 
@@ -346,15 +459,25 @@ def _process_dialer_webhook_bg(provider_name: str, payload: dict) -> None:
     the request can return 200 immediately — typically in <50ms — while
     this task runs the full handle_webhook() + db.commit() path.
 
-    RCM's webhook retry threshold is ~3-5s. The old synchronous path
+    Alternate Messenger's webhook retry threshold is ~3-5s. The old synchronous path
     took 1.4-2.3s, burning 50-75% of that budget. Offloading here stops
-    RCM from sending duplicate webhook events.
+    Alternate Messenger from sending duplicate webhook events.
     """
     from database import SessionLocal
     db = SessionLocal()
     try:
         result = dialer_service.handle_webhook(db, provider_name, payload)
         logger.info(f"[Dialer Webhook BG] Processed: {result}")
+        # RCA 2026-08-20: both provider accounts are actually configured
+        # against this generic endpoint in production (confirmed live —
+        # zero traffic ever hit /webhooks/aircall or /webhooks/messenger
+        # over a 7-day window), so this was the only real webhook path for
+        # either provider — and it never published to the SSE broker,
+        # leaving every dialer call dependent entirely on client-side
+        # polling (Aircall's 10s poll producing the reported 10-20s
+        # disposition-popup delay). _publish_call_status is a no-op if the
+        # result is missing user_id/call_id/status (e.g. an unmatched call).
+        await _publish_call_status(result)
     except Exception as e:
         logger.error(f"[Dialer Webhook BG] Unhandled error: {e}", exc_info=True)
     finally:
@@ -363,16 +486,16 @@ def _process_dialer_webhook_bg(provider_name: str, payload: dict) -> None:
 
 # ── Webhooks ─────────────────────────────────────────────────────────────────
 
-@router.post("/webhooks/dialer")
+@router.post("/webhooks/dialer", dependencies=[Depends(public_endpoint)])
 async def dialer_webhook(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
-    Receive webhook events from either dialer provider (Aircall or RCM).
-    No auth required — webhooks come from provider servers. Aircall and RCM
+    Receive webhook events from either dialer provider (Aircall or Alternate Messenger).
+    No auth required — webhooks come from provider servers. Aircall and Alternate Messenger
     are independent and can both be live at once (per-user overrides), so the
     provider is identified from the payload shape, not a single "active" setting.
 
     Returns 200 immediately — heavy processing runs in a BackgroundTask
-    to keep response time <50ms and prevent RCM retry storms.
+    to keep response time <50ms and prevent Alternate Messenger retry storms.
     """
     try:
         payload = await request.json()
@@ -380,27 +503,21 @@ async def dialer_webhook(request: Request, background_tasks: BackgroundTasks, db
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     config = dialer_service.get_dialer_config(db)
-    if not config.get("has_credentials") and not config.get("has_rcm_credentials"):
+    if not config.get("has_credentials") and not config.get("has_messenger_credentials"):
         logger.warning("[Dialer Webhook] Received webhook but no provider configured")
         return {"ok": True, "message": "No provider configured, event ignored"}
 
     # RCA 2026-07-10: routing used to trust the single global `dialer_provider`
-    # setting, so every RCM webhook was silently misrouted to the Aircall
+    # setting, so every Alternate Messenger webhook was silently misrouted to the Aircall
     # parser whenever that setting was "aircall" (and vice versa) — Aircall always
-    # sends {"event": ..., "data": {...}}, RCM never does.
+    # sends {"event": ..., "data": {...}}, Alternate Messenger never does.
     # ponytail: shape-sniffing for 2 known providers; if a 3rd is added, give each
     # provider an explicit signature check instead of one more branch here.
-    provider_name = "aircall" if "event" in payload and "data" in payload else "rcm"
+    provider_name = "aircall" if "event" in payload and "data" in payload else "messenger"
 
-    # Optional: Verify webhook token if configured (must run synchronously before returning)
-    webhook_token = config.get("webhook_token")
-    if webhook_token:
-        incoming_token = payload.get("token") or request.headers.get("X-Webhook-Token", "")
-        if incoming_token != webhook_token:
-            logger.warning("[Dialer Webhook] Invalid webhook token")
-            raise HTTPException(status_code=401, detail="Invalid webhook token")
+    _verify_dialer_webhook(db, request, payload, "dialer")  # before any processing
 
-    # Offload processing to background — return 200 immediately so RCM
+    # Offload processing to background — return 200 immediately so Alternate Messenger
     # receives a sub-50ms response and does not trigger webhook retries.
     background_tasks.add_task(_process_dialer_webhook_bg, provider_name, payload)
     return {"ok": True}
@@ -408,50 +525,61 @@ async def dialer_webhook(request: Request, background_tasks: BackgroundTasks, db
 
 # ── Provider-specific webhook endpoints (for dual-provider support) ──────────
 
-@router.post("/webhooks/aircall")
+async def _publish_call_status(result: dict):
+    """Fan out a handle_webhook() result to the SSE broker so the browser
+    gets it in real time (call status, plus v11.3.0's caller-ID fields).
+    Shared by both provider webhooks below — was Alternate Messenger-only until an
+    Aircall call never reached the browser at all (no caller-ID toast,
+    active-call status relying purely on polling)."""
+    _user_id = result.get("user_id")
+    _call_id = result.get("call_id")
+    _status  = result.get("status")
+    if _user_id and _call_id and _status:
+        await sse_broker.publish(_user_id, {
+            "type":         "CALL_STATUS",
+            "call_id":      _call_id,
+            "status":       _status,
+            "duration":     result.get("duration"),
+            "direction":    result.get("direction"),
+            "lead_name":    result.get("lead_name"),
+            "lead_company": result.get("lead_company"),
+            "ts":           __import__("time").time(),
+        })
+
+
+@router.post("/webhooks/aircall", dependencies=[Depends(public_endpoint)])
 async def aircall_webhook(request: Request, db: Session = Depends(get_db)):
     """Receive webhook events from Aircall — routes directly, no mismatch check."""
     try:
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    _verify_dialer_webhook(db, request, payload, "aircall")
     try:
         result = dialer_service.handle_webhook(db, "aircall", payload)
         logger.info(f"[Aircall Webhook] Processed: {result}")
+        await _publish_call_status(result)
         return result
     except Exception as e:
         logger.error(f"[Aircall Webhook] Error: {e}", exc_info=True)
         return {"ok": False, "error": str(e)}
 
 
-@router.post("/webhooks/rcm")
-async def rcm_webhook(request: Request, db: Session = Depends(get_db)):
-    """Receive webhook events from RCM Contact Center."""
+@router.post("/webhooks/messenger", dependencies=[Depends(public_endpoint)])
+async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
+    """Receive webhook events from Alternate Messenger Contact Center."""
     try:
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    _verify_dialer_webhook(db, request, payload, "messenger")
     try:
-        result = dialer_service.handle_webhook(db, "rcm", payload)
-        logger.info(f"[RCM Webhook] Processed: {result}")
-
-        # Phase 3: Fan-out call status to SSE broker
-        # The broker routes the event to the SDR who owns this call.
-        _user_id  = result.get("user_id")
-        _call_id  = result.get("call_id")
-        _status   = result.get("status")
-        if _user_id and _call_id and _status:
-            await sse_broker.publish(_user_id, {
-                "type":     "CALL_STATUS",
-                "call_id":  _call_id,
-                "status":   _status,
-                "duration": result.get("duration"),
-                "ts":       __import__("time").time(),
-            })
-
+        result = dialer_service.handle_webhook(db, "messenger", payload)
+        logger.info(f"[Alternate Messenger Webhook] Processed: {result}")
+        await _publish_call_status(result)
         return result
     except Exception as e:
-        logger.error(f"[RCM Webhook] Error: {e}", exc_info=True)
+        logger.error(f"[Alternate Messenger Webhook] Error: {e}", exc_info=True)
         return {"ok": False, "error": str(e)}
 
 
@@ -469,12 +597,18 @@ def dialer_status(user: dict = Depends(get_current_user), db: Session = Depends(
     provider = dialer_service.get_provider_for_user(db, user)
     # Read settings once for sender_id and per-SDR from_number
     settings = dialer_service._get_settings(db)
-    sender_id = getattr(settings, 'rcm_sender_id', '') or ''
     # Per-SDR from_number (set by the SDR in Settings → Dialer)
     import models as _m
     db_user = db.query(_m.User).filter(_m.User.id == user["sub"]).first()
-    from_number = (getattr(db_user, 'rcm_from_number', None) or '') if db_user else ''
+    from_number = (getattr(db_user, 'messenger_from_number', None) or '') if db_user else ''
     dialer_enabled = bool(getattr(db_user, 'dialer_enabled', False)) if db_user else False
+    # RCA 2026-08-25: the Message tab used one org-wide WhatsApp sender for
+    # every SDR — prefer the SDR's own assigned sender, same fallback shape
+    # as from_number above, falling back to the org-wide default.
+    sender_id = (
+        (getattr(db_user, 'messenger_whatsapp_sender_id', None) if db_user else None)
+        or getattr(settings, 'messenger_sender_id', '') or ''
+    )
     # V48: Aircall Everywhere org-wide kill switch — the React embed gates itself on this.
     aircall_everywhere_enabled = bool(getattr(settings, 'aircall_everywhere_enabled', False))
     if provider:
@@ -499,24 +633,39 @@ def dialer_status(user: dict = Depends(get_current_user), db: Session = Depends(
     }
 
 
-# ── RCM call action endpoints ─────────────────────────────────────────
+@router.post("/dialer/everywhere-login")
+def record_everywhere_login(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """RCA 2026-08-18: the org-wide aircall_everywhere_enabled flag has no idea
+    which SDRs actually adopted the embed vs. are still Desktop-app-only —
+    there was no server-side signal at all. Stamped by useAircallEverywhere's
+    onLogin (the SDK actually authenticated), not on mount/eligibility-check,
+    so this only fires on a real login, not just "the drawer rendered"."""
+    db_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
+    if db_user:
+        db_user.aircall_everywhere_last_login_at = datetime.now(timezone.utc)
+        db.commit()
+    return {"ok": True}
+
+
+# ── Alternate Messenger call action endpoints ─────────────────────────────────────────
 
 @router.post("/calls/{call_id}/action")
 def call_action(call_id: str, request_body: dict, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """
     Perform an in-call action (hold, mute, unmute, hangup).
-    Only works with RCM provider.
+    Only works with Alternate Messenger provider.
     """
     from models import DialerCall
     dc = db.query(DialerCall).filter(DialerCall.id == call_id).first()
     if not dc:
         raise HTTPException(status_code=404, detail="Call not found")
-    if dc.provider != "rcm":
-        raise HTTPException(status_code=400, detail="Call actions only supported for RCM calls")
+    _authorize_dialer_call(db, user, dc, own_only=True)
+    if dc.provider != "messenger":
+        raise HTTPException(status_code=400, detail="Call actions only supported for Alternate Messenger calls")
 
     provider = dialer_service.get_provider_for_user(db, user)
-    if not provider or provider.provider_name != "rcm":
-        raise HTTPException(status_code=400, detail="RCM provider not configured for your account")
+    if not provider or provider.provider_name != "messenger":
+        raise HTTPException(status_code=400, detail="Alternate Messenger provider not configured for your account")
 
     action = request_body.get("action", "")
     room_name = request_body.get("room_name")
@@ -530,7 +679,7 @@ def call_action(call_id: str, request_body: dict, user: dict = Depends(get_curre
 @router.post("/calls/disconnect")
 def disconnect_call(request_body: dict, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """
-    Disconnect / end an active RCM call.
+    Disconnect / end an active Alternate Messenger call.
     """
     call_id = request_body.get("call_id")
     phone_number = request_body.get("phone_number")
@@ -538,8 +687,8 @@ def disconnect_call(request_body: dict, user: dict = Depends(get_current_user), 
         raise HTTPException(status_code=400, detail="Provide call_id or phone_number")
 
     provider = dialer_service.get_provider_for_user(db, user)
-    if not provider or provider.provider_name != "rcm":
-        raise HTTPException(status_code=400, detail="Disconnect only supported for RCM provider")
+    if not provider or provider.provider_name != "messenger":
+        raise HTTPException(status_code=400, detail="Disconnect only supported for Alternate Messenger provider")
 
     # If we have a CRM call_id, resolve the provider_call_id
     provider_call_id = call_id
@@ -547,16 +696,16 @@ def disconnect_call(request_body: dict, user: dict = Depends(get_current_user), 
         from models import DialerCall
         dc = db.query(DialerCall).filter(DialerCall.id == call_id).first()
         if dc:
+            _authorize_dialer_call(db, user, dc, own_only=True)
             provider_call_id = dc.provider_call_id
 
     result = provider.disconnect_call(call_id=provider_call_id, phone_number=phone_number)
 
     # Immediately mark the call CALL_ENDED in DB so the SDR can place a new call
-    # without being blocked by EC-16. The RCM CALL_ENDED webhook arrives 3-6s
+    # without being blocked by EC-16. The Alternate Messenger CALL_ENDED webhook arrives 3-6s
     # later and is idempotent (no-op if status already CALL_ENDED).
     if call_id:
         from models import DialerCall
-        from datetime import datetime, timezone
         dc_upd = db.query(DialerCall).filter(DialerCall.id == call_id).first()
         if dc_upd and dc_upd.status not in ("CALL_ENDED", "CALL_FAILED"):
             dc_upd.status   = "CALL_ENDED"
@@ -597,7 +746,7 @@ def get_my_active_call(user: dict = Depends(get_current_user), db: Session = Dep
     if not active_call:
         return {"active": False}
 
-    # Resolve call_mode from raw_payload (RCM stores it there) or fallback
+    # Resolve call_mode from raw_payload (Alternate Messenger stores it there) or fallback
     call_mode = "browser"
     if active_call.raw_payload:
         try:
@@ -628,7 +777,7 @@ def get_my_active_call(user: dict = Depends(get_current_user), db: Session = Dep
 
 # ── Force-end (SDR escape hatch + beforeunload sendBeacon target) ─────────────
 
-@router.post("/calls/force-end")
+@router.post("/calls/force-end", dependencies=[Depends(authenticates_itself)])
 def force_end_call(request: Request, body: dict, db: Session = Depends(get_db)):
     """
     Force-end a call and immediately mark it CALL_ENDED in DB.
@@ -645,7 +794,7 @@ def force_end_call(request: Request, body: dict, db: Session = Depends(get_db)):
     - Any future admin force-end flows
     """
     from datetime import datetime, timezone as tz
-    from auth import decode_jwt as _decode_jwt
+    from auth import authenticate as _authenticate
 
     # ── Auth: accept header token OR body _token (sendBeacon workaround) ───
     call_id = body.get("call_id")
@@ -657,14 +806,14 @@ def force_end_call(request: Request, body: dict, db: Session = Depends(get_db)):
     user_payload = None
     if auth_header.startswith("Bearer "):
         try:
-            user_payload = _decode_jwt(auth_header[7:])
+            user_payload = _authenticate(auth_header[7:], db)
         except Exception:
             pass
 
     # Fallback: token embedded in body (_token field — sendBeacon path)
     if not user_payload and body.get("_token"):
         try:
-            user_payload = _decode_jwt(body["_token"])
+            user_payload = _authenticate(body["_token"], db)
         except Exception:
             pass
 
@@ -696,7 +845,7 @@ def force_end_call(request: Request, body: dict, db: Session = Depends(get_db)):
         except Exception as e:
             logger.warning(
                 f"[DialerRoutes] force-end: provider.disconnect_call failed "
-                f"(call may remain active on RCM servers): {e}"
+                f"(call may remain active on Alternate Messenger servers): {e}"
             )
 
     # ── Always mark DB as ended ──────────────────────────────────────────────
@@ -717,12 +866,13 @@ def force_end_call(request: Request, body: dict, db: Session = Depends(get_db)):
 def get_recording_url(call_id: str, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """
     Get a fresh pre-signed recording URL for a call.
-    Works with both Aircall and RCM providers.
+    Works with both Aircall and Alternate Messenger providers.
     """
     from models import DialerCall
     dc = db.query(DialerCall).filter(DialerCall.id == call_id).first()
     if not dc:
         raise HTTPException(status_code=404, detail="Call not found")
+    _authorize_dialer_call(db, user, dc)
     if not dc.provider_call_id:
         raise HTTPException(status_code=400, detail="No provider call ID")
 
@@ -823,7 +973,11 @@ def get_skip_summary(
     rows = db.query(models.DialerQueueStatus).filter(
         models.DialerQueueStatus.status.in_(["skipped", "skipped_dnc"]),
         models.DialerQueueStatus.updated_at >= since,
-    ).all()
+    )
+    if user.get("role") == "Pod Admin":     # v13.12.1: their own pod's reps only
+        rows = rows.filter(models.DialerQueueStatus.user_id.in_(
+            db.query(models.User.id).filter(models.User.pod_id == (access_db.pod_of(user)))))
+    rows = rows.all()
 
     by_reason, by_rep_count = {}, {}
     dnc_count = 0
@@ -874,7 +1028,7 @@ def clear_queue_status(
 # ── Debug: Test Aircall API directly ─────────────────────────────────────────
 
 @router.get("/dialer/debug/calls")
-def debug_list_aircall_calls(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def debug_list_aircall_calls(user: dict = Depends(require_super_admin), db: Session = Depends(get_db)):
     """DEBUG: List recent calls from Aircall API + our DialerCall records."""
     provider = dialer_service.get_active_provider(db)
     if not provider:
@@ -922,7 +1076,7 @@ def debug_list_aircall_calls(user: dict = Depends(get_current_user), db: Session
 
 
 @router.get("/dialer/debug/call/{call_id}")
-def debug_fetch_aircall_call(call_id: str, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def debug_fetch_aircall_call(call_id: str, user: dict = Depends(require_super_admin), db: Session = Depends(get_db)):
     """DEBUG: Fetch a specific call from Aircall API — returns raw data."""
     provider = dialer_service.get_active_provider(db)
     if not provider:
@@ -1011,7 +1165,8 @@ def _require_super_admin(user: dict):
 def get_config(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get current dialer configuration (no secrets exposed)."""
     _require_super_admin(user)
-    return dialer_service.get_dialer_config(db)
+    config = dialer_service.get_dialer_config(db)
+    return {**config, "webhook_token": "••••" if config.get("webhook_token") else ""}
 
 
 @router.patch("/dialer/config")
@@ -1038,7 +1193,7 @@ def get_my_phone(user: dict = Depends(get_current_user), db: Session = Depends(g
     """
     import models
     db_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
-    number = (db_user.rcm_from_number or "") if db_user else ""
+    number = (db_user.messenger_from_number or "") if db_user else ""
     return {
         "from_number": number,    # canonical — matches /api/dialer/status EC-8 field
         "phone_number": number,   # backwards-compat alias
@@ -1071,7 +1226,7 @@ def set_my_phone(body: dict, user: dict = Depends(get_current_user), db: Session
                        "00-prefix (e.g. 00919240915643), or a 10+ digit number."
             )
 
-    db_user.rcm_from_number = phone
+    db_user.messenger_from_number = phone
     db.commit()
     logger.info(f"[Dialer] User {user.get('email')} set caller ID to {phone or '(cleared)'}")
     return {"phone_number": phone or "", "message": "Phone number updated"}
@@ -1079,18 +1234,34 @@ def set_my_phone(body: dict, user: dict = Depends(get_current_user), db: Session
 
 @router.patch("/dialer/toggle")
 def toggle_my_dialer(body: dict, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Allow any authenticated user (SDR/Admin/etc) to toggle their own dialer_enabled status."""
+    """Let a user pause their own dialer. Turning it back ON is admin-only.
+
+    v11.10.0: this accepted either value from any authenticated caller, so an
+    SDR whose dialer an admin had deliberately switched off could re-grant it
+    to themselves with one request — and, because messaging rode on
+    dialer_enabled, grant themselves WhatsApp along with it. Switching your own
+    dialer off is a legitimate self-service action (SDR Settings → Dialer uses
+    it to stop taking calls), so that stays; re-enabling is a grant, and grants
+    belong to admins.
+    """
     import models
     db_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     enabled = body.get("dialer_enabled")
     if enabled is None:
         raise HTTPException(status_code=400, detail="Missing dialer_enabled in body")
     if not isinstance(enabled, bool):
         raise HTTPException(status_code=400, detail="dialer_enabled must be a boolean")
-        
+
+    if enabled and not db_user.dialer_enabled and user.get("role") not in ("Super Admin", "Admin", "Pod Admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only an admin can enable dialer access. Ask your admin to turn it on "
+                   "in Settings → Dialer.",
+        )
+
     db_user.dialer_enabled = enabled
     db.commit()
     logger.info(f"[Dialer] User {user.get('email')} toggled dialer_enabled to {db_user.dialer_enabled}")
@@ -1100,42 +1271,42 @@ def toggle_my_dialer(body: dict, user: dict = Depends(get_current_user), db: Ses
 @router.get("/dialer/my-numbers")
 def get_my_numbers(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """
-    Return distinct outgoing numbers this SDR's RCM sub-agent has used.
+    Return distinct outgoing numbers this SDR's Alternate Messenger sub-agent has used.
 
-    Reads the SDR's rcm_user_id (set by Admin), authenticates to
-    RCM as that sub-agent, and extracts unique outgoing_number values
+    Reads the SDR's messenger_user_id (set by Admin), authenticates to
+    Alternate Messenger as that sub-agent, and extracts unique outgoing_number values
     from call history. These are the only numbers valid for call initiation.
     """
     import models
-    from rcm_provider import RCMDialerProvider
+    from messaging_provider import AlternateDialerProvider
     from dialer_service import get_dialer_settings
 
     db_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    sub_user_id = (getattr(db_user, "rcm_user_id", None) or "").strip()
+    sub_user_id = (getattr(db_user, "messenger_user_id", None) or "").strip()
     if not sub_user_id:
         return {
             "numbers": [],
             "error": (
-                "RCM Agent ID not configured for your account. "
+                "Alternate Messenger Agent ID not configured for your account. "
                 "Ask a Super Admin to set it in the Admin panel."
             ),
         }
 
     settings = get_dialer_settings(db)
-    api_key  = getattr(settings, "rcm_api_key", None) or ""
-    base_url = getattr(settings, "rcm_base_url", None) or "https://app.bercm.com"
+    api_key  = getattr(settings, "messenger_api_key", None) or ""
+    base_url = getattr(settings, "messenger_base_url", None) or "https://app.alternatecrm.com"
 
     if not api_key:
         return {
             "numbers": [],
-            "error": "RCM API key not configured. Set it in Settings → Dialer.",
+            "error": "Alternate Messenger API key not configured. Set it in Settings → Dialer.",
         }
 
     try:
-        provider = RCMDialerProvider(
+        provider = AlternateDialerProvider(
             base_url=base_url,
             api_key=api_key,
             user_id=sub_user_id,
@@ -1147,7 +1318,7 @@ def get_my_numbers(user: dict = Depends(get_current_user), db: Session = Depends
         return {
             "numbers": [],
             "error": (
-                "Could not reach RCM API. "
+                "Could not reach Alternate Messenger API. "
                 "Check the API key in Settings or verify the Agent ID is correct."
             ),
         }
@@ -1156,8 +1327,8 @@ def get_my_numbers(user: dict = Depends(get_current_user), db: Session = Depends
         return {
             "numbers": [],
             "warning": (
-                "No call history found for your RCM account. "
-                "Make at least one test call via the RCM dashboard first, "
+                "No call history found for your Alternate Messenger account. "
+                "Make at least one test call via the Alternate Messenger dashboard first, "
                 "then reload to see your valid caller IDs."
             ),
         }
@@ -1168,13 +1339,13 @@ def get_my_numbers(user: dict = Depends(get_current_user), db: Session = Depends
 
 @router.post("/dialer/test")
 def test_connection(
-    provider: Optional[str] = Query(None, description="Provider key: aircall | rcm_dialer | rcm_messaging"),
+    provider: Optional[str] = Query(None, description="Provider key: aircall | messenger_dialer | messaging_provider"),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Test a provider's connection.
 
-    Optionally pass ?provider=aircall|rcm_dialer|rcm_messaging to
+    Optionally pass ?provider=aircall|messenger_dialer|messaging_provider to
     test a specific provider regardless of which one is currently active.
     Omitting the param falls back to testing the active provider (backward-compatible).
     """
@@ -1217,6 +1388,7 @@ def update_call_outcome(call_id: str, body: dict, user: dict = Depends(get_curre
     call = db.query(DialerCall).filter(DialerCall.id == call_id).first()
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
+    _authorize_dialer_call(db, user, call, edit=True)
 
     outcome = body.get("outcome")
     notes = body.get("notes")
@@ -1252,7 +1424,6 @@ def trigger_aircall_sync(
     if user.get("role") not in ("Super Admin",):
         raise HTTPException(status_code=403, detail="Super Admin access required")
 
-    from datetime import datetime, timezone, timedelta
     body = body or {}
 
     from_dt = None
@@ -1336,6 +1507,258 @@ def trigger_klenty_sync(
     result = _klenty_nightly_sync(lookback_days=lookback_days)
     return result or {"ran": False, "reason": "Unknown error — check server logs"}
 
+
+# ── Admin: Instantly.ai Manual Sync ─────────────────────────────────────────
+
+@router.post("/admin/instantly/sync")
+def trigger_instantly_sync(
+    user: dict = Depends(get_current_user),
+):
+    """
+    Super Admin only. Runs a one-off Instantly.ai catch-up synchronously —
+    intentionally bypasses the leader-election gate for a manual trigger,
+    same justified exception Klenty's manual endpoint already has.
+    """
+    if user.get("role") not in ("Super Admin",):
+        raise HTTPException(status_code=403, detail="Super Admin access required")
+
+    from scheduled_jobs import _instantly_sync_job
+
+    logger.info(f"[Admin] Instantly sync triggered by {user.get('email')}")
+    result = _instantly_sync_job()
+    return result or {"ran": False, "reason": "Unknown error — check server logs"}
+
+
+_INSTANTLY_ANALYTICS_CACHE_TTL = 300  # 5 min — live/on-demand per the plan, not stored, but cheap to debounce
+
+
+@router.get("/admin/instantly/analytics")
+def get_instantly_campaign_analytics(
+    campaign_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Per-campaign-step engagement analytics (sent/opened/clicked/replied per
+    sequence step) — the exact Instantly.ai endpoint linked when this
+    integration was scoped. Super Admin only, same gate as the rest of this
+    integration's admin surface. Cached briefly since it's a live call to a
+    third-party API, not synced/stored data.
+    """
+    _require_super_admin(user)
+
+    settings = dialer_service._get_settings(db)
+    if not settings.instantly_enabled or not settings.instantly_api_key:
+        raise HTTPException(status_code=400, detail="Instantly sync is not configured")
+
+    cache_key = f"{campaign_id or 'all'}:{start_date or ''}:{end_date or ''}"
+    cached = get_cached("instantly_analytics", cache_key)
+    if cached is not None:
+        return cached
+
+    from instantly_provider import InstantlyProvider, InstantlyPlanTierError
+
+    provider = InstantlyProvider(settings.instantly_api_key)
+    try:
+        data = provider.get_campaign_step_analytics(
+            campaign_id=campaign_id, start_date=start_date, end_date=end_date
+        )
+    except InstantlyPlanTierError:
+        raise HTTPException(
+            status_code=402,
+            detail="Instantly workspace plan does not include campaign analytics access",
+        )
+    except Exception as e:
+        logger.error(f"[Instantly] Campaign analytics fetch failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach Instantly — see server logs for details")
+
+    set_cached("instantly_analytics", cache_key, data, ttl=_INSTANTLY_ANALYTICS_CACHE_TTL)
+    return data
+
+
+def _instantly_accounts(db) -> list:
+    """The workspace's Instantly mailboxes — email, domain and daily_limit —
+    for the sending-account pickers. Raises HTTPException with a readable
+    message when Instantly isn't configured or can't be reached."""
+    settings = dialer_service._get_settings(db)
+    if not settings.instantly_enabled or not settings.instantly_api_key:
+        raise HTTPException(status_code=400, detail="Instantly sync is not configured")
+
+    from instantly_provider import InstantlyProvider, InstantlyPlanTierError
+
+    provider = InstantlyProvider(settings.instantly_api_key)
+    try:
+        return [
+            {"email": a.get("email"), "domain": (a.get("email") or "").rpartition("@")[2].lower(),
+             "daily_limit": a.get("daily_limit")}
+            for a in provider.list_accounts()
+        ]
+    except InstantlyPlanTierError:
+        raise HTTPException(
+            status_code=402,
+            detail="Instantly workspace plan does not include account access",
+        )
+    except Exception as e:
+        logger.error(f"[Instantly] Account list fetch failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach Instantly — see server logs for details")
+
+
+@router.get("/admin/instantly/accounts")
+def get_instantly_accounts(
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Every workspace mailbox, for the Super Admin's org-wide "Choose
+    sending accounts" picker (Control Center → Integrations)."""
+    _require_super_admin(user)
+    return _instantly_accounts(db)
+
+
+@router.get("/instantly/sending-accounts")
+def get_enabled_instantly_accounts(
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """The mailboxes a cadence's Instantly step may send from: only those a
+    Super Admin enabled in Control Center (all of them if none are picked).
+    Feeds the step's "Send from" picker; the engine enforces the same rule."""
+    import json
+    accounts = _instantly_accounts(db)
+    enabled = dialer_service._get_settings(db).instantly_sending_accounts
+    if enabled:
+        allowed = set(json.loads(enabled))
+        accounts = [a for a in accounts if a["email"] in allowed]
+    return accounts
+
+
+# ── Admin: Instantly.ai real-time webhook register/disable (plan section 4/5) ──
+
+_INSTANTLY_WEBHOOK_EVENTS = [
+    "email_sent", "email_opened", "email_link_clicked", "reply_received",
+    "lead_interested", "lead_meeting_booked", "campaign_completed",
+    "lead_unsubscribed", "email_bounced",
+]
+
+
+def _stored_webhook_ids(settings) -> list:
+    """settings.instantly_webhook_id holds a JSON array of Instantly webhook
+    object ids (one per event type — see register_instantly_webhook's
+    docstring). Tolerates a bare id from a hypothetical older single-id
+    value; empty/unset -> []."""
+    if not settings.instantly_webhook_id:
+        return []
+    try:
+        ids = json.loads(settings.instantly_webhook_id)
+        return ids if isinstance(ids, list) else [ids]
+    except (ValueError, TypeError):
+        return [settings.instantly_webhook_id]
+
+
+@router.post("/admin/instantly/webhook/register")
+def register_instantly_webhook(
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Super Admin only. Registers (or verifies) the real-time Instantly
+    webhook pointed at this deploy's own public URL. Idempotent: if
+    instantly_webhook_id already names webhook objects that still show up in
+    Instantly's own list_webhooks(), this is a no-op rather than minting a
+    duplicate subscription.
+
+    create_webhook() registers ONE Instantly webhook object per event type
+    (confirmed in Phase 1 — event_type is singular, no multi-event
+    subscription) and returns one id per object, so instantly_webhook_id
+    stores a JSON array of ids, not a single id (the model column name is a
+    carryover from an earlier single-id assumption — flagged in this
+    batch's report as a deviation, not a silent one).
+    """
+    _require_super_admin(user)
+
+    from routes._admin_helpers import _get_or_create_sync_settings
+    from instantly_provider import InstantlyProvider
+    from config import backend_base_url
+    import secrets
+
+    settings = _get_or_create_sync_settings(db)
+    if not settings.instantly_api_key:
+        raise HTTPException(status_code=400, detail="Instantly is not configured (no API key in Sync Settings)")
+
+    provider = InstantlyProvider(api_key=settings.instantly_api_key)
+
+    stored_ids = _stored_webhook_ids(settings)
+    if stored_ids:
+        try:
+            existing = provider.list_webhooks()
+            existing_items = existing.get("items") if isinstance(existing, dict) else existing
+            existing_ids = {str(w.get("id")) for w in (existing_items or []) if isinstance(w, dict)}
+            if stored_ids and all(str(i) in existing_ids for i in stored_ids):
+                return {"success": True, "already_registered": True}
+        except Exception as e:
+            logger.warning(f"[Instantly] list_webhooks check failed, proceeding to re-register: {e}")
+
+    base_url = backend_base_url()
+    if not base_url:
+        raise HTTPException(status_code=400, detail="This deploy has no public URL configured (BACKEND_URL)")
+
+    secret_generated = False
+    if not settings.instantly_webhook_secret:
+        # Server-generated, never user-supplied — same convention as the
+        # dialer webhook token and public API key below.
+        settings.instantly_webhook_secret = secrets.token_urlsafe(32)
+        secret_generated = True
+
+    try:
+        created = provider.create_webhook(
+            target_url=f"{base_url}/webhooks/instantly",
+            event_types=_INSTANTLY_WEBHOOK_EVENTS,
+            secret_header_value=settings.instantly_webhook_secret,
+        )
+    except Exception as e:
+        logger.error(f"[Instantly] create_webhook failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not register webhook with Instantly — see server logs for details")
+
+    items = created.get("items") if isinstance(created, dict) and "items" in created else [created]
+    webhook_ids = [w.get("id") for w in items if isinstance(w, dict) and w.get("id")]
+    settings.instantly_webhook_id = json.dumps(webhook_ids)
+    db.commit()
+
+    response = {"success": True, "webhook_ids": webhook_ids}
+    if secret_generated:
+        # One-time reveal, same convention as /public-api-key/generate above
+        # — never returned again in any response after this one.
+        response["webhook_secret"] = settings.instantly_webhook_secret
+    return response
+
+
+@router.post("/admin/instantly/webhook/disable")
+def disable_instantly_webhook(
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Super Admin only. Disables the real-time Instantly webhook: deletes
+    every registered webhook object and clears the stored id(s)."""
+    _require_super_admin(user)
+
+    from routes._admin_helpers import _get_or_create_sync_settings
+    from instantly_provider import InstantlyProvider
+
+    settings = _get_or_create_sync_settings(db)
+    ids = _stored_webhook_ids(settings)
+    if ids and settings.instantly_api_key:
+        provider = InstantlyProvider(api_key=settings.instantly_api_key)
+        for webhook_id in ids:
+            try:
+                provider.delete_webhook(webhook_id)
+            except Exception as e:
+                logger.warning(f"[Instantly] delete_webhook({webhook_id}) failed: {e}")
+    settings.instantly_webhook_id = None
+    db.commit()
+    return {"success": True}
+
+
 # ── V39: Call outcome status polling (used by frontend to detect Aircall auto-sync) ──
 @router.get("/dialer/call-outcome-status")
 def get_call_outcome_status(
@@ -1380,7 +1803,7 @@ def dialer_playground_config(
 ):
     """
     GET /api/dialer/playground
-    Admin-only. Returns the saved global RCM credentials (unmasked)
+    Admin-only. Returns the saved global Alternate Messenger credentials (unmasked)
     so the Playground form can be pre-populated. Admins can then override
     any field and test the widget without touching SDR settings.
     """
@@ -1393,19 +1816,19 @@ def dialer_playground_config(
 
     settings = dialer_service._get_settings(db)
     provider  = (getattr(settings, "dialer_provider", None) or "none").lower()
-    api_base  = getattr(settings, "rcm_base_url", None) or "https://api.bercm.com"
+    api_base  = getattr(settings, "messenger_base_url", None) or "https://api.alternatecrm.com"
 
     return {
         "provider":        provider,
         "has_credentials": bool(
-            getattr(settings, "rcm_api_key", None) and
-            getattr(settings, "rcm_user_id", None)
+            getattr(settings, "messenger_api_key", None) and
+            getattr(settings, "messenger_user_id", None)
         ),
         # Actual values for form pre-fill — admin-only route
-        "api_key":         getattr(settings, "rcm_api_key",    "") or "",
-        "user_id":         getattr(settings, "rcm_user_id",    "") or "",
-        "from_number":     getattr(settings, "rcm_from_number","") or "",
-        "sender_id":       getattr(settings, "rcm_sender_id",  "") or "",
+        "api_key":         getattr(settings, "messenger_api_key",    "") or "",
+        "user_id":         getattr(settings, "messenger_user_id",    "") or "",
+        "from_number":     getattr(settings, "messenger_from_number","") or "",
+        "sender_id":       getattr(settings, "messenger_sender_id",  "") or "",
         "api_base":        api_base,
         "admin_name":      user.get("name", "Admin"),
     }
@@ -1419,7 +1842,7 @@ def dialer_playground_call_status(
 ):
     """
     GET /api/dialer/playground/call-status?call_id=<provider_call_id>
-    Admin-only. Polls RCM directly for the status of a playground
+    Admin-only. Polls Alternate Messenger directly for the status of a playground
     test call by provider_call_id. Returns a simplified status dict.
     Falls back gracefully — never raises (poll loops must be resilient).
     """
@@ -1428,7 +1851,7 @@ def dialer_playground_call_status(
         raise HTTPException(status_code=403, detail="Playground is admin-only.")
 
     # Look up the DialerCall by provider_call_id so we can get status
-    # from our DB (updated via webhooks) without extra RCM API calls.
+    # from our DB (updated via webhooks) without extra Alternate Messenger API calls.
     call = db.query(models.DialerCall).filter(
         models.DialerCall.provider_call_id == call_id
     ).order_by(models.DialerCall.created_at.desc()).first()
@@ -1452,7 +1875,7 @@ def dialer_playground_test_call(
 ):
     """
     POST /api/dialer/playground/test-call
-    Admin-only. Initiates a real RCM call using credentials supplied
+    Admin-only. Initiates a real Alternate Messenger call using credentials supplied
     directly in the request body — completely independent of the admin's own
     CRM dialer profile. No DialerCall record is written (test only).
 
@@ -1466,7 +1889,7 @@ def dialer_playground_test_call(
     api_key    = (body.get("api_key")     or "").strip()
     cv_user_id = (body.get("user_id")     or "").strip()
     from_num   = (body.get("from_number") or "").strip()
-    api_base   = (body.get("api_base")    or "https://api.bercm.com").strip().rstrip("/")
+    api_base   = (body.get("api_base")    or "https://api.alternatecrm.com").strip().rstrip("/")
     call_mode  = (body.get("call_mode")   or "browser").strip()
 
     if not phone:
@@ -1476,12 +1899,12 @@ def dialer_playground_test_call(
     if call_mode == "bridge" and not from_num:
         raise HTTPException(
             status_code=422,
-            detail="from_number is required for bridge mode. Enter the DID exactly as shown in your RCM account (e.g. '00919240915643').",
+            detail="from_number is required for bridge mode. Enter the DID exactly as shown in your Alternate Messenger account (e.g. '00919240915643').",
         )
 
     try:
-        from rcm_provider import RCMProvider
-        provider = RCMProvider(
+        from messaging_provider import AlternateMessenger
+        provider = AlternateMessenger(
             base_url=api_base,
             api_key=api_key,
             user_id=cv_user_id,
@@ -1490,7 +1913,7 @@ def dialer_playground_test_call(
         use_agent_phone = (call_mode == "bridge")
         result = provider.initiate_call(
             phone_number=phone,
-            user_email=user.get("email", "playground@rcm"),
+            user_email=user.get("email", "playground@alternatecrm"),
             lead_id="playground-test",
             use_agent_phone=use_agent_phone,
         )
@@ -1499,7 +1922,7 @@ def dialer_playground_test_call(
         raise HTTPException(status_code=502, detail=str(exc))
 
     if not result.success:
-        raise HTTPException(status_code=422, detail=result.error or "RCM call failed")
+        raise HTTPException(status_code=422, detail=result.error or "Alternate Messenger call failed")
 
     return {
         "success":       True,

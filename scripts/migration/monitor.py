@@ -8,7 +8,7 @@ Usage:
 import sys
 from sqlalchemy import create_engine, text
 
-DB_URL = "postgresql://rcm_db_prod_user:Ut07ADTDCQY1tR9lOWxyVPS8UQyaB1ZC@dpg-d6ncblh5pdvs73aacnhg-a.ohio-postgres.render.com/rcm_db_prod"
+DB_URL = "postgresql://messenger_db_prod_user:Ut07ADTDCQY1tR9lOWxyVPS8UQyaB1ZC@dpg-d6ncblh5pdvs73aacnhg-a.ohio-postgres.render.com/messenger_db_prod"
 
 def main():
     engine = create_engine(DB_URL)

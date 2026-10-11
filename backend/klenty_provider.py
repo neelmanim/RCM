@@ -4,8 +4,8 @@ DialerProvider implementation for Klenty's call-completion GET API.
 
 This is a temporary bridging integration (see docs/RELEASES.md) — SDRs
 currently place some calls through Klenty (using an Aircall-owned number)
-that never reach Aircall's own call log or RCM. Once SDRs move fully
-onto RCM's own dialing, this provider goes away.
+that never reach Aircall's own call log or Alternate CRM. Once SDRs move fully
+onto Alternate CRM's own dialing, this provider goes away.
 
 Klenty is pull-only (no webhooks) and per-user (one API call per SDR,
 keyed by their Klenty username — no bulk "all calls" endpoint exists).
@@ -61,7 +61,7 @@ class KlentyDialerProvider(DialerProvider):
             # Cloudflare (in front of app.klenty.com) blocks the default
             # "Python-urllib/3.x" User-Agent outright (error 1010) — a normal
             # browser-like UA is required even for a legitimate API key.
-            "User-Agent": "Mozilla/5.0 (compatible; RCMCRM/1.0)",
+            "User-Agent": "Mozilla/5.0 (compatible; Alternate CRMCRM/1.0)",
         }
 
         for attempt in range(retries):
@@ -111,7 +111,7 @@ class KlentyDialerProvider(DialerProvider):
         return []
 
     def get_numbers(self) -> list[dict]:
-        # Not applicable — Klenty has no RCM-initiated outbound path.
+        # Not applicable — Klenty has no Alternate CRM-initiated outbound path.
         return []
 
     def handle_webhook(self, payload: dict) -> Optional[NormalizedCallEvent]:

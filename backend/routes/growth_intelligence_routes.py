@@ -17,12 +17,14 @@ import logging
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, false
 
+import access_db
 import models
 from models import TERMINAL_STATUSES, ACTIVE_STATUSES
-from database import get_db
+from database import get_db, get_ai_db
 from auth import get_current_user
+from services.smart_analytics import _resolve_groq_model
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +63,15 @@ def _compute_metrics(db: Session, user: dict) -> dict:
     if role in ("SDR", "AE"):
         base = base.join(models.Lead.assigned_users).filter(models.User.id == user_id)
     elif role == "Pod Admin":
-        admin_user = db.query(models.User).filter(models.User.id == user_id).first()
-        if admin_user and admin_user.pod_id:
-            pod_sdr_ids = [u.id for u in db.query(models.User).filter(
-                models.User.pod_id == admin_user.pod_id
-            ).all()]
-            base = base.join(models.Lead.assigned_users).filter(models.User.id.in_(pod_sdr_ids))
+        pod = access_db.pod_of(user)          # resolved per request; a pod-less admin sees no leads
+        pod_sdr_ids = [u.id for u in db.query(models.User).filter(models.User.pod_id == pod).all()]
+        base = base.join(models.Lead.assigned_users).filter(models.User.id.in_(pod_sdr_ids))
+    elif role == "CSM":
+        # CSM doesn't own Leads (their unit is Account, see csm_portal_routes.py)
+        # — falling through to the unscoped org-wide query below would leak
+        # every rep's pipeline to a CSM. No CSM-appropriate metric exists here
+        # yet, so scope to nothing rather than showing lead data they don't own.
+        base = base.filter(false())
 
     now = datetime.now(timezone.utc)
     thirty_days_ago = now - timedelta(days=30)
@@ -116,12 +121,12 @@ def _compute_metrics(db: Session, user: dict) -> dict:
     customer_declined = status_counts.get("Customer Declined", 0)
     unreachable = status_counts.get("Unreachable", 0)
 
-    # Call stats (30 days) — dialer_calls (Aircall/Klenty/RCM) + manual call_logs.
+    # Call stats (30 days) — dialer_calls (Aircall/Klenty/Alternate CRM) + manual call_logs.
     # Previously CallLog-only and checked outcome against ["connected", "meeting_booked",
     # "interested", "callback"] — values nothing in the system ever writes (real outcomes
     # are Title Case, e.g. "Call Back Later", "Meeting Scheduled"), so this always read 0%.
-    from routes.analytics_routes import CONNECT_OUTCOMES
-    conn_outcomes = list(CONNECT_OUTCOMES)
+    from routes._admin_helpers import get_conversation_min_seconds
+    conversation_min_seconds = get_conversation_min_seconds(db)
 
     cl_base = db.query(models.CallLog).filter(models.CallLog.called_at >= thirty_days_ago)
     dc_base = db.query(models.DialerCall).filter(
@@ -134,8 +139,8 @@ def _compute_metrics(db: Session, user: dict) -> dict:
 
     total_calls_30d = cl_base.count() + dc_base.count()
     connected_calls_30d = (
-        cl_base.filter(models.CallLog.outcome.in_(conn_outcomes)).count()
-        + dc_base.filter(models.dialer_call_connected(conn_outcomes)).count()
+        cl_base.filter(models.call_log_is_conversation()).count()
+        + dc_base.filter(models.dialer_call_connected(conversation_min_seconds)).count()
     )
     connect_rate = round((connected_calls_30d / total_calls_30d * 100), 1) if total_calls_30d > 0 else 0
 
@@ -169,7 +174,13 @@ def _get_llm_config(db: Session) -> dict:
     try:
         settings = _get_or_create_sync_settings(db)
         api_key = (settings.llm_api_key if hasattr(settings, 'llm_api_key') else None) or os.getenv("GROQ_API_KEY", "")
-        model = (settings.llm_model if hasattr(settings, 'llm_model') else None) or "gemma2-9b-it"
+        # RCA 2026-08-20: this used to trust settings.llm_model directly,
+        # same as ai_research_routes.py -- a deprecated model id silently
+        # broke every growth-intelligence call (logged as "Groq API returned
+        # 404 for growth intelligence"), falling back to canned insights with
+        # no visible error. _resolve_groq_model revalidates against Groq's
+        # live model list and self-heals.
+        model = _resolve_groq_model(api_key, db) if api_key else "gemma2-9b-it"
     except Exception:
         api_key = os.getenv("GROQ_API_KEY", "")
         model = "gemma2-9b-it"
@@ -251,7 +262,15 @@ IMPORTANT: Return ONLY the JSON object, no markdown, no explanation."""
             content = content[:-3]
         content = content.strip()
 
-        return json.loads(content)
+        parsed = json.loads(content)
+        # RCA 2026-08-20: json.loads() accepts a bare scalar ("3.14", "null")
+        # as valid JSON -- a model that returned just a number used to embed
+        # that float straight into the response's "ai" field instead of the
+        # expected {insights, headline, health_score} object.
+        if not isinstance(parsed, dict):
+            logger.warning(f"Groq returned non-object JSON for growth intelligence: {content[:200]}")
+            return _fallback_insights(metrics)
+        return parsed
 
     except Exception as e:
         logger.warning(f"AI insight generation failed: {e}")
@@ -323,7 +342,7 @@ def _fallback_insights(metrics: dict) -> dict:
 @router.get("/growth-intelligence")
 async def get_growth_intelligence(
     user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_ai_db),
 ):
     """
     Returns computed pipeline metrics + AI-generated strategic insights.

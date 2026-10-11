@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { ChevronDown, Ban, TriangleAlert, BadgeCheck } from 'lucide-react';
-import { useLeadsList } from './useLeadsList';
+import { ChevronDown, Ban, TriangleAlert, BadgeCheck, X } from 'lucide-react';
+import { useLeadsList, PER_PAGE } from './useLeadsList';
 import { useColumnLayout } from './useColumnLayout';
 import { resolveLeadPhone } from './columns';
 import { FilterBar } from './components/FilterBar';
@@ -8,12 +8,18 @@ import { SavedViewsTabs } from './components/SavedViewsTabs';
 import { LeadRow, displayName } from './components/LeadRow';
 import { BulkActionBar } from './components/BulkActionBar';
 import { DisqualifyRequestsPanel } from './components/DisqualifyRequestsPanel';
-import { SortableTableHeader } from './components/SortableTableHeader';
+import { ReassignRequestsPanel } from './components/ReassignRequestsPanel';
+import { SortableTableHeader } from '../../components/ui/SortableTableHeader';
 import { ColumnsMenu } from './components/ColumnsMenu';
+import { LeadsHubTour } from './LeadsHubTour';
 import { Table, TableHead, TableBody, TableRow, TableHeader } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { Checkbox } from '../../components/ui/Checkbox';
+import { Pagination } from '../../components/ui/Pagination';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/Modal';
-import { DisqualifyService } from '../../services/api';
+import { DisqualifyService, ReassignService } from '../../services/api';
 
 // Drag-the-border resize handle, shared by every reorderable column header.
 // Native mouse events, not a library — a single-axis resize on one element
@@ -54,14 +60,26 @@ function ResizeHandle({ onResize }) {
 // neither maps to a single sortable Lead column server-side (see GET /leads'
 // docstring).
 
+const NO_COMPANY_KEY = '—';
+
 function groupByCompany(leads) {
   const groups = new Map();
   leads.forEach((l) => {
-    const key = l.company || '—';
+    const key = l.company || NO_COMPANY_KEY;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(l);
   });
-  return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  // RCA 2026-08-21 (live): plain localeCompare doesn't reliably push the
+  // no-company bucket last (an em dash's collation position isn't
+  // guaranteed to sort after every real company name) -- pin it last
+  // explicitly, mirroring the same fix on the backend's own company sort
+  // (GET /leads' _no_company_last). Without this, "—" leads can land at
+  // the front of the grouped list and look exactly like grouping is broken.
+  return Array.from(groups.entries()).sort((a, b) => {
+    if (a[0] === NO_COMPANY_KEY) return b[0] === NO_COMPANY_KEY ? 0 : 1;
+    if (b[0] === NO_COMPANY_KEY) return -1;
+    return a[0].localeCompare(b[0]);
+  });
 }
 
 const SKELETON_WIDTHS = ['70%', '55%', '80%', '60%', '45%', '75%', '65%', '50%'];
@@ -104,7 +122,7 @@ function Toast({ message, onDismiss }) {
  * DisqualifyRequestsPanel). Mounted into the legacy page via leads-entry.jsx,
  * same pattern as CalendarHub.
  */
-export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
+export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
   const normalizedRole = (userRole || '').toLowerCase();
   // Only Pod Admin actually belongs to a single pod — Super Admin/Admin see
   // everything by default and "My Pod" has no meaning for them.
@@ -129,22 +147,34 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
   const [toast, setToast] = useState('');
   const [tab, setTab] = useState('leads');
   const [pendingDqCount, setPendingDqCount] = useState(0);
+  const [pendingReassignCount, setPendingReassignCount] = useState(0);
 
   const refreshPendingCount = useCallback(() => {
     if (!canManageDisqualify) return;
     DisqualifyService.getRequests('pending').then((d) => setPendingDqCount((d.requests || []).length)).catch(() => {});
+    ReassignService.getRequests('pending').then((d) => setPendingReassignCount((d.requests || []).length)).catch(() => {});
   }, [canManageDisqualify]);
   useEffect(() => { refreshPendingCount(); }, [refreshPendingCount]);
 
   // Grouping by company visually re-clusters rows, which would contradict a
-  // user-chosen column sort (e.g. sorting by Status to see all "Meeting
-  // Scheduled" leads together, regardless of company) — skip it while a sort
-  // is active and show a flat, honestly-ordered list instead.
+  // genuinely user-CHOSEN column sort (e.g. sorting by Status to see all
+  // "Meeting Scheduled" leads together, regardless of company) — skip it
+  // while one of those is active and show a flat, honestly-ordered list
+  // instead.
+  //
+  // RCA 2026-08-21 (live — "SDRs still don't see grouping"): 'priority' is
+  // not a user choice here, it's useLeadsList's own default sort for every
+  // SDR/AE from the moment the page loads (matching classic's "My Leads"
+  // ordering). Treating it the same as an explicit sort meant grouping was
+  // suppressed for every non-admin, always, with no way to discover it was
+  // ever there. Classic itself already shows company grouping AND a
+  // priority badge on the same rows with no conflict — do the same here.
+  const isGroupableSort = !list.sort.key || list.sort.key === 'priority';
   const groups = useMemo(
-    () => (list.sort.key ? [['', list.leads]] : groupByCompany(list.leads)),
-    [list.leads, list.sort.key]
+    () => (isGroupableSort ? groupByCompany(list.leads) : [['', list.leads]]),
+    [list.leads, isGroupableSort]
   );
-  const showGroupHeader = !list.sort.key && groups.length > 1;
+  const showGroupHeader = isGroupableSort && groups.length > 1;
 
   const toggleGroup = (company) => setCollapsed((c) => {
     const next = new Set(c);
@@ -188,7 +218,7 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
 
   // window._openCallModal is app.js's handleCallAction, exposed globally
   // specifically so call sites like this one can trigger the exact same
-  // flow the classic row's Call button uses (opens the RCM widget
+  // flow the classic row's Call button uses (opens the Alternate Messenger widget
   // panel with lead context, Bridge/Browser mode picker, active-call guard,
   // ghost-call recovery) — no new dialer plumbing needed here.
   const handleQuickCall = (lead) => {
@@ -205,7 +235,15 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
     catch (e) { setToast(e?.response?.data?.detail || 'Failed to update status — please try again.'); }
   }, [list]);
   const handleSetAssignee = useCallback(async (leadId, userId) => {
-    try { await list.setLeadAssignee(leadId, userId); }
+    try {
+      const result = await list.setLeadAssignee(leadId, userId);
+      // A skip (pod-locked, no phone) is a real 200, not an error — say so,
+      // instead of leaving the SDR guessing why the row didn't change (see
+      // setLeadAssignee's RCA comment).
+      if (result?.pod_locked?.length || result?.no_phone?.length) {
+        setToast(result.message);
+      }
+    }
     catch (e) { setToast(e?.response?.data?.detail || 'Failed to update assignee — please try again.'); }
   }, [list]);
   const handleSetPriority = useCallback(async (leadId, score) => {
@@ -218,7 +256,8 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
   // so app.js can seed it before navigating (see app.js's onOpenLead).
   const handleOpenLead = (lead) => (onOpenLead || (() => {}))(lead, list.leads);
 
-  const colCount = 1 + layout.columns.length + (list.assignMode ? 1 : 0);
+  const bulkSelectActive = list.assignMode || list.selectMode;
+  const colCount = 1 + layout.columns.length + (bulkSelectActive ? 1 : 0);
 
   return (
     <div className="leadshub w-full max-w-[1800px] mx-auto px-4 py-6">
@@ -227,24 +266,20 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
           className={`px-3.5 py-1.5 rounded-lg text-xs font-bold ${tab === 'leads' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>
           All Leads
         </button>
-        {canManageDisqualify && (
-          <button type="button" onClick={() => setTab('disqualify')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 ${tab === 'disqualify' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>
-            Disqualify Requests
-            {pendingDqCount > 0 && <span className="bg-red-600 text-white text-[10px] font-extrabold rounded-full px-1.5">{pendingDqCount}</span>}
+        {canManageDisqualify && [
+          { key: 'disqualify', label: 'Disqualify Requests', count: pendingDqCount },
+          { key: 'reassign', label: 'Reassign Requests', count: pendingReassignCount },
+        ].map((t) => (
+          <button key={t.key} type="button" onClick={() => setTab(t.key)}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 ${tab === t.key ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>
+            {t.label}
+            {t.count > 0 && <Badge variant="danger">{t.count}</Badge>}
           </button>
-        )}
+        ))}
       </div>
 
       {tab === 'leads' ? (
         <>
-          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl px-4 py-2.5 mb-5 text-xs font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-            <span>You're viewing the redesigned Leads experience.</span>
-            <span className="flex-1" />
-            <button type="button" onClick={onSwitchToClassic} className="underline underline-offset-2">Switch to classic view</button>
-          </div>
-
           {list.error && (
             <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-800 rounded-xl px-4 py-2.5 mb-5 text-xs font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0" />
@@ -266,32 +301,56 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
                     </button>
                   </>
                 )}
+                {onSwitchToClassic && (
+                  <>
+                    {' · '}
+                    <button type="button" data-tour="switch-classic" onClick={onSwitchToClassic} className="text-slate-500 underline underline-offset-2">
+                      Switch to classic view
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2.5">
-              <ColumnsMenu allColumns={layout.allColumns} hidden={layout.hidden} onToggle={layout.toggleHidden} onReset={layout.resetLayout} />
-              {isAdminRole && (
+              <span data-tour="columns-menu">
+                <ColumnsMenu allColumns={layout.allColumns} hidden={layout.hidden} onToggle={layout.toggleHidden} onReset={layout.resetLayout} />
+              </span>
+              {isAdminRole ? (
                 <>
                   <Button variant="secondary" size="sm" onClick={() => setAutoAssignConfirmOpen(true)}>Round Robin Auto-Assign</Button>
-                  <Button variant={list.assignMode ? 'primary' : 'outline'} size="sm" onClick={list.toggleAssignMode}>Assign mode</Button>
+                  <Button data-tour="bulk-select" variant={list.assignMode ? 'primary' : 'outline'} size="sm" onClick={list.toggleAssignMode}>Assign mode</Button>
                 </>
+              ) : (
+                // Lighter, non-admin bulk-select — checkboxes + "Add to Call
+                // List" only, no Assign/Unassign (an admin-only capability).
+                <Button data-tour="bulk-select" variant={list.selectMode ? 'primary' : 'outline'} size="sm" onClick={list.toggleSelectMode}>Select Leads</Button>
               )}
             </div>
           </div>
 
-          <SavedViewsTabs
-            savedViews={list.savedViews} activeViewId={list.activeViewId} activeFilterKeys={list.activeFilterKeys}
-            onApply={list.applyView} onSave={list.saveCurrentView} onRemove={list.removeView}
-          />
-          <FilterBar list={list} />
+          <div data-tour="saved-views">
+            <SavedViewsTabs
+              savedViews={list.savedViews} activeViewId={list.activeViewId} activeFilterKeys={list.activeFilterKeys}
+              onApply={list.applyView} onSave={list.saveCurrentView} onRemove={list.removeView} onToast={setToast}
+            />
+          </div>
+          {list.smartView && (
+            <div className="flex items-center gap-2 mb-3" data-testid="smart-view-banner">
+              <Badge variant="primary" className="gap-1.5 px-3 py-1.5 text-xs">
+                Showing: {list.smartView.label}
+                <button type="button" aria-label="Clear this view" onClick={list.clearSmartView} className="ml-1 opacity-70 hover:opacity-100"><X size={12} /></button>
+              </Badge>
+              <span className="text-xs text-slate-400">opened from your Dashboard</span>
+            </div>
+          )}
+          <FilterBar list={list} onToast={setToast} />
 
           <Table tableStyle={{ tableLayout: 'fixed' }}>
             <TableHead className="bg-white">
               <TableRow>
-                {list.assignMode && (
+                {bulkSelectActive && (
                   <TableHeader className="w-8">
-                    <input type="checkbox" onChange={(e) => list.selectAllVisible(e.target.checked)} aria-label="Select all visible"
-                      className="w-4 h-4 rounded border-slate-300 accent-blue-600 focus-visible:ring-2 focus-visible:ring-blue-200 focus-visible:ring-offset-0" />
+                    <Checkbox onChange={(e) => list.selectAllVisible(e.target.checked)} aria-label="Select all visible" />
                   </TableHeader>
                 )}
                 <SortableTableHeader label="Contact" sortKey="name" sort={list.sort} onSort={list.toggleSort} style={{ width: CONTACT_COLUMN_WIDTH }} />
@@ -318,12 +377,15 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
                 })}
               </TableRow>
             </TableHead>
-            <TableBody>
-              {list.loading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} colCount={colCount} />)}
+            {/* While a new search/filter loads, keep the current rows (dimmed, not clickable) instead of blanking the
+                table to skeletons on every keystroke; skeletons are for the first load only. */}
+            <TableBody aria-busy={list.loading && list.leads.length > 0}
+              className={list.loading && list.leads.length > 0 ? 'opacity-50 pointer-events-none transition-opacity' : 'transition-opacity'}>
+              {list.loading && list.leads.length === 0 && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} colCount={colCount} />)}
               {!list.loading && !list.error && groups.length === 0 && (
-                <TableRow><td colSpan={colCount} className="text-center italic text-slate-400 py-10">No leads match these filters.</td></TableRow>
+                <TableRow><td colSpan={colCount}><EmptyState title="No leads match these filters." /></td></TableRow>
               )}
-              {!list.loading && groups.map(([company, rows]) => {
+              {(!list.loading || list.leads.length > 0) && groups.map(([company, rows]) => {
                 const isNoCompany = company === '—';
                 // A meeting already booked for this company via another channel
                 // (e.g. inbound, a different SDR) — surfaced in the classic table's
@@ -333,7 +395,7 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
                 return (
                 <React.Fragment key={company}>
                   {showGroupHeader && (
-                    <TableRow>
+                    <TableRow {...(!isNoCompany ? { 'data-tour': 'company-group' } : {})}>
                       <td colSpan={colCount} className={`px-0 py-0 border-b ${isNoCompany ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
                         <div className="flex items-center justify-between px-3.5 py-1.5">
                           <button type="button" onClick={() => toggleGroup(company)}
@@ -366,7 +428,7 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
                   {!collapsed.has(company) && rows.map((lead) => (
                     <LeadRow
                       key={lead.id} lead={lead} columns={layout.columns} isAdmin={isAdminRole}
-                      sdrs={list.sdrs} assignMode={list.assignMode} selected={list.selected.has(lead.id)}
+                      sdrs={list.sdrs} assignMode={bulkSelectActive} selected={list.selected.has(lead.id)}
                       onToggleSelect={list.toggleSelect}
                       onSetStatus={handleSetStatus} onSetAssignee={handleSetAssignee} onSetPriority={handleSetPriority}
                       onQuickCall={handleQuickCall} onOpenLead={handleOpenLead}
@@ -377,22 +439,22 @@ export function LeadsHub({ userRole = '', onSwitchToClassic, onOpenLead }) {
             </TableBody>
           </Table>
 
-          <div className="flex items-center justify-between px-1 py-3 text-xs text-slate-500">
-            <span>Showing <b className="text-slate-800">{list.leads.length}</b> of <b className="text-slate-800">{list.total}</b></span>
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" disabled={list.page <= 1} onClick={() => list.setPage((p) => p - 1)}>Previous</Button>
-              <span className="font-mono">{list.page} / {list.totalPages}</span>
-              <Button size="sm" variant="outline" disabled={list.page >= list.totalPages} onClick={() => list.setPage((p) => p + 1)}>Next</Button>
-            </div>
-          </div>
+          <Pagination page={list.page} pages={list.totalPages} total={list.total} perPage={PER_PAGE} onChange={list.setPage} />
 
-          <BulkActionBar list={list} onToast={setToast} canDelete={isSuperAdmin} canEnrollJourney={isAdminRole} />
+          {/* Enroll-in-cadence is open to every role (backend now accepts any
+              authenticated user on assigned_rep cadences) — kept independent
+              of isAdminRole, which still gates Assign/Unassign/Round Robin. */}
+          <BulkActionBar list={list} onToast={setToast} canDelete={isSuperAdmin} canEnrollJourney canBulkAssign={isAdminRole} />
         </>
+      ) : tab === 'reassign' ? (
+        <ReassignRequestsPanel onToast={(msg) => { setToast(msg); refreshPendingCount(); }} />
       ) : (
         <DisqualifyRequestsPanel onToast={(msg) => { setToast(msg); refreshPendingCount(); }} />
       )}
 
       <Toast message={toast} onDismiss={() => setToast('')} />
+
+      {!list.loading && tab === 'leads' && <LeadsHubTour />}
 
       <ConfirmDialog
         open={autoAssignConfirmOpen}

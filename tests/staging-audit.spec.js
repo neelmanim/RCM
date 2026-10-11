@@ -12,7 +12,7 @@
 
 const { test, expect } = require('@playwright/test');
 
-const BASE_URL = 'https://rcm-react-staging.onrender.com';
+const BASE_URL = 'https://messenger-react-staging.onrender.com';
 const JWT_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2ZGUwZDU2Ny0xYWNmLTRlOTgtOTQ0Yi01NDJjNzdkMzA4ZTQiLCJlbWFpbCI6Im5lZWxtYW5pLm1pc2hyYUBzY3JlZW4tbWFnaWMuY29tIiwibmFtZSI6Ik5lZWxtYW5pIE1pc2hyYSIsInJvbGUiOiJTdXBlciBBZG1pbiIsInBvZF9pZCI6bnVsbCwiZGlhbGVyX2VuYWJsZWQiOmZhbHNlLCJlbWFpbF9zeW5jX2VuYWJsZWQiOmZhbHNlLCJleHAiOjE3NzY5NjAxMjB9.vAa0RB8bJlWWQjXRCk9xZm-gTeGypf2jHyHX92SRB_E';
 
 // Collect all issues found

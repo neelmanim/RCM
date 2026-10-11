@@ -1,0 +1,31 @@
+/*
+ * pipeline-hub-tailwind.css
+ *
+ * Tailwind entry point for the Pipeline Hub IIFE bundle ONLY (the merged
+ * Super-Admin view of AE Pipeline + CSM Portal — see PipelineHub.jsx).
+ * Mirrors ae-pipeline-tailwind.css / csm-portal-tailwind.css exactly —
+ * omits @tailwind base to avoid leaking resets into the Vanilla JS shell,
+ * and reproduces just the border-reset half of Preflight, scoped to
+ * .pipeline-hub (this bundle also renders .ae-pipeline-hub/.csm-portal-hub
+ * markup directly, via the reused components, so those are scoped too).
+ */
+.pipeline-hub, .pipeline-hub *, .pipeline-hub *::before, .pipeline-hub *::after,
+.ae-pipeline-hub, .ae-pipeline-hub *, .ae-pipeline-hub *::before, .ae-pipeline-hub *::after,
+.csm-portal-hub, .csm-portal-hub *, .csm-portal-hub *::before, .csm-portal-hub *::after,
+.activitymonitor-portal, .activitymonitor-portal *, .activitymonitor-portal *::before, .activitymonitor-portal *::after {
+  border-width: 0;
+  border-style: solid;
+  border-color: currentColor;
+}
+
+:where(.pipeline-hub, .ae-pipeline-hub, .csm-portal-hub, .activitymonitor-portal) button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  font: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;

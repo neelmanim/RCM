@@ -23,6 +23,39 @@ from routes.ai_research_routes import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_live_groq_model_lookup():
+    """_get_llm_config now revalidates the configured model against Groq's
+    live /models endpoint (RCA 2026-08-20: a deprecated model id silently
+    broke every ai-research call). Keep this test file offline by fixing
+    the resolved model instead of hitting the network."""
+    with patch("routes.ai_research_routes._resolve_groq_model", return_value="llama-3.1-8b-instant"):
+        yield
+
+
+# ── _extract_json_from_prose unit tests ──────────────────────────────────────
+
+class TestExtractJsonFromProse:
+    """RCA 2026-08-20: a Groq response that's valid JSON but not an object
+    (e.g. a bare number) used to sail through as a float and crash
+    _sanitize_research_v2() with AttributeError instead of the clean 502
+    every caller already handles for malformed responses."""
+
+    def test_parses_a_plain_json_object(self):
+        assert _extract_json_from_prose('{"heat_score": "warm"}') == {"heat_score": "warm"}
+
+    def test_parses_json_wrapped_in_prose(self):
+        assert _extract_json_from_prose('Here you go: {"heat_score": "hot"} enjoy') == {"heat_score": "hot"}
+
+    def test_rejects_a_bare_number(self):
+        with pytest.raises(ValueError):
+            _extract_json_from_prose("3.14")
+
+    def test_rejects_a_bare_null(self):
+        with pytest.raises(ValueError):
+            _extract_json_from_prose("null")
+
+
 # ── _call_groq unit tests ────────────────────────────────────────────────────
 
 class TestCallGroq:
@@ -75,6 +108,76 @@ class TestCallGroq:
             result = await _call_groq("test prompt", api_key="sk-fake-key", model="llama-3.3-70b-versatile")
 
         assert result["research_company"] == "Wrapped Corp"
+
+    @pytest.mark.asyncio
+    async def test_retries_once_with_auto_discovered_model_on_decommission(self):
+        """RCA 2026-08-20: Groq's /models listing can still show a model
+        that's already been pulled from inference -- a 404 "does not exist"
+        used to fail every time with no retry, exactly like
+        smart_analytics.py already self-heals for its own queries."""
+        decommissioned_resp = MagicMock()
+        decommissioned_resp.status_code = 404
+        decommissioned_resp.text = '{"error":{"message":"The model `old-model` does not exist or you do not have access to it."}}'
+
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.json.return_value = {
+            "choices": [{"message": {"content": '{"research_company": "Recovered Corp"}'}}]
+        }
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=[decommissioned_resp, success_resp])
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("routes.ai_research_routes._resolve_groq_model", return_value="new-model") as mock_resolve:
+            result = await _call_groq("test prompt", api_key="sk-fake-key", model="old-model", db=MagicMock())
+
+        assert result["research_company"] == "Recovered Corp"
+        assert mock_resolve.call_count == 1
+        assert mock_resolve.call_args.args[0] == "sk-fake-key"
+        assert mock_resolve.call_args.kwargs["force_refresh"] is True
+        assert mock_resolve.call_args.kwargs["exclude"] == frozenset({"old-model"})
+        assert mock_client.post.call_count == 2
+        assert mock_client.post.call_args_list[1].kwargs["json"]["model"] == "new-model"
+
+    @pytest.mark.asyncio
+    async def test_retries_through_two_stale_models_before_succeeding(self):
+        """RCA 2026-08-20 (live, round 2): a one-shot retry flag used to give
+        up after a single swap even though attempts were still left --
+        confirmed live when Groq's listing offered llama-3.1-8b-instant
+        (dead), then llama3-8b-8192 (also dead), and the request failed
+        instead of trying a third candidate within the same 3-attempt loop."""
+        dead_resp_1 = MagicMock()
+        dead_resp_1.status_code = 404
+        dead_resp_1.text = '{"error":{"message":"model_1 does not exist"}}'
+
+        dead_resp_2 = MagicMock()
+        dead_resp_2.status_code = 400
+        dead_resp_2.text = '{"error":{"message":"model_2 has been decommissioned"}}'
+
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.json.return_value = {
+            "choices": [{"message": {"content": '{"research_company": "Recovered Corp"}'}}]
+        }
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=[dead_resp_1, dead_resp_2, success_resp])
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("routes.ai_research_routes._resolve_groq_model", side_effect=["model_2", "model_3"]) as mock_resolve:
+            result = await _call_groq("test prompt", api_key="sk-fake-key", model="model_1", db=MagicMock())
+
+        assert result["research_company"] == "Recovered Corp"
+        assert mock_resolve.call_count == 2
+        assert mock_resolve.call_args_list[0].kwargs["exclude"] == frozenset({"model_1"})
+        assert mock_resolve.call_args_list[1].kwargs["exclude"] == frozenset({"model_1", "model_2"})
+        assert mock_client.post.call_count == 3
+        assert mock_client.post.call_args_list[2].kwargs["json"]["model"] == "model_3"
 
     @pytest.mark.asyncio
     async def test_401_raises_502_invalid_key(self):
@@ -203,7 +306,7 @@ class TestSanitizeResearch:
     def _valid_v2(self):
         return {
             "company_pulse": "Acme Corp is a 200-person SaaS company.",
-            "why_they_need_us": "They run 3 SDR teams. RCM cuts setup time.",
+            "why_they_need_us": "They run 3 SDR teams. Alternate Messenger cuts setup time.",
             "opening_line": "Hi John, saw Acme hired 3 SDRs — worth 90 seconds?",
             "likely_objection": "We have a system → What are you using today?",
             "persona_signal": "Decision maker. Signs off on ops tools.",
@@ -272,8 +375,8 @@ class TestBuildPrompt:
         prompt = _build_prompt(self._make_lead())
         assert "Acme" in prompt and "CEO" in prompt
 
-    def test_contains_rcm_product_context(self):
-        assert "RCM" in _build_prompt(self._make_lead())
+    def test_contains_messenger_product_context(self):
+        assert "Alternate Messenger" in _build_prompt(self._make_lead())
 
     def test_contains_all_6_output_fields(self):
         prompt = _build_prompt(self._make_lead())
@@ -331,7 +434,7 @@ class TestAiResearchEndpoint:
         lead = create_test_lead(db, company="NewCorp")
         mock_result = {
             "company_pulse": "NewCorp builds SDR tools.",
-            "why_they_need_us": "They have 5 SDRs. RCM cuts dial time.",
+            "why_they_need_us": "They have 5 SDRs. Alternate Messenger cuts dial time.",
             "opening_line": "Hi there, worth 2 minutes?",
             "likely_objection": "Too expensive → ROI in 30 days.",
             "persona_signal": "Decision maker.",

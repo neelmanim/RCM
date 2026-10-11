@@ -340,7 +340,7 @@ test.describe('SDR Lead Workflow — Gap Coverage', () => {
   // ── Log Call button presence (record actual dialer flow via codegen) ──────
   // NOTE: The actual call logging interaction (clicking log-call-btn, selecting
   // outcome, submitting) should be recorded via:
-  //   npx playwright codegen https://rcm-crm-staging.onrender.com
+  //   npx playwright codegen https://messenger-crm-staging.onrender.com
   // and added to tests/sdr-dialer-flow.spec.js
 
   test('L21. Log Call button is visible on lead detail for SDR', async ({ page, request }) => {

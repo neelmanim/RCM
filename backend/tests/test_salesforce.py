@@ -16,7 +16,8 @@ from sqlalchemy.pool import StaticPool
 from database import Base
 import models
 
-from salesforce import _build_lead_description
+import salesforce
+from salesforce import _build_lead_description, run_full_salesforce_sync
 
 
 @pytest.fixture()
@@ -207,3 +208,56 @@ def test_no_db_session_skips_calls_and_notes(db):
     assert "SDR RESEARCH" in desc
     assert "CALL HISTORY" not in desc
     assert "SDR NOTES" not in desc
+
+
+# ── Tests: run_full_salesforce_sync now stamps SalesforceConnection ────────
+# RCA 2026-09-04: last_sync_at/last_sync_status/last_sync_error/
+# records_synced_last_run existed on the model since the start but had zero
+# write sites — Control Center's SF card always showed "Last Sync: Never".
+
+class _FakeSettings:
+    sync_direction = "push_only"
+    record_type_ids = None
+    lead_limit = 50
+    sf_push_stage = "Meeting Scheduled"
+
+
+def _make_active_sf_connection(db):
+    conn = models.SalesforceConnection(
+        username="sf@test.com", password_encrypted="x", security_token_encrypted="x",
+        is_active=True,
+    )
+    db.add(conn)
+    db.commit()
+    db.refresh(conn)
+    return conn
+
+
+def test_sync_stamps_last_sync_at_and_success_on_completion(db, monkeypatch):
+    conn = _make_active_sf_connection(db)
+    monkeypatch.setattr(salesforce, "push_pending_leads_to_salesforce",
+                         lambda db, sf, push_stage: {"pushed": 3, "created": 2, "linked": 1, "skipped": [], "errors": []})
+
+    assert conn.last_sync_at is None
+    run_full_salesforce_sync(db, sf=object(), settings=_FakeSettings())
+
+    db.refresh(conn)
+    assert conn.last_sync_at is not None
+    assert conn.last_sync_status == "success"
+    assert conn.last_sync_error is None
+    assert conn.records_synced_last_run == 3
+
+
+def test_sync_stamps_failed_status_and_reraises_on_error(db, monkeypatch):
+    conn = _make_active_sf_connection(db)
+
+    def _boom(db, sf, push_stage):
+        raise RuntimeError("SF API down")
+    monkeypatch.setattr(salesforce, "push_pending_leads_to_salesforce", _boom)
+
+    with pytest.raises(RuntimeError):
+        run_full_salesforce_sync(db, sf=object(), settings=_FakeSettings())
+
+    db.refresh(conn)
+    assert conn.last_sync_status == "failed"
+    assert "SF API down" in conn.last_sync_error

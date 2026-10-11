@@ -1,5 +1,5 @@
 """
-error_logger.py — RCM System Error Logger
+error_logger.py — Alternate CRM System Error Logger
 
 Fire-and-forget error logging that NEVER raises exceptions or blocks the caller.
 Mirrors the pattern of activity_logger.py.

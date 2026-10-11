@@ -23,6 +23,9 @@ from salesforce import (
     get_sf_client,
     get_record_types_from_salesforce,
     sync_leads_from_salesforce,
+    sync_accounts_from_salesforce,
+    sync_contacts_from_salesforce,
+    sync_opportunities_from_salesforce,
     push_lead_to_salesforce,
     create_new_lead_in_salesforce,
     find_or_create_lead_in_salesforce,
@@ -31,6 +34,7 @@ from salesforce import (
     create_sdr_in_salesforce,
     sync_sdrs_from_salesforce,
     push_sdr_metrics_to_salesforce,
+    push_opportunity_to_salesforce,
 )
 import models
 
@@ -243,6 +247,284 @@ class TestSyncLeads:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Account / Opportunity sync — CSM Portal foundation (Phase 0)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestSyncAccounts:
+    @patch("salesforce.log_sf_operation")
+    def test_creates_new_account(self, mock_log, db):
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {"Id": "001AAA1", "Name": "Cascade Robotics", "Industry": "Manufacturing"},
+        ]}
+        count = sync_accounts_from_salesforce(db, sf)
+        assert count == 1
+        account = db.query(models.Account).filter(models.Account.sf_account_id == "001AAA1").first()
+        assert account is not None
+        assert account.name == "Cascade Robotics"
+        assert account.industry == "Manufacturing"
+        mock_log.assert_called()
+
+    @patch("salesforce.log_sf_operation")
+    def test_upsert_never_touches_assigned_csm(self, mock_log, db):
+        """assigned_csm_id is local-only — a pull must never reset it."""
+        csm = create_test_user(db, email="csm-owner@test.com", role="CSM")
+        account = models.Account(sf_account_id="001AAA2", name="Old Name", assigned_csm_id=csm.id)
+        db.add(account)
+        db.commit()
+
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {"Id": "001AAA2", "Name": "Renamed Inc", "Industry": None},
+        ]}
+        sync_accounts_from_salesforce(db, sf)
+        db.refresh(account)
+        assert account.name == "Renamed Inc"
+        assert account.assigned_csm_id == csm.id  # untouched
+
+    def test_none_sf_returns_zero(self, db):
+        assert sync_accounts_from_salesforce(db, None) == 0
+
+    @patch("salesforce.log_sf_operation")
+    def test_pull_fills_customer_since_and_assigned_csm_by_email(self, mock_log, db):
+        """Health score's relationship factor needs customer_since, and an
+        unassigned account should pick up SF's own CSM field (matched by
+        email, same as Opportunity Owner) — both were previously never read."""
+        csm = create_test_user(db, email="csm-real@test.com", role="CSM")
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {
+                "Id": "001AAA3", "Name": "Unassigned Co", "Industry": "Retail",
+                "CreatedDate": "2024-03-15T00:00:00.000+0000",
+                "Account_Manager_Lookup__r": {"Email": "csm-real@test.com"},
+            },
+        ]}
+        sync_accounts_from_salesforce(db, sf)
+        account = db.query(models.Account).filter(models.Account.sf_account_id == "001AAA3").first()
+        assert account.customer_since.date().isoformat() == "2024-03-15"
+        assert account.assigned_csm_id == csm.id
+
+    @patch("salesforce.log_sf_operation")
+    def test_pull_fills_owner_by_email_as_a_fallback_identity(self, mock_log, db):
+        """Owner is a standard, always-populated SF field — unlike the
+        custom CSM lookup, useful to show even when that one is empty."""
+        owner = create_test_user(db, email="owner-real@test.com", role="AE")
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {
+                "Id": "001AAA5", "Name": "Owned Co", "Industry": "Retail",
+                "Owner": {"Email": "owner-real@test.com"},
+            },
+        ]}
+        sync_accounts_from_salesforce(db, sf)
+        account = db.query(models.Account).filter(models.Account.sf_account_id == "001AAA5").first()
+        assert account.owner_user_id == owner.id
+
+    @patch("salesforce.log_sf_operation")
+    def test_pull_skips_csm_match_with_no_email_or_no_matching_user(self, mock_log, db):
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {"Id": "001AAA4", "Name": "No Match Co", "Industry": None,
+             "Account_Manager_Lookup__r": {"Email": "nobody@nowhere.test"}},
+        ]}
+        sync_accounts_from_salesforce(db, sf)
+        account = db.query(models.Account).filter(models.Account.sf_account_id == "001AAA4").first()
+        assert account.assigned_csm_id is None
+
+    @patch("salesforce.log_sf_operation")
+    def test_stores_raw_owner_and_csm_identity_even_with_no_alternatecrm_user(self, mock_log, db):
+        """Most SF Account Owners/CSM lookups won't have a Alternate CRM login
+        yet — the UI still needs a name to show, not just a blank column."""
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {
+                "Id": "001AAA6", "Name": "No Login Yet Co", "Industry": None,
+                "Account_Manager_Lookup__r": {"Email": "kanika@sf-only.test", "Name": "Kanika Sharma"},
+                "Owner": {"Email": "raj@sf-only.test", "Name": "Raj Mehta"},
+            },
+        ]}
+        sync_accounts_from_salesforce(db, sf)
+        account = db.query(models.Account).filter(models.Account.sf_account_id == "001AAA6").first()
+        assert account.owner_user_id is None
+        assert account.sf_owner_email == "raj@sf-only.test"
+        assert account.sf_owner_name == "Raj Mehta"
+        assert account.assigned_csm_id is None
+        assert account.sf_csm_email == "kanika@sf-only.test"
+        assert account.sf_csm_name == "Kanika Sharma"
+
+    @patch("salesforce.log_sf_operation")
+    def test_owner_and_csm_email_match_is_case_insensitive(self, mock_log, db):
+        owner = create_test_user(db, email="raj@test.com", role="AE")
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {"Id": "001AAA7", "Name": "Case Mismatch Co", "Industry": None,
+             "Owner": {"Email": "Raj@Test.com"}},
+        ]}
+        sync_accounts_from_salesforce(db, sf)
+        account = db.query(models.Account).filter(models.Account.sf_account_id == "001AAA7").first()
+        assert account.owner_user_id == owner.id
+
+    @patch("salesforce.log_sf_operation")
+    def test_backfill_links_accounts_once_matching_user_registers(self, mock_log, db):
+        """The exact scenario this was built for: sync runs before Kanika
+        has a Alternate CRM login, so the account is stuck with a raw email and
+        no owner_user_id/assigned_csm_id — then she registers."""
+        from salesforce import backfill_sf_identity_links
+
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {
+                "Id": "001AAA8", "Name": "Pending Link Co", "Industry": None,
+                "Account_Manager_Lookup__r": {"Email": "kanika@test.com", "Name": "Kanika"},
+                "Owner": {"Email": "kanika@test.com", "Name": "Kanika"},
+            },
+        ]}
+        sync_accounts_from_salesforce(db, sf)
+        account = db.query(models.Account).filter(models.Account.sf_account_id == "001AAA8").first()
+        assert account.owner_user_id is None
+        assert account.assigned_csm_id is None
+
+        kanika = create_test_user(db, email="kanika@test.com", role="CSM")
+        updated = backfill_sf_identity_links(db, kanika)
+        assert updated == 2  # one owner link + one CSM link, same account
+        db.refresh(account)
+        assert account.owner_user_id == kanika.id
+        assert account.assigned_csm_id == kanika.id
+
+
+class TestSyncContacts:
+    @patch("salesforce.log_sf_operation")
+    def test_creates_stakeholder_on_synced_account(self, mock_log, db):
+        account = models.Account(sf_account_id="001ACC1", name="Acme")
+        db.add(account)
+        db.commit()
+
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {"Id": "003CON1", "Name": "Jane POC", "Email": "jane@acme.com", "Phone": "555-1234",
+             "Title": "VP Ops", "CreatedDate": "2026-09-01", "AccountId": "001ACC1"},
+        ]}
+        count = sync_contacts_from_salesforce(db, sf)
+        assert count == 1
+        stakeholder = db.query(models.AccountStakeholder).filter(models.AccountStakeholder.sf_contact_id == "003CON1").first()
+        assert stakeholder is not None
+        assert stakeholder.account_id == account.id
+        assert stakeholder.name == "Jane POC"
+        assert stakeholder.email == "jane@acme.com"
+        assert stakeholder.role is None  # never auto-set, see AccountStakeholder's doc comment
+        mock_log.assert_called()
+
+    def test_skips_contact_whose_account_isnt_synced_locally(self, db):
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {"Id": "003CON2", "Name": "Orphan Contact", "Email": None, "Phone": None,
+             "Title": None, "CreatedDate": None, "AccountId": "001UNKNOWN"},
+        ]}
+        count = sync_contacts_from_salesforce(db, sf)
+        assert count == 0
+        assert db.query(models.AccountStakeholder).count() == 0
+
+    @patch("salesforce.log_sf_operation")
+    def test_upsert_never_touches_manually_set_role(self, mock_log, db):
+        """role is a CSM-only tag — a re-sync must never wipe it."""
+        account = models.Account(sf_account_id="001ACC2", name="Beta Co")
+        db.add(account)
+        db.commit()
+        stakeholder = models.AccountStakeholder(
+            sf_contact_id="003CON3", account_id=account.id, name="Old Name", role="Champion",
+        )
+        db.add(stakeholder)
+        db.commit()
+
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {"Id": "003CON3", "Name": "Renamed Contact", "Email": "new@beta.com", "Phone": None,
+             "Title": None, "CreatedDate": None, "AccountId": "001ACC2"},
+        ]}
+        sync_contacts_from_salesforce(db, sf)
+        db.refresh(stakeholder)
+        assert stakeholder.name == "Renamed Contact"
+        assert stakeholder.email == "new@beta.com"
+        assert stakeholder.role == "Champion"  # untouched
+
+    def test_none_sf_returns_zero(self, db):
+        assert sync_contacts_from_salesforce(db, None) == 0
+
+
+class TestSyncOpportunities:
+    @patch("salesforce.log_sf_operation")
+    def test_creates_new_opportunity_linked_to_account(self, mock_log, db):
+        account = models.Account(sf_account_id="001BBB1", name="Northwind Traders")
+        db.add(account)
+        owner = create_test_user(db, email="owner@test.com", role="AE")
+        db.commit()
+
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {
+                "Id": "006CCC1", "Name": "Northwind Renewal", "Amount": 132000,
+                "CloseDate": "2026-09-08", "StageName": "Closed Won",
+                "IsClosed": True, "IsWon": True, "AccountId": "001BBB1",
+                "Owner": {"Email": "owner@test.com"},
+            },
+        ]}
+        count = sync_opportunities_from_salesforce(db, sf, direction="both")
+        assert count == 1
+        opp = db.query(models.Opportunity).filter(models.Opportunity.sf_opportunity_id == "006CCC1").first()
+        assert opp.account_id == account.id
+        assert opp.owner_user_id == owner.id
+        assert opp.amount == 132000
+        assert opp.is_won is True
+
+    @patch("salesforce.log_sf_operation")
+    def test_push_only_mode_never_lets_pull_change_stage(self, mock_log, db):
+        """In push_only mode, a local Closed-Won must survive a pull that
+        (implausibly, e.g. a stale SF cache) still reports the deal open."""
+        opp = models.Opportunity(sf_opportunity_id="006CCC2", is_closed=True, is_won=True, stage_name="Closed Won")
+        db.add(opp)
+        db.commit()
+
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {
+                "Id": "006CCC2", "Name": "Still shows open in SF", "Amount": 5000,
+                "CloseDate": None, "StageName": "Negotiation/Review",
+                "IsClosed": False, "IsWon": False, "AccountId": None, "Owner": None,
+            },
+        ]}
+        sync_opportunities_from_salesforce(db, sf, direction="push_only")
+        db.refresh(opp)
+        assert opp.is_closed is True
+        assert opp.is_won is True
+        # Display fields still refresh even though stage didn't move
+        assert opp.name == "Still shows open in SF"
+
+    @patch("salesforce.log_sf_operation")
+    def test_both_mode_never_regresses_closed_won(self, mock_log, db):
+        """Even in "both" mode, a pull can never move a closed-won deal
+        backward — only advance it further (which closed-won already is)."""
+        opp = models.Opportunity(sf_opportunity_id="006CCC3", is_closed=True, is_won=True)
+        db.add(opp)
+        db.commit()
+
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [
+            {
+                "Id": "006CCC3", "Name": "X", "Amount": None, "CloseDate": None,
+                "StageName": "Prospecting", "IsClosed": False, "IsWon": False,
+                "AccountId": None, "Owner": None,
+            },
+        ]}
+        sync_opportunities_from_salesforce(db, sf, direction="both")
+        db.refresh(opp)
+        assert opp.is_closed is True
+        assert opp.is_won is True
+
+    def test_none_sf_returns_zero(self, db):
+        assert sync_opportunities_from_salesforce(db, None) == 0
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # push_pending_leads_to_salesforce — RCA-2026-07-20
 #
 # The batch used to commit once at the very end. If one lead's write-back hit
@@ -321,6 +603,78 @@ class TestPushPendingLeadsToSalesforce:
         assert any("Duplicate local lead" in e["error"] for e in result["errors"])
         assert lead_b.sf_lead_id == "upload-abc123"  # left untouched, not silently overwritten
         assert lead_c.sf_lead_id == "00Q000000NEWNEW"  # unaffected by lead_b's failure
+
+    @patch("salesforce.log_sf_operation")
+    def test_phone_match_links_lead_instead_of_creating(self, mock_log, db):
+        """No email match, but the phone matches an existing SF Lead that
+        predates Alternate CRM (or has a different email) — link, don't create.
+        Same root cause as the Aircall direct-dial dedup fix."""
+        from salesforce import push_pending_leads_to_salesforce
+        lead = create_test_lead(db, email=None, phone="+15550001111",
+                                 sf_lead_id="upload-abc123", status="Meeting Scheduled")
+        sf = _mock_sf()
+        with patch("salesforce.find_sf_match_by_phone", return_value={"type": "Lead", "id": "00Q000000PHONE1"}):
+            result = push_pending_leads_to_salesforce(db, sf, "Meeting Scheduled")
+
+        db.refresh(lead)
+        assert lead.sf_lead_id == "00Q000000PHONE1"
+        assert result["pushed"] == 1
+        sf.Lead.create.assert_not_called()
+
+    @patch("salesforce.log_sf_operation")
+    def test_phone_match_on_opportunity_sets_sf_opportunity_id(self, mock_log, db):
+        from salesforce import push_pending_leads_to_salesforce
+        lead = create_test_lead(db, email=None, phone="+15550002222",
+                                 sf_lead_id="upload-def456", status="Meeting Scheduled")
+        sf = _mock_sf()
+        with patch("salesforce.find_sf_match_by_phone", return_value={"type": "Opportunity", "id": "0061x000000OPP1"}):
+            result = push_pending_leads_to_salesforce(db, sf, "Meeting Scheduled")
+
+        db.refresh(lead)
+        assert lead.sf_opportunity_id == "0061x000000OPP1"
+        assert lead.sf_lead_id == "upload-def456"  # unchanged — no Lead id to set
+        sf.Lead.create.assert_not_called()
+
+    @patch("salesforce.log_sf_operation")
+    def test_no_phone_match_still_creates_as_before(self, mock_log, db):
+        from salesforce import push_pending_leads_to_salesforce
+        create_test_lead(db, email=None, phone="+15550003333",
+                          sf_lead_id="upload-ghi789", status="Meeting Scheduled")
+        sf = _mock_sf()
+        sf.Lead.create.return_value = {"id": "00Q000000NEWNEW"}
+        with patch("salesforce.find_sf_match_by_phone", return_value=None):
+            result = push_pending_leads_to_salesforce(db, sf, "Meeting Scheduled")
+
+        assert result["created"][0]["sf_id"] == "00Q000000NEWNEW"
+
+
+class TestFindSfMatchByPhone:
+
+    def test_no_phone_returns_none(self, db):
+        from salesforce import find_sf_match_by_phone
+        assert find_sf_match_by_phone(db, _mock_sf(), None) is None
+
+    def test_lead_match_with_no_conflict_is_returned(self, db):
+        from salesforce import find_sf_match_by_phone
+        with patch("salesforce.find_lead_or_opportunity_by_phone",
+                   return_value={"type": "Lead", "id": "00Q1x0000000009"}):
+            result = find_sf_match_by_phone(db, _mock_sf(), "+15550001111")
+        assert result == {"type": "Lead", "id": "00Q1x0000000009"}
+
+    def test_lead_match_already_linked_to_a_different_lead_is_treated_as_no_match(self, db):
+        from salesforce import find_sf_match_by_phone
+        other = create_test_lead(db, sf_lead_id="00Q1x0000000009", phone="+15550009999")
+        with patch("salesforce.find_lead_or_opportunity_by_phone",
+                   return_value={"type": "Lead", "id": "00Q1x0000000009"}):
+            result = find_sf_match_by_phone(db, _mock_sf(), "+15550001111", exclude_lead_id="some-other-id")
+        assert result is None
+
+    def test_opportunity_match_is_never_conflict_checked(self, db):
+        from salesforce import find_sf_match_by_phone
+        with patch("salesforce.find_lead_or_opportunity_by_phone",
+                   return_value={"type": "Opportunity", "id": "0061x000000OPP1"}):
+            result = find_sf_match_by_phone(db, _mock_sf(), "+15550001111")
+        assert result == {"type": "Opportunity", "id": "0061x000000OPP1"}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -409,6 +763,44 @@ class TestPushLead:
         db.refresh(lead)
         assert lead.sf_lead_id == "00QNEWNEW1"
         assert lead.last_synced_at is None
+
+    @patch("salesforce.log_sf_operation")
+    def test_push_merged_lead_404_relinks_by_email(self, mock_log, db):
+        """RCA 2026-09-29: a merged/hard-deleted Lead returns a 404 with
+        INVALID_CROSS_REFERENCE_KEY, not ENTITY_IS_DELETED — it kept the dead
+        id and every push failed. It now re-links to the Lead found by email."""
+        from simple_salesforce.exceptions import SalesforceResourceNotFound
+        lead = create_test_lead(db, email="saravanan@example.com", sf_lead_id="00Qdead1", status="Discovery Complete")
+        db.commit()
+
+        sf = _mock_sf()
+        sf.Lead.update.side_effect = SalesforceResourceNotFound(
+            "https://x/sobjects/Lead/00Qdead1", 404, "Lead",
+            [{"message": "invalid cross reference id", "errorCode": "INVALID_CROSS_REFERENCE_KEY", "fields": []}],
+        )
+        sf.query.return_value = {"totalSize": 1, "records": [{"Id": "00Qmaster"}]}
+
+        push_lead_to_salesforce(sf, "00Qdead1", {"status": "Discovery Complete"},
+                                lead_info={"email": "saravanan@example.com"})
+
+        db.refresh(lead)
+        assert lead.sf_lead_id == "00Qmaster"
+        sf.Lead.create.assert_not_called()
+
+    @patch("salesforce.log_sf_operation")
+    def test_push_bad_owner_400_does_not_unlink(self, mock_log, db):
+        """A 400 INVALID_CROSS_REFERENCE_KEY (e.g. bad OwnerId) is not a missing record."""
+        from simple_salesforce.exceptions import SalesforceMalformedRequest
+        lead = create_test_lead(db, sf_lead_id="00Qlive1", status="Calling")
+        db.commit()
+        sf = _mock_sf()
+        sf.Lead.update.side_effect = SalesforceMalformedRequest(
+            "https://x/sobjects/Lead/00Qlive1", 400, "Lead",
+            [{"message": "invalid cross reference id", "errorCode": "INVALID_CROSS_REFERENCE_KEY", "fields": ["OwnerId"]}],
+        )
+        push_lead_to_salesforce(sf, "00Qlive1", {"status": "Calling"})
+        db.refresh(lead)
+        assert lead.sf_lead_id == "00Qlive1"
 
     @patch("salesforce.log_sf_operation")
     def test_push_entity_deleted_falls_back_to_unlink_when_recreate_fails(self, mock_log, db):
@@ -531,6 +923,87 @@ class TestPushLead:
         payload = sf.Lead.update.call_args[0][1]
         assert "SDR_Name__c" not in payload
 
+    @patch("salesforce.log_sf_operation")
+    def test_push_retries_without_sdr_name_on_restricted_picklist_rejection(self, mock_log):
+        """Live finding, 2026-09-15: a connected org's SDR_Name__c picklist
+        can lag behind Alternate CRM's real SDR roster — SF then rejects the
+        *whole* update, not just that field. Retry once without it rather
+        than losing every other field in the push."""
+        sf = _mock_sf()
+        sf.Lead.update.side_effect = [
+            Exception(
+                "Malformed request. Response content: [{'message': 'bad value for "
+                "restricted picklist field: New SDR', 'errorCode': "
+                "'INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST', 'fields': ['SDR_Name__c']}]"
+            ),
+            None,
+        ]
+        result = push_lead_to_salesforce(sf, "00Qxx1", {"status": "Calling", "sdr_name": "New SDR"})
+        assert result is True
+        assert sf.Lead.update.call_count == 2
+        retry_payload = sf.Lead.update.call_args_list[1][0][1]
+        assert "SDR_Name__c" not in retry_payload
+        assert retry_payload["Lead_Status__c"]  # rest of the update still went through
+
+    @patch("salesforce.log_sf_operation")
+    def test_create_retries_without_sdr_name_on_restricted_picklist_rejection(self, mock_log):
+        sf = _mock_sf()
+        sf.Lead.create.side_effect = [
+            Exception(
+                "Malformed request. Response content: [{'message': 'bad value for "
+                "restricted picklist field: New SDR', 'errorCode': "
+                "'INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST', 'fields': ['SDR_Name__c']}]"
+            ),
+            {"id": "00QNEW1"},
+        ]
+        sf_id = create_new_lead_in_salesforce(sf, {
+            "first_name": "A", "last_name": "B", "company": "C", "sdr_name": "New SDR",
+        })
+        assert sf_id == "00QNEW1"
+        assert sf.Lead.create.call_count == 2
+        retry_payload = sf.Lead.create.call_args_list[1][0][0]
+        assert "SDR_Name__c" not in retry_payload
+
+    @patch("salesforce.log_sf_operation")
+    def test_push_resolves_owner_email_to_owner_id(self, mock_log):
+        """AE ownership goes to Lead Owner (a plain lookup, resolved by
+        Email), not the SDR-only SDR_Name__c picklist."""
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [{"Id": "005AE0001"}]}
+        push_lead_to_salesforce(sf, "00Qxx1", {"owner_email": "ae@test.com"})
+        payload = sf.Lead.update.call_args[0][1]
+        assert payload["OwnerId"] == "005AE0001"
+        assert "owner_email" not in payload
+
+    @patch("salesforce.log_sf_operation")
+    def test_push_resyncs_owner_email_on_a_plain_status_update(self, mock_log):
+        sf = _mock_sf()
+        sf.query.return_value = {"records": [{"Id": "005AE0002"}]}
+        push_lead_to_salesforce(
+            sf, "00Qxx1", {"status": "Calling"}, lead_info={"owner_email": "ae@test.com"},
+        )
+        payload = sf.Lead.update.call_args[0][1]
+        assert payload["OwnerId"] == "005AE0002"
+
+    @patch("salesforce.log_sf_operation")
+    def test_push_skips_owner_id_when_no_matching_sf_user(self, mock_log):
+        """A lookup miss (or a query error) must skip OwnerId, never crash
+        the whole push — here it leaves nothing else to push, so the update
+        call itself is skipped rather than sent with an empty payload."""
+        sf = _mock_sf()
+        sf.query.return_value = {"records": []}
+        push_lead_to_salesforce(sf, "00Qxx1", {"owner_email": "ghost@test.com"})
+        sf.Lead.update.assert_not_called()
+
+    @patch("salesforce.log_sf_operation")
+    def test_push_skips_only_owner_id_when_no_matching_sf_user_but_other_fields_push(self, mock_log):
+        sf = _mock_sf()
+        sf.query.return_value = {"records": []}
+        push_lead_to_salesforce(sf, "00Qxx1", {"status": "Calling", "owner_email": "ghost@test.com"})
+        payload = sf.Lead.update.call_args[0][1]
+        assert "OwnerId" not in payload
+        assert payload["Lead_Status__c"] == "New Lead"
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # lead_push_info
@@ -574,6 +1047,45 @@ class TestLeadPushInfo:
     def test_sdr_name_none_when_unassigned(self, db):
         lead = create_test_lead(db)
         assert lead_push_info(lead)["sdr_name"] is None
+
+    def test_sdr_name_excludes_ae_assignees(self, db):
+        """SDR_Name__c is a Salesforce restricted picklist of real SDR names
+        only — an AE's name is not a valid value there and Salesforce
+        rejects the whole write (INVALID_OR_NULL_FOR_RESTRICTED_PICKLIST),
+        live-reproduced for an AE-only lead. Only SDR-role assignees should
+        ever reach this field."""
+        lead = create_test_lead(db)
+        ae = create_test_user(db, email="ae@test.com", name="Samya Choudhary", role="AE")
+        lead.assigned_users.append(ae)
+        db.commit()
+
+        assert lead_push_info(lead)["sdr_name"] is None
+
+    def test_sdr_name_includes_only_sdrs_when_mixed_with_an_ae(self, db):
+        lead = create_test_lead(db)
+        sdr = create_test_user(db, email="tanya@test.com", name="Tanya Batra", role="SDR")
+        ae = create_test_user(db, email="ae@test.com", name="Samya Choudhary", role="AE")
+        lead.assigned_users.append(sdr)
+        lead.assigned_users.append(ae)
+        db.commit()
+
+        assert lead_push_info(lead)["sdr_name"] == "Tanya Batra"
+
+    def test_owner_email_is_the_assigned_ae(self, db):
+        lead = create_test_lead(db)
+        ae = create_test_user(db, email="ae@test.com", name="Samya Choudhary", role="AE")
+        lead.assigned_users.append(ae)
+        db.commit()
+
+        assert lead_push_info(lead)["owner_email"] == "ae@test.com"
+
+    def test_owner_email_none_when_no_ae_assigned(self, db):
+        lead = create_test_lead(db)
+        sdr = create_test_user(db, email="tanya@test.com", name="Tanya Batra", role="SDR")
+        lead.assigned_users.append(sdr)
+        db.commit()
+
+        assert lead_push_info(lead)["owner_email"] is None
 
     def test_linkedin_url_falls_back_to_person_linkedin(self, db):
         lead = create_test_lead(db)
@@ -622,6 +1134,15 @@ class TestCreateLead:
         assert payload["Company"] == "Unknown"
         assert payload["Lead_Status__c"] == "New Lead"
         assert payload["Lead_Source_New__c"] == "SDR Generated"
+
+    @patch("salesforce.log_sf_operation")
+    def test_create_sets_owner_id_for_an_ae_assigned_lead(self, mock_log):
+        sf = _mock_sf()
+        sf.Lead.create.return_value = {"id": "00Qnew3"}
+        sf.query.return_value = {"records": [{"Id": "005AE0003"}]}
+        create_new_lead_in_salesforce(sf, {"last_name": "X", "owner_email": "ae@test.com"})
+        payload = sf.Lead.create.call_args[0][0]
+        assert payload["OwnerId"] == "005AE0003"
 
     def test_create_none_sf_raises(self):
         with pytest.raises(Exception, match="Salesforce client not found"):
@@ -807,3 +1328,81 @@ class TestPushSDRMetrics:
         user.sf_sdr_id = "aSDR001"
         user.email = "test@example.com"
         assert push_sdr_metrics_to_salesforce(sf, user, {"calls_today": 1}) is False
+
+
+class TestPushOpportunity:
+    """The close write-back half. These exist because the payload shipped for
+    two releases in a shape Salesforce could never have accepted, and it was
+    invisible: opportunity_writeback_enabled defaults False, so nothing ever
+    called SF with it."""
+
+    @patch("salesforce.log_sf_operation")
+    def test_payload_omits_the_read_only_formula_fields(self, mock_log, db):
+        """IsClosed/IsWon are read-only formula fields on SF's Opportunity,
+        derived from StageName. Including them fails the whole update, so
+        StageName has to carry the close on its own."""
+        opp = models.Opportunity(
+            sf_opportunity_id="006ZZZ1", name="Closed deal",
+            stage_name="Closed Won", is_closed=True, is_won=True,
+            close_date=datetime(2026, 9, 11),
+        )
+        db.add(opp)
+        db.commit()
+
+        sf = _mock_sf()
+        sf.Opportunity = MagicMock()
+        assert push_opportunity_to_salesforce(db, sf, opp) is True
+
+        _, payload = sf.Opportunity.update.call_args[0]
+        assert payload == {"StageName": "Closed Won", "CloseDate": "2026-09-11"}
+        assert "IsClosed" not in payload
+        assert "IsWon" not in payload
+
+    @patch("salesforce.log_sf_operation")
+    def test_payload_includes_standard_product_and_invoice_when_set(self, mock_log, db):
+        """Live finding, 2026-09-15: this org rejects a Closed-stage push
+        without these — see the AE close-deal form fields that collect them."""
+        opp = models.Opportunity(
+            sf_opportunity_id="006ZZZ2", name="Closed deal", stage_name="Closed Won",
+            is_closed=True, is_won=True, close_date=datetime(2026, 9, 11),
+            standard_product_names="SMS Pack - Regal;Long code", invoice_number="INV-1001",
+        )
+        db.add(opp)
+        db.commit()
+
+        sf = _mock_sf()
+        sf.Opportunity = MagicMock()
+        assert push_opportunity_to_salesforce(db, sf, opp) is True
+
+        _, payload = sf.Opportunity.update.call_args[0]
+        assert payload["Standard_Product_Name__c"] == "SMS Pack - Regal;Long code"
+        assert payload["Invoice_Number__c"] == "INV-1001"
+
+    @patch("salesforce.log_sf_operation")
+    def test_payload_includes_lost_reason_when_set(self, mock_log, db):
+        """Live finding, 2026-09-16: this org also requires
+        Opportunity_Lost_Reason__c on a Closed Lost push."""
+        opp = models.Opportunity(
+            sf_opportunity_id="006ZZZ3", name="Lost deal", stage_name="Closed Lost",
+            is_closed=True, is_won=False, close_date=datetime(2026, 9, 11),
+            standard_product_names="SMS Pack - Regal", invoice_number="INV-1002",
+            lost_reason="Budget",
+        )
+        db.add(opp)
+        db.commit()
+
+        sf = _mock_sf()
+        sf.Opportunity = MagicMock()
+        assert push_opportunity_to_salesforce(db, sf, opp) is True
+
+        _, payload = sf.Opportunity.update.call_args[0]
+        assert payload["Opportunity_Lost_Reason__c"] == "Budget"
+
+    def test_no_sf_id_is_a_no_op(self, db):
+        opp = models.Opportunity(name="Local only", stage_name="Discovery")
+        db.add(opp)
+        db.commit()
+        sf = _mock_sf()
+        sf.Opportunity = MagicMock()
+        assert push_opportunity_to_salesforce(db, sf, opp) is False
+        sf.Opportunity.update.assert_not_called()

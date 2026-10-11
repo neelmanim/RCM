@@ -27,6 +27,16 @@ from routes.growth_intelligence_routes import (
 import cache as _cache_module  # used to clear GI cache between tests
 
 
+@pytest.fixture(autouse=True)
+def _no_live_groq_model_lookup():
+    """_get_llm_config now revalidates the configured model against Groq's
+    live /models endpoint (RCA 2026-08-20). Keep this file offline even if
+    another test module leaked a real-looking GROQ_API_KEY into the shared
+    test process env."""
+    with patch("routes.growth_intelligence_routes._resolve_groq_model", return_value="llama-3.1-8b-instant"):
+        yield
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. Cache Key Logic
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -85,6 +95,17 @@ class TestComputeMetrics:
         assert metrics["total_leads"] == 0
         assert metrics["conversion_rate"] == 0
         assert metrics["connect_rate_30d"] == 0
+
+    def test_csm_gets_zero_not_org_wide_leads(self, db):
+        """CSM doesn't own Leads (their unit is Account) — must not fall
+        through to the unscoped org-wide query and leak every rep's
+        pipeline. Regression test for the role-audit finding: CSM matched
+        neither the SDR/AE nor Pod Admin branch, so `base` stayed the
+        unfiltered `db.query(models.Lead)` from line 61."""
+        create_test_lead(db, last_name="Z", email="z@test.com", status="Lead Assigned")
+        csm_user = {"sub": "csm-1", "role": "CSM"}
+        metrics = _compute_metrics(db, csm_user)
+        assert metrics["total_leads"] == 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
