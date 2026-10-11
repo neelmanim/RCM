@@ -7,8 +7,9 @@ mcp_server/.venv/
 __pycache__/
 scratch/
 *.pyc
-backend/crm.db
-backend/test.db
+*.db
+backend/*.db
+scripts/migration/data/
 backend/uploads/
 frontend/mock.html
 .DS_Store
