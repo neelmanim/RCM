@@ -207,9 +207,12 @@ export function LoginPage() {
       </div>
 
       {loading && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-[#090d14]/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5 bg-[#090D0E]/85 backdrop-blur-xl">
           <BrandLoader />
-          <p className="text-sm font-medium text-white">Wait for it… the bots are working.</p>
+          <div className="flex flex-col items-center gap-1.5 text-center">
+            <p className="text-base font-bold text-white tracking-tight">Authenticating workspace credentials…</p>
+            <p className="text-xs font-medium text-[#9BA9A5]">Securing session tokens & establishing enterprise handshake</p>
+          </div>
         </div>
       )}
 
@@ -220,26 +223,21 @@ export function LoginPage() {
 
 function BrandLoader() {
   return (
-    <div className="relative h-[76px] w-[76px]">
+    <div className="relative flex h-20 w-20 items-center justify-center">
+      {/* Outer pulsing ring in brand lime */}
+      <div className="absolute inset-0 rounded-2xl bg-[#C9FF68]/15 animate-ping opacity-30" />
+      {/* Gluestack styled glass card for brand symbol */}
+      <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-[#C9FF68]/30 bg-[#090D0E] shadow-[0_0_30px_rgba(201,255,104,0.25)]">
+        <img
+          src="img/brand/icon-lime.svg"
+          alt="Alternate CRM"
+          className="h-9 w-9 object-contain animate-pulse"
+        />
+      </div>
+      {/* Circular orbiting spinner ring */}
       <div
-        className="login-loader-ring absolute inset-0 rounded-full"
-        style={{
-          background: 'conic-gradient(from 0deg, transparent 0deg, transparent 255deg, #7C3AED 300deg, #EC4899 360deg)',
-          WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))',
-          mask: 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px))',
-          animation: 'login-orbit-spin 1.4s linear infinite',
-        }}
-      />
-      <span
-        className="login-loader-spark absolute -inset-2 flex items-start justify-center text-[13px] text-fuchsia-400"
-        style={{ animation: 'login-orbit-spin 1.4s linear infinite', textShadow: '0 0 8px rgba(232,121,249,0.9), 0 0 2px #fff' }}
-      >
-        ✦
-      </span>
-      <img
-        src="img/alternatecrm-logo.png"
-        alt=""
-        className="absolute inset-4 h-11 w-11 rounded-xl object-cover shadow-[0_4px_20px_rgba(124,58,237,0.45)]"
+        className="absolute -inset-1.5 rounded-2xl border-2 border-transparent border-t-[#C9FF68] border-r-[#C9FF68]/40"
+        style={{ animation: 'spin 1.2s cubic-bezier(0.55, 0.25, 0.25, 0.95) infinite' }}
       />
     </div>
   );

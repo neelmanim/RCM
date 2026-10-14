@@ -501,7 +501,7 @@ export function NavSidebar({
       {/* Logo */}
       <div className="nh-logo">
         <img
-          src="img/alternatecrm-logo.png"
+          src="img/brand/icon-lime.svg"
           alt="Alternate CRM"
           className="nh-logo__icon"
         />
