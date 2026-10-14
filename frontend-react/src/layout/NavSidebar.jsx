@@ -7,7 +7,7 @@
  * tooltips (same v9.7.11 approach to escape overflow:hidden).
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { POWERED_BY } from '../generated/version.js';
+const POWERED_BY = (typeof window !== 'undefined' && window.__POWERED_BY__) || 'Powered by Alternate Messenger';
 import { Avatar } from '../components/ui/Avatar';
 import { hasSeen, markSeen } from '../utils/seenFlag';
 

@@ -1,12 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-  <defs>
-    <linearGradient id="alternate-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3B82F6"/>
-      <stop offset="50%" stop-color="#6366F1"/>
-      <stop offset="100%" stop-color="#8B5CF6"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="100" height="100" rx="24" ry="24" fill="url(#alternate-grad)"/>
-  <!-- Stylized Geometric 'A' Mark -->
-  <path d="M50 18 L76 78 L63 78 L57 63 L43 63 L37 78 L24 78 Z M50 34 L46 53 L54 53 Z" fill="#FFFFFF"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" rx="122.9" fill="#C9FF68"/><line x1="112.64" y1="256.00" x2="399.36" y2="256.00" stroke="#090D0E" stroke-width="24" stroke-linecap="round"/><line x1="154.63" y1="154.63" x2="357.37" y2="357.37" stroke="#090D0E" stroke-width="24" stroke-linecap="round"/><line x1="256.00" y1="112.64" x2="256.00" y2="399.36" stroke="#090D0E" stroke-width="24" stroke-linecap="round"/><line x1="357.37" y1="154.63" x2="154.63" y2="357.37" stroke="#090D0E" stroke-width="24" stroke-linecap="round"/></svg>

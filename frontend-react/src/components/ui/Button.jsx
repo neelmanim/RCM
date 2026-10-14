@@ -7,11 +7,11 @@ const sizeClasses = {
 };
 
 const variantClasses = {
-  primary: 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm active:bg-blue-800',
-  secondary: 'bg-slate-100 hover:bg-slate-200 text-slate-700',
+  primary: 'bg-[#C9FF68] hover:bg-[#d8ff85] text-[#090D0E] font-bold shadow-sm active:bg-[#b8f055]',
+  secondary: 'bg-[#151D20] hover:bg-[#1C262A] text-[#F4F6F2] border border-white/10 shadow-sm',
   danger: 'bg-red-600 hover:bg-red-700 text-white shadow-sm active:bg-red-800',
-  ghost: 'bg-transparent hover:bg-slate-100 text-slate-600',
-  outline: 'bg-transparent border border-slate-200 hover:bg-slate-50 text-slate-700',
+  ghost: 'bg-transparent hover:bg-white/5 text-[#9BA9A5] hover:text-[#F4F6F2]',
+  outline: 'bg-transparent border border-white/15 hover:bg-white/5 text-[#F4F6F2] hover:border-white/30',
 };
 
 export const Button = ({

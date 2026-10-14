@@ -1,7 +1,7 @@
 import React from 'react';
 
 export const Table = ({ children, className = '', tableStyle }) => (
-  <div className={`w-full overflow-x-auto rounded-xl border border-slate-200 bg-white ${className}`}>
+  <div className={`w-full overflow-x-auto rounded-2xl border border-white/10 bg-[#12181A] shadow-sm ${className}`}>
     <table className="w-full text-sm border-collapse" style={tableStyle}>{children}</table>
   </div>
 );
@@ -9,14 +9,14 @@ export const Table = ({ children, className = '', tableStyle }) => (
 export const TableHead = ({ children, className = '' }) => {
   const hasBgOverride = /\bbg-/.test(className);
   return (
-    <thead className={`${hasBgOverride ? '' : 'bg-slate-50'} border-b border-slate-200 ${className}`}>
+    <thead className={`${hasBgOverride ? '' : 'bg-white/[0.02]'} border-b border-white/5 ${className}`}>
       {children}
     </thead>
   );
 };
 
 export const TableBody = ({ children }) => (
-  <tbody className="divide-y divide-slate-100">{children}</tbody>
+  <tbody className="divide-y divide-white/5">{children}</tbody>
 );
 
 export const TableRow = ({ children, onClick, className = '', ...rest }) => (
@@ -24,7 +24,7 @@ export const TableRow = ({ children, onClick, className = '', ...rest }) => (
     onClick={onClick}
     className={`
       transition-colors duration-100
-      ${onClick ? 'cursor-pointer hover:bg-slate-50' : ''}
+      ${onClick ? 'cursor-pointer hover:bg-white/[0.04]' : ''}
       ${className}
     `}
     {...rest}
@@ -34,21 +34,16 @@ export const TableRow = ({ children, onClick, className = '', ...rest }) => (
 );
 
 export const TableHeader = ({ children, className = '', colSpan, ...rest }) => (
-  <th colSpan={colSpan} className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider
-    text-slate-500 whitespace-nowrap ${className}`} {...rest}>
+  <th colSpan={colSpan} className={`px-4 py-3 text-left text-xs font-bold uppercase tracking-wider
+    text-[#9BA9A5] whitespace-nowrap ${className}`} {...rest}>
     {children}
   </th>
 );
 
 export const TableCell = ({ children, className = '', colSpan, ...rest }) => {
-  // RCA 2026-07-28: Tailwind resolves conflicting utilities (whitespace-nowrap
-  // vs whitespace-normal) by stylesheet definition order, not by which class
-  // appears later in the `className` string — so a caller passing
-  // "whitespace-normal" to wrap long text was silently losing to this
-  // default, keeping text on one line and spilling into adjacent columns.
   const hasWhitespaceOverride = /\bwhitespace-/.test(className);
   return (
-    <td colSpan={colSpan} className={`px-4 py-3 text-slate-700 ${hasWhitespaceOverride ? '' : 'whitespace-nowrap'} ${className}`} {...rest}>
+    <td colSpan={colSpan} className={`px-4 py-3 text-[#F4F6F2] ${hasWhitespaceOverride ? '' : 'whitespace-nowrap'} ${className}`} {...rest}>
       {children}
     </td>
   );

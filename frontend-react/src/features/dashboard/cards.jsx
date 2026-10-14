@@ -89,20 +89,20 @@ export function MeetingsChartCard() {
     });
     const ctx = canvasRef.current.getContext('2d');
     const gradient = ctx.createLinearGradient(0, 0, 0, 200);
-    gradient.addColorStop(0, 'rgba(37,99,235,0.18)');
-    gradient.addColorStop(1, 'rgba(37,99,235,0)');
+    gradient.addColorStop(0, 'rgba(201,255,104,0.22)');
+    gradient.addColorStop(1, 'rgba(201,255,104,0)');
     chartRef.current?.destroy();
     chartRef.current = new Chart(ctx, {
       type: 'line',
-      data: { labels, datasets: [{ data: values, borderColor: '#2563EB', borderWidth: 2, backgroundColor: gradient, fill: true, tension: 0.4,
-        pointBackgroundColor: '#fff', pointBorderColor: '#2563EB', pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6 }] },
+      data: { labels, datasets: [{ data: values, borderColor: '#C9FF68', borderWidth: 2, backgroundColor: gradient, fill: true, tension: 0.4,
+        pointBackgroundColor: '#090D0E', pointBorderColor: '#C9FF68', pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6 }] },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#fff', titleColor: '#0F172A', bodyColor: '#2563EB', borderColor: '#E2E8F0', borderWidth: 1, cornerRadius: 8, padding: 10,
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#12181A', titleColor: '#F4F6F2', bodyColor: '#C9FF68', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, cornerRadius: 8, padding: 10,
           callbacks: { label: (item) => ` ${item.raw} meeting${item.raw !== 1 ? 's' : ''}` } } },
         scales: {
-          x: { grid: { display: false }, ticks: { color: '#94A3B8', font: { size: 10 }, maxRotation: 0 }, border: { display: false } },
-          y: { beginAtZero: true, grid: { color: '#F1F5F9' }, ticks: { color: '#94A3B8', font: { size: 10 }, stepSize: 3 }, border: { display: false } },
+          x: { grid: { display: false }, ticks: { color: '#9BA9A5', font: { size: 10 }, maxRotation: 0 }, border: { display: false } },
+          y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9BA9A5', font: { size: 10 }, stepSize: 3 }, border: { display: false } },
         },
       },
     });
@@ -153,16 +153,16 @@ export function LeaderboardCard({ onNavigate }) {
         {!loading && rows.map((row, i) => {
           const name = row.name || row.sdr_name;
           return (
-            <div key={`${name}-${i}`} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50">
-              <span className="w-5 text-center text-xs font-bold text-slate-400">{row.rank ?? i + 1}</span>
+            <div key={`${name}-${i}`} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors">
+              <span className="w-5 text-center text-xs font-bold text-[#9BA9A5]">{row.rank ?? i + 1}</span>
               <Avatar name={name} size={30} />
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-slate-800 truncate">{name}{row.left && ' '}{row.left && <span className="ml-1 rounded bg-slate-100 px-1 py-0.5 text-[9px] font-semibold text-slate-500" title="This person has left — their access was removed">Left</span>}</div>
-                {row.pod_name && <div className="text-xs text-slate-400 truncate">{row.pod_name}</div>}
+                <div className="text-sm font-semibold text-[#F4F6F2] truncate">{name}{row.left && ' '}{row.left && <span className="ml-1 rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold text-[#9BA9A5]" title="This person has left — their access was removed">Left</span>}</div>
+                {row.pod_name && <div className="text-xs text-[#9BA9A5] truncate">{row.pod_name}</div>}
               </div>
               <div className="text-right">
-                <div className="text-sm font-extrabold text-slate-900">{row.meetings_scheduled ?? 0}</div>
-                <div className="text-[11px] text-slate-400">meetings</div>
+                <div className="text-sm font-extrabold text-[#C9FF68]">{row.meetings_scheduled ?? 0}</div>
+                <div className="text-[11px] text-[#9BA9A5]">meetings</div>
               </div>
             </div>
           );
@@ -183,36 +183,36 @@ export function NeedsAttentionCard() {
   const sdrs = data || [];
   return (
     <Card>
-      <CardHeader title={<span className="inline-flex items-center gap-2"><TriangleAlert size={15} className="text-amber-600" />Needs attention</span>} subtitle="SDRs with no calls or emails today" />
+      <CardHeader title={<span className="inline-flex items-center gap-2"><TriangleAlert size={15} className="text-amber-400" />Needs attention</span>} subtitle="SDRs with no calls or emails today" />
       <div className="px-2 py-1">
         {loading && Array.from({ length: 3 }).map((_, i) => <div key={i} className="px-3 py-2.5"><Skeleton className="h-8 w-full" /></div>)}
         {!loading && sdrs.length === 0 && <EmptyState icon={CircleCheck} title="All SDRs are active today" className="py-6" />}
         {!loading && sdrs.slice(0, 8).map((s, i) => {
           const name = s.name || s.sdr_name || 'SDR';
           return (
-            <div key={`${name}-${i}`} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50">
+            <div key={`${name}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 transition-colors">
               <Avatar name={name} size={30} />
-              <span className="flex-1 text-sm font-semibold text-slate-800 truncate">{name}</span>
+              <span className="flex-1 text-sm font-semibold text-[#F4F6F2] truncate">{name}</span>
               <Badge variant="warning">No activity today</Badge>
             </div>
           );
         })}
       </div>
-      {!loading && sdrs.length > 0 && <div className="px-5 py-2.5 border-t border-slate-100 text-xs text-slate-500">{sdrs.length} SDR{sdrs.length > 1 ? 's' : ''} need a nudge{sdrs.length > 8 ? ` · showing 8` : ''}</div>}
+      {!loading && sdrs.length > 0 && <div className="px-5 py-2.5 border-t border-white/5 text-xs text-[#9BA9A5]">{sdrs.length} SDR{sdrs.length > 1 ? 's' : ''} need a nudge{sdrs.length > 8 ? ` · showing 8` : ''}</div>}
     </Card>
   );
 }
 
 // ─── Pipeline by stage + AI health ──────────────────────────────────────────────────────────────────────────────
 const STAGES = [
-  ['Lead Assigned', 'bg-blue-500'], ['Calling', 'bg-emerald-600'], ['Meeting Scheduled', 'bg-amber-500'],
-  ['Demo Scheduled', 'bg-indigo-500'], ['Demo Done', 'bg-teal-600'], ['Completed', 'bg-green-600'], ['Disqualified', 'bg-slate-400'],
+  ['Lead Assigned', 'bg-[#C9FF68]'], ['Calling', 'bg-amber-400'], ['Meeting Scheduled', 'bg-purple-400'],
+  ['Demo Scheduled', 'bg-sky-400'], ['Demo Done', 'bg-emerald-400'], ['Completed', 'bg-emerald-500'], ['Disqualified', 'bg-white/20'],
 ];
 const AI_METRICS = [
-  ['velocity', 'Pipeline velocity', TrendingUp, 'text-blue-700'],
-  ['conversion', 'Conversion rate', Target, 'text-green-700'],
-  ['health', 'Call connect rate', PhoneCall, 'text-purple-700'],
-  ['efficiency', 'Research readiness', ClipboardCheck, 'text-amber-700'],
+  ['velocity', 'Pipeline velocity', TrendingUp, 'text-sky-400'],
+  ['conversion', 'Conversion rate', Target, 'text-emerald-400'],
+  ['health', 'Call connect rate', PhoneCall, 'text-purple-400'],
+  ['efficiency', 'Research readiness', ClipboardCheck, 'text-amber-400'],
 ];
 const shortMetric = (raw) => {
   if (raw == null) return '—';
@@ -240,16 +240,16 @@ export function PipelineCard({ statusCounts = {}, total = 0, loading: statsLoadi
           ? Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-4 w-full mb-3" />)
           : rows.map((r) => (
             <button key={r.label} type="button" onClick={() => onStage?.(r.label)} title={`Open ${r.label} leads`}
-              className="w-full flex items-center gap-3 mb-1 px-1 py-1 rounded-md text-left hover:bg-slate-50">
-              <span className="w-36 text-xs font-medium text-slate-600 shrink-0">{r.label}</span>
-              <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+              className="w-full flex items-center gap-3 mb-1.5 px-2 py-1.5 rounded-xl text-left hover:bg-white/5 transition-colors">
+              <span className="w-36 text-xs font-semibold text-[#9BA9A5] shrink-0">{r.label}</span>
+              <div className="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
                 <div className={`h-full rounded-full ${r.color}`} style={{ width: `${Math.max(total ? (r.count / total) * 100 : 0, r.count > 0 ? 1 : 0)}%` }} />
               </div>
-              <span className="w-14 text-right text-xs font-bold text-slate-700">{fmt(r.count)}</span>
+              <span className="w-14 text-right text-xs font-bold text-[#F4F6F2]">{fmt(r.count)}</span>
             </button>
           ))}
       </CardContent>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-5 py-3 border-t border-slate-100">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-5 py-3 border-t border-white/5">
         {AI_METRICS.map(([cat, label, Icon, color]) => {
           const ins = byCat[cat];
           const trend = ins?.trend;
@@ -257,19 +257,19 @@ export function PipelineCard({ statusCounts = {}, total = 0, loading: statsLoadi
             <div key={cat}>
               <div className={`flex items-center gap-1 text-[11px] font-semibold ${color}`}><Icon size={12} />{label}</div>
               {giLoading ? <Skeleton className="h-5 w-12 mt-1" /> : (
-                <div className="text-base font-extrabold text-slate-900">
+                <div className="text-base font-extrabold text-[#F4F6F2]">
                   {shortMetric(ins?.metric_value)}
-                  {trend === 'up' && <span className="text-green-600 text-xs ml-1">↑</span>}
-                  {trend === 'down' && <span className="text-red-600 text-xs ml-1">↓</span>}
+                  {trend === 'up' && <span className="text-emerald-400 text-xs ml-1">↑</span>}
+                  {trend === 'down' && <span className="text-red-400 text-xs ml-1">↓</span>}
                 </div>
               )}
             </div>
           );
         })}
       </div>
-      <div className="flex items-center justify-between px-5 py-2.5 border-t border-slate-100 text-[11px] text-slate-400">
+      <div className="flex items-center justify-between px-5 py-2.5 border-t border-white/5 text-[11px] text-[#9BA9A5]">
         <span className="inline-flex items-center gap-1"><Info size={11} />Pipeline bars: live CRM data · Health metrics: 30-day rolling window</span>
-        <span className="inline-flex items-center gap-1"><Sparkles size={11} />AI-scored</span>
+        <span className="inline-flex items-center gap-1 text-[#C9FF68]"><Sparkles size={11} />AI-scored</span>
       </div>
     </Card>
   );

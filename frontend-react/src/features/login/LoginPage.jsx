@@ -82,129 +82,115 @@ export function LoginPage() {
   }, [origin]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0B0F19] via-[#111827] to-[#1E1B4B] text-slate-100 selection:bg-[#d3fa76] selection:text-slate-900">
-      <div className="mx-auto flex min-h-screen max-w-[1440px] flex-col lg:flex-row">
-        {/* ── Brand panel (Gluestack UI inspired) ───────────────────────── */}
-        <div className="relative flex flex-col justify-center overflow-hidden px-8 py-10 lg:flex-1 lg:max-w-3xl lg:px-16 lg:py-16">
-          <div
-            className="pointer-events-none absolute -right-24 -top-48 h-[520px] w-[520px] rounded-full opacity-20"
-            style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.4) 0%, transparent 70%)' }}
+    <div className="relative min-h-screen bg-[#090D0E] text-[#F4F6F2] selection:bg-[#C9FF68] selection:text-[#090D0E] flex flex-col justify-between overflow-x-hidden font-sans">
+      {/* Background Ambient Glows */}
+      <div className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 h-[500px] w-full max-w-7xl overflow-hidden opacity-30">
+        <div className="absolute left-1/2 top-[-200px] -translate-x-1/2 h-[600px] w-[600px] rounded-full bg-[radial-gradient(circle,#C9FF68_0%,transparent_70%)] blur-[100px] opacity-20" />
+      </div>
+
+      {/* ── Top Header Navigation ───────────────────────────────────────── */}
+      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6 sm:px-8">
+        <a href="https://alternatecrm.com" className="flex items-center gap-3 text-decoration-none group">
+          <img
+            src="img/brand/icon-lime.svg"
+            alt="Alternate CRM"
+            className="h-9 w-9 rounded-xl object-contain p-1.5 bg-[#151C1E] border border-white/10 shadow-sm transition-transform group-hover:scale-105"
           />
-          {SPARKS.map((s) => (
-            <span
-              key={s.id}
-              className="pointer-events-none absolute select-none"
-              style={{
-                left: s.left,
-                top: s.top,
-                fontSize: s.size,
-                color: s.dim ? 'rgba(255,255,255,0.2)' : 'rgba(211,250,118,0.6)',
-                animation: `login-float-spark ${s.duration}s ease-in-out ${s.delay}s infinite`,
-              }}
-            >
-              {s.dim ? '·' : '✦'}
-            </span>
-          ))}
-
-          <div className="relative z-10 mb-8 flex items-center gap-3 lg:mb-12">
-            <img src="img/alternatecrm-logo.png" alt="Alternate CRM" className="h-10 w-10 rounded-xl object-cover shadow-lg ring-1 ring-white/10" />
-            <div className="flex flex-col leading-tight">
-              <span className="text-xl font-extrabold tracking-tight text-white">Alternate CRM</span>
-              <span className="text-[11px] font-semibold text-slate-400">{window.__POWERED_BY__ || 'Powered by Alternate Messenger'}</span>
-            </div>
+          <div className="flex flex-col">
+            <span className="text-base font-extrabold tracking-tight text-[#F4F6F2]">Alternate CRM</span>
+            <span className="text-[10px] font-semibold text-[#9BA9A5]">{window.__POWERED_BY__ || 'Enterprise Conversation OS'}</span>
           </div>
+        </a>
 
-          <span className="relative z-10 mb-4 inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-500/10 px-3.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#d3fa76] ring-1 ring-[#d3fa76]/20">
-            <span>⚡</span> Commercial Conversation OS
-          </span>
+        <a
+          href="sandbox.html"
+          className="inline-flex items-center gap-2 rounded-xl border border-[#C9FF68]/40 bg-[#C9FF68]/10 px-4 py-2 text-xs font-bold text-[#C9FF68] transition-all hover:bg-[#C9FF68]/20 hover:border-[#C9FF68]/60 shadow-sm"
+        >
+          <span>⚡</span> Live Sandbox
+        </a>
+      </header>
 
-          <h1 className="relative z-10 mb-5 max-w-lg text-3xl font-extrabold leading-[1.12] tracking-tight text-white lg:text-[2.75rem]">
-            Where raw leads become{' '}
-            <span className="bg-gradient-to-r from-[#d3fa76] via-teal-300 to-indigo-400 bg-clip-text text-transparent">
-              Salesforce-ready pipeline.
-            </span>
-          </h1>
-          <p className="relative z-10 mb-8 max-w-md text-[15px] leading-relaxed text-slate-300 lg:mb-10">
-            Enrich, deduplicate, and qualify every lead in real time. Orchestrate multi-channel outreach and push clean, sales-ready records directly into Salesforce.
-          </p>
-
-          <div className="relative z-10 mb-10 hidden lg:mb-0 lg:flex lg:items-end lg:gap-8">
-            <div className="hidden shrink-0 lg:block">
-              <ProductPreviewMock />
-            </div>
-          </div>
-
-          <div className="relative z-10 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:mt-10">
-            {FEATURES.map(({ icon: Icon, color, title, desc }, i) => {
-              const isEgg = i === FEATURES.length - 1;
-              return (
-                <div key={title} className="flex items-start gap-3 rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/10 backdrop-blur-md transition-all hover:bg-white/[0.07] hover:ring-white/20">
-                  <span
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${color} shadow-sm`}
-                    style={isEgg ? { userSelect: 'none', touchAction: 'manipulation' } : undefined}
-                    onClick={isEgg ? handleEggClick : undefined}
-                  >
-                    {isEgg && eggFlipped
-                      ? <span className="text-[17px] leading-none text-white">{'\uD83D\uDD31'}</span>
-                      : <Icon size={17} className="text-white" strokeWidth={2.25} />}
-                  </span>
-                  <div>
-                    <p className="text-[13px] font-bold text-white">{title}</p>
-                    <p className="text-[11px] leading-snug text-slate-400 mt-0.5">{desc}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+      {/* ── Center Hero & Sign-In Card (Gluestack UI) ────────────────────── */}
+      <main className="relative z-10 mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center px-4 py-8">
+        {/* Badge */}
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[#C9FF68]/25 bg-[#C9FF68]/10 px-3.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#C9FF68]">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#C9FF68] animate-ping" />
+          Enterprise Workspace Access
         </div>
 
-        {/* ── Modern Gluestack Sign-In Panel ───────────────────────────── */}
-        <div className="flex w-full flex-1 shrink-0 flex-col justify-center bg-[#0e1420]/90 px-6 py-10 sm:px-10 lg:sticky lg:top-0 lg:h-screen lg:w-[460px] lg:flex-none lg:px-12 border-l border-white/[0.06] backdrop-blur-2xl">
-          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <img src="img/alternatecrm-logo.png" alt="Alternate CRM" className="h-9 w-9 rounded-xl object-cover" />
-            <span className="text-lg font-bold text-white">Alternate CRM</span>
-          </div>
+        {/* Title & Tagline */}
+        <h1 className="mb-3 text-center text-3xl font-extrabold tracking-tight text-[#F4F6F2] sm:text-4xl">
+          Sign in to your workspace
+        </h1>
+        <p className="mb-8 max-w-md text-center text-sm font-medium leading-relaxed text-[#9BA9A5]">
+          Enrich raw prospects, orchestrate real-time communications, and push qualified pipeline directly into Salesforce.
+        </p>
 
-          <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-7 shadow-2xl">
-            <h2 className="mb-1.5 text-2xl font-extrabold tracking-tight text-white">Welcome back</h2>
-            <p className="mb-6 text-sm text-slate-400">Sign in to your Alternate CRM workspace</p>
-
+        {/* Gluestack Elevation Card */}
+        <div className="w-full rounded-2xl border border-white/10 bg-[#12181A]/90 p-8 shadow-[0_24px_50px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+          <div className="space-y-4">
             <a
               href={googleHref}
               onClick={() => setLoading(true)}
-              className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white text-slate-900 px-6 py-3.5 text-sm font-bold shadow-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-slate-100 hover:shadow-lg active:translate-y-0"
+              className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/20 bg-[#F4F6F2] px-6 py-3.5 text-sm font-bold text-[#090D0E] shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:bg-white hover:shadow-md active:translate-y-0"
             >
               <GoogleIcon />
-              Continue with Google
+              Continue with Google Workspace
             </a>
 
-            <div className="relative my-6 flex items-center justify-center">
+            <div className="relative my-4 flex items-center justify-center">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-white/10" />
               </div>
-              <span className="relative bg-[#101726] px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Or explore live
+              <span className="relative bg-[#12181A] px-3 text-[11px] font-semibold uppercase tracking-wider text-[#9BA9A5]">
+                Instant Evaluator Access
               </span>
             </div>
 
             <a
               href="sandbox.html"
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#d3fa76]/30 bg-[#d3fa76]/10 px-6 py-3 text-sm font-bold text-[#d3fa76] transition-all duration-150 hover:bg-[#d3fa76]/20 hover:border-[#d3fa76]/50"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#C9FF68]/30 bg-[#C9FF68]/10 px-6 py-3.5 text-sm font-bold text-[#C9FF68] transition-all duration-150 hover:bg-[#C9FF68]/20 hover:border-[#C9FF68]/50"
             >
-              <span>⚡</span> Try Live Sandbox / Quick Peek
+              <span>⚡</span> Launch Interactive Sandbox / Quick Peek
             </a>
-
-            <p className="mt-5 text-center text-xs text-slate-400">
-              New to Alternate CRM? Just sign in above — we'll let your admin know.
-            </p>
           </div>
 
-          <p className="mt-8 flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-400">
-            <Lock size={12} className="shrink-0 text-slate-400" />
-            Enterprise grade security · Synced with Salesforce
-          </p>
+          <div className="mt-7 border-t border-white/5 pt-5 text-center">
+            <p className="text-xs text-[#9BA9A5]">
+              New to Alternate CRM? Single sign-on will notify your organization administrator to grant role privileges.
+            </p>
+          </div>
         </div>
-      </div>
+
+        {/* Features Row */}
+        <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+          {FEATURES.map(({ icon: Icon, title, desc }) => (
+            <div
+              key={title}
+              className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3 text-left transition-colors hover:border-white/10"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#C9FF68]/10 text-[#C9FF68]">
+                <Icon size={16} strokeWidth={2.2} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-[#F4F6F2]">{title}</p>
+                <p className="text-[10px] text-[#9BA9A5] line-clamp-1">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+
+      {/* ── Footer ────────────────────────────────────────────────────── */}
+      <footer className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5 text-xs text-[#9BA9A5]">
+        <div className="flex items-center gap-2">
+          <Lock size={12} className="text-[#C9FF68]" />
+          <span>SOC2 Type II & HIPAA compliant architecture</span>
+        </div>
+        <div>
+          <span>Alternate CRM © {new Date().getFullYear()}</span>
+        </div>
+      </footer>
 
       {loading && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5 bg-[#090D0E]/85 backdrop-blur-xl">

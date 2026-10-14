@@ -1,48 +1,35 @@
-/* Core Variables */
+/* Core Variables — Gluestack UI & Alternate CRM Palette */
 :root {
     /* Also read by NavHub.css's .nh-aircall-drawer width — one definition so
        the drawer and the content-shrink margin below can't drift apart. */
     --aircall-drawer-width: 440px;
-    --primary-color: #4f46e5;
-    /* Indigo */
-    --primary-hover: #4338ca;
-    --secondary-color: #64748b;
-    /* Slate */
-    --background-color: #f8fafc;
-    /* Light Slate */
-    --surface-color: #ffffff;
-    --border-color: #e2e8f0;
-    --text-main: #0f172a;
-    /* Slate 900 */
-    --text-muted: #64748b;
-    /* Slate 500 */
-    --sidebar-bg: #1e293b;
-    /* Slate 800 */
-    --sidebar-text: #cbd5e1;
-    /* Slate 300 */
-    --sidebar-active: #334155;
-    /* Slate 700 */
+    --primary-color: #C9FF68;
+    --primary-hover: #D8FF85;
+    --primary-text: #090D0E;
+    --secondary-color: #9BA9A5;
+    --background-color: #090D0E;
+    --surface-color: #12181A;
+    --border-color: rgba(255, 255, 255, 0.08);
+    --text-main: #F4F6F2;
+    --text-muted: #9BA9A5;
+    --sidebar-bg: #090D0E;
+    --sidebar-text: #9BA9A5;
+    --sidebar-active: #151C1E;
 
     /* Kanban Status Colors */
-    --status-new: #3b82f6;
-    /* Blue */
+    --status-new: #C9FF68;
     --status-working: #eab308;
-    /* Yellow */
     --status-qualified: #a855f7;
-    /* Purple */
     --status-proposal: #f97316;
-    /* Orange */
     --status-won: #22c55e;
-    /* Green */
     --status-lost: #ef4444;
-    /* Red */
 
-    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 14px 28px -3px rgba(0, 0, 0, 0.6);
 
-    --radius-md: 0.5rem;
-    --radius-lg: 0.75rem;
+    --radius-md: 0.75rem;
+    --radius-lg: 1rem;
     --transition-speed: 0.2s;
 }
 
@@ -519,12 +506,14 @@ body {
 
 .btn-primary {
     background-color: var(--primary-color);
-    color: white;
+    color: #090D0E;
+    font-weight: 700;
     box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover {
     background-color: var(--primary-hover);
+    color: #090D0E;
     box-shadow: var(--shadow-md);
     transform: translateY(-1px);
 }

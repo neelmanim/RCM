@@ -7,15 +7,16 @@
     <title>Alternate CRM · Powered by Alternate Messenger</title>
     <meta name="description" content="Alternate CRM — Powered by Alternate Messenger. SDR-focused CRM with POD teams, enriched leads, and pipeline management.">
     <!-- Alternate CRM Brand Icons -->
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20261014v2355">
+    <link rel="icon" type="image/x-icon" href="favicon.ico?v=20261014v2355">
     <link rel="icon" type="image/png" sizes="32x32" href="img/icons/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="img/icons/favicon-16x16.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="img/icons/apple-touch-icon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
     <!-- Preload Dashboard React bundle so it's ready when user clicks Dashboard -->
-    <link rel="preload" href="js/dashboard-hub.js?v=20261014v2330" as="script">
-    <link rel="preload" href="js/dashboard-hub.css?v=20261014v2330" as="style">
-    <link rel="preload" href="js/nav-hub.js?v=20261014v2330" as="script">
-    <link rel="preload" href="js/nav-hub.css?v=20261014v2330" as="style">
+    <link rel="preload" href="js/dashboard-hub.js?v=20261014v2355" as="script">
+    <link rel="preload" href="js/dashboard-hub.css?v=20261014v2355" as="style">
+    <link rel="preload" href="js/nav-hub.js?v=20261014v2355" as="script">
+    <link rel="preload" href="js/nav-hub.css?v=20261014v2355" as="style">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#090D0E">
     <meta property="og:image" content="img/icons/icon-512x512.png">
@@ -129,7 +130,8 @@
                    * background-position is NOT compositor-accelerated → causes CLS.
                    * translateX on a pseudo-element runs entirely on the GPU thread. */
                   .sk-box {
-                    background: #e2e8f0;
+                    background: #12181A;
+                    border: 1px solid rgba(255, 255, 255, 0.05);
                     position: relative;
                     overflow: hidden;
                     isolation: isolate;
@@ -140,7 +142,7 @@
                     inset: 0;
                     background: linear-gradient(90deg,
                       transparent 0%,
-                      rgba(255,255,255,0.55) 50%,
+                      rgba(201, 255, 104, 0.08) 50%,
                       transparent 100%);
                     transform: translateX(-100%);
                     animation: sk-shimmer 1.5s ease-in-out infinite;
@@ -616,8 +618,8 @@
     <link rel="stylesheet" href="js/email-hub.css?v=20261011v1439">
     <script src="js/email-hub.js?v=20261011v1439" defer></script>
     <!-- Dashboard Hub React IIFE (v9.7.6) -->
-    <link rel="stylesheet" href="js/dashboard-hub.css?v=20261011v1439">
-    <script src="js/dashboard-hub.js?v=20261011v1439" defer fetchpriority="high"></script>
+    <link rel="stylesheet" href="js/dashboard-hub.css?v=20261014v2355">
+    <script src="js/dashboard-hub.js?v=20261014v2355" defer fetchpriority="high"></script>
     <!-- Help Hub React IIFE (v10.6.38) — replaces the classic Help & User Guide view -->
     <link rel="stylesheet" href="js/help-hub.css?v=20261011v1439">
     <script src="js/help-hub.js?v=20261011v1439" defer></script>
@@ -649,8 +651,8 @@
     <link rel="stylesheet" href="js/power-dialer-hub.css?v=20261011v1439">
     <script src="js/power-dialer-hub.js?v=20261011v1439" defer></script>
     <!-- NavHub React IIFE (v9.8.0) — Sidebar + Topbar -->
-    <script src="js/nav-hub.js?v=20261014v2330" defer></script>
-    <script type="module" src="js/app.js?v=20261014v2330"></script>
+    <script src="js/nav-hub.js?v=20261014v2355" defer></script>
+    <script type="module" src="js/app.js?v=20261014v2355"></script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

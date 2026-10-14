@@ -54,20 +54,20 @@ export const Modal = ({ open, onClose, title, children, maxWidth = 'max-w-lg', p
         aria-label={title || 'Dialog'}
         className={
           isDrawer
-            ? `relative w-full max-w-sm h-full bg-white rounded-2xl shadow-2xl
+            ? `relative w-full max-w-sm h-full bg-[#12181A] border-l border-white/10 text-[#F4F6F2] rounded-2xl shadow-2xl
               animate-in fade-in slide-in-from-right duration-300 overflow-hidden flex flex-col`
-            : `relative ${maxWidth} w-full bg-white rounded-2xl shadow-2xl
+            : `relative ${maxWidth} w-full bg-[#12181A] border border-white/10 text-[#F4F6F2] rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.8)]
               animate-in fade-in slide-in-from-bottom-4 duration-300 overflow-hidden`
         }
       >
         {/* Header */}
         {title && (
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-            <h2 className="text-lg font-bold text-slate-800 m-0">{title}</h2>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 shrink-0">
+            <h2 className="text-lg font-bold text-[#F4F6F2] m-0">{title}</h2>
             <button
               onClick={onClose}
               className="w-8 h-8 rounded-lg flex items-center justify-center
-                text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"
+                text-[#9BA9A5] hover:text-[#F4F6F2] hover:bg-white/10 transition-all"
             >
               <X size={18} />
             </button>

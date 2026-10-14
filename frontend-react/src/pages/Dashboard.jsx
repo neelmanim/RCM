@@ -125,12 +125,12 @@ export const Dashboard = ({ onLeadClick, onNavigate, userName = '', userRole = '
   });
 
   return (
-    <div className="dashboard-hub-root bg-slate-50 min-h-full px-6 py-5">
+    <div className="dashboard-hub-root bg-[#090D0E] text-[#F4F6F2] min-h-full px-6 py-5">
       {!loading && <DashboardTour isRep={isRep} />}
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
-          <h1 className="db-page-title text-xl font-bold text-slate-900 m-0">Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-0.5 m-0">
+          <h1 className="db-page-title text-xl font-extrabold text-[#F4F6F2] m-0">Dashboard</h1>
+          <p className="text-sm text-[#9BA9A5] mt-0.5 m-0">
             {loading ? 'Loading…'
               : isRep ? `My Dashboard · ${fmt(total)} my leads`
                 : isPodAdmin ? `${globalView ? 'Global view' : 'My Pod view'} — ${fmt(total)} leads`
@@ -162,16 +162,16 @@ export const Dashboard = ({ onLeadClick, onNavigate, userName = '', userRole = '
       </div>
 
       {error && (
-        <Card className="mb-4 px-4 py-3 flex items-center gap-2 text-sm text-red-700 bg-red-50 border-red-200"><TriangleAlert size={15} />{error}</Card>
+        <Card className="mb-4 px-4 py-3 flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border-red-500/20"><TriangleAlert size={15} />{error}</Card>
       )}
 
       {userName && (
-        <Card className="mb-4 px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 bg-blue-50/60 border-blue-100">
-          <div className="flex items-center gap-2">
-            <Hand size={18} className="text-blue-600" />
+        <Card className="mb-4 px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 bg-[#12181A] border-[#C9FF68]/20">
+          <div className="flex items-center gap-2.5">
+            <Hand size={18} className="text-[#C9FF68]" />
             <div>
-              <div className="text-sm font-bold text-slate-900">{getGreeting()}, {getFirstName(userName)}</div>
-              <div className="text-xs text-slate-500">
+              <div className="text-sm font-bold text-[#F4F6F2]">{getGreeting()}, {getFirstName(userName)}</div>
+              <div className="text-xs text-[#9BA9A5]">
                 {isSuperAdmin ? "Here's your org-wide pipeline" : isPodAdmin ? "Your pod's pipeline" : 'Good to have you back'} ·{' '}
                 {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
               </div>

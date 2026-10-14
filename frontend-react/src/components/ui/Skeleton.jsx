@@ -3,7 +3,7 @@ import React from 'react';
 /* ── Base Skeleton Primitive ────────────────────────────────────────────── */
 export const Skeleton = ({ className = '', style, ...props }) => (
   <div
-    className={`animate-pulse bg-gradient-to-r from-slate-100 via-slate-200/70 to-slate-100 bg-[length:200%_100%] rounded-lg ${className}`}
+    className={`animate-pulse bg-gradient-to-r from-white/5 via-white/10 to-white/5 bg-[length:200%_100%] rounded-lg ${className}`}
     style={{ animationDuration: '1.8s', ...style }}
     {...props}
   />
@@ -32,7 +32,7 @@ export const SkeletonAvatar = ({ size = 40, className = '' }) => (
 
 /* ── Stat Card Skeleton ─────────────────────────────────────────────────── */
 export const SkeletonStatCard = ({ className = '' }) => (
-  <div className={`bg-white border border-slate-100 rounded-2xl p-5 shadow-sm ${className}`}>
+  <div className={`bg-[#12181A] border border-white/5 rounded-2xl p-5 shadow-sm ${className}`}>
     <div className="flex items-center gap-5">
       <Skeleton className="w-14 h-14 rounded-2xl shrink-0" />
       <div className="flex-1 space-y-2.5">
@@ -45,7 +45,7 @@ export const SkeletonStatCard = ({ className = '' }) => (
 
 /* ── Table Row Skeleton ─────────────────────────────────────────────────── */
 export const SkeletonTableRow = ({ cols = 5, className = '' }) => (
-  <div className={`flex items-center gap-4 px-6 py-4 border-b border-slate-50 ${className}`}>
+  <div className={`flex items-center gap-4 px-6 py-4 border-b border-white/5 ${className}`}>
     {Array.from({ length: cols }).map((_, i) => (
       <div key={i} className="flex-1">
         <Skeleton className={`h-4 ${i === 0 ? 'w-3/4' : 'w-1/2'}`} />
@@ -57,9 +57,9 @@ export const SkeletonTableRow = ({ cols = 5, className = '' }) => (
 
 /* ── Table Skeleton ─────────────────────────────────────────────────────── */
 export const SkeletonTable = ({ rows = 6, cols = 5, className = '' }) => (
-  <div className={`bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm ${className}`}>
+  <div className={`bg-[#12181A] rounded-2xl border border-white/5 overflow-hidden shadow-sm ${className}`}>
     {/* Header */}
-    <div className="flex items-center gap-4 px-6 py-3.5 bg-slate-50/60 border-b border-slate-100">
+    <div className="flex items-center gap-4 px-6 py-3.5 bg-white/[0.02] border-b border-white/5">
       {Array.from({ length: cols }).map((_, i) => (
         <div key={i} className="flex-1">
           <Skeleton className="h-3 w-16" />
@@ -75,9 +75,9 @@ export const SkeletonTable = ({ rows = 6, cols = 5, className = '' }) => (
 
 /* ── Card Skeleton ──────────────────────────────────────────────────────── */
 export const SkeletonCard = ({ className = '', children }) => (
-  <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden ${className}`}>
+  <div className={`bg-[#12181A] rounded-2xl border border-white/5 shadow-sm overflow-hidden ${className}`}>
     {/* Header */}
-    <div className="px-5 py-4 border-b border-slate-50">
+    <div className="px-5 py-4 border-b border-white/5">
       <Skeleton className="h-4 w-32 mb-2" />
       <Skeleton className="h-3 w-48" />
     </div>
@@ -90,7 +90,7 @@ export const SkeletonCard = ({ className = '', children }) => (
 
 /* ── Metric Card Skeleton (Analytics) ───────────────────────────────────── */
 export const SkeletonMetricCard = ({ className = '' }) => (
-  <div className={`bg-white border border-slate-100 rounded-2xl p-5 shadow-sm ${className}`}>
+  <div className={`bg-[#12181A] border border-white/5 rounded-2xl p-5 shadow-sm ${className}`}>
     <div className="flex items-center justify-between mb-3">
       <Skeleton className="w-9 h-9 rounded-xl" />
     </div>

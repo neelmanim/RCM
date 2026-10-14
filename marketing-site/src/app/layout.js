@@ -20,6 +20,13 @@ export const metadata = {
   title: "AlternateCRM — One OS. Every conversation.",
   description:
     "AlternateCRM is the modular Conversation OS. Turn every conversation into momentum, with one connected foundation for people, AI and customer relationships.",
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport = {

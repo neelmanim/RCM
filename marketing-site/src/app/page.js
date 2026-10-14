@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 
 const SANDBOX_URL =
-  process.env.NEXT_PUBLIC_SANDBOX_URL || "https://alternatecrm.staging.in/sandbox.html";
+  process.env.NEXT_PUBLIC_SANDBOX_URL || "https://app.alternatecrm.com/sandbox.html";
 const CALENDLY_URL =
-  "https://calendly.com/alternatecrm?hide_landing_page_details=1&hide_gdpr_banner=1&background_color=111619&text_color=f4f5f0&primary_color=d3fa76";
+  "https://calendly.com/alternatecrm/30min?hide_landing_page_details=1&hide_gdpr_banner=1&background_color=111619&text_color=f4f5f0&primary_color=d3fa76";
 
 export default function Home() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -544,7 +544,7 @@ export default function Home() {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <a
-                  href="https://calendly.com/alternatecrm"
+                  href="https://calendly.com/alternatecrm/30min"
                   target="_blank"
                   rel="noreferrer"
                   style={{
