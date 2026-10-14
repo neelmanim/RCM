@@ -123,12 +123,37 @@ const vc = document.getElementById('view-container');
         },
     };
 
+    function _mountSandboxBanner() {
+        if (localStorage.getItem('crm_is_sandbox') !== 'true') return;
+        if (document.getElementById('sandbox-banner')) return;
+        const banner = document.createElement('div');
+        banner.id = 'sandbox-banner';
+        banner.style.cssText = 'background: linear-gradient(90deg, #152226 0%, #12181A 100%); border-bottom: 1px solid rgba(201, 255, 104, 0.25); color: #F4F6F2; padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; z-index: 9999;';
+        banner.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; background: rgba(201, 255, 104, 0.15); color: #C9FF68; font-size: 12px; font-weight: 800;">⚡</span>
+                <span><strong>Interactive Sandbox Active</strong> — Previewing Alternate CRM with simulated commercial pipeline data.</span>
+            </div>
+            <button id="exit-sandbox-btn" style="background: rgba(201, 255, 104, 0.12); border: 1px solid rgba(201, 255, 104, 0.3); color: #C9FF68; padding: 5px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">
+                Exit Sandbox
+            </button>
+        `;
+        document.body.prepend(banner);
+        document.getElementById('exit-sandbox-btn')?.addEventListener('click', () => {
+            localStorage.removeItem('crm_is_sandbox');
+            localStorage.removeItem('crm_token');
+            sessionStorage.clear();
+            window.location.href = 'login.html';
+        });
+    }
+
     function _doMount() {
         const sidebarEl = document.getElementById('nav-sidebar-root');
         const topbarEl  = document.getElementById('nav-topbar-root');
         if (sidebarEl && topbarEl && window.NavHub) {
             window.NavHub.mount(sidebarEl, topbarEl, navProps);
             _mountViewAsBanner();
+            _mountSandboxBanner();
         }
     }
 
@@ -461,35 +486,10 @@ async function loadView(viewName, extra, backView) {
             dashProps
         );
     } else if (viewName === 'leads') {
-        // RCA 2026-08-19: users reported issues with LeadsHub (React) after
-        // v11.5.4 made it the only Leads view. Reinstating the classic
-        // renderLeads() (views/leads.js) path as the default while LeadsHub's
-        // issues are investigated — set localStorage 'leadsHub' = 'on' in a
-        // browser to opt back into LeadsHub for testing/comparison.
-        if (localStorage.getItem('leadsHub') !== 'on') {
-            window.LeadsHub?.unmount?.();
-            await renderLeads(vc, null, handleCallAction, (id) => loadView('lead-detail', id));
-            return;
-        }
-
         const leadsProps = {
             token:    localStorage.getItem('crm_token'),
             userRole: currentUser?.role,
             apiBase:  API_BASE,
-            onSwitchToClassic: () => {
-                // Must clear the flag the same way the reverse "Switch to the
-                // new experience" button sets it (RCA 2026-08-20 fix above) —
-                // otherwise this only swaps the current render; the next
-                // reload/navigation back to Leads bounces straight back into
-                // LeadsHub since the flag never changed.
-                localStorage.removeItem('leadsHub');
-                window.LeadsHub?.unmount?.();
-                return renderLeads(vc, null, handleCallAction, (id) => loadView('lead-detail', id));
-            },
-            // R-4 fix: lead_detail.js's Prev/Next nav bar reads a module-level
-            // array in lead_list.js that only the classic renderLeads() populated —
-            // opening a lead from here left it stale/empty and the nav bar silently
-            // didn't render. LeadsHub passes its currently-loaded rows through.
             onOpenLead: (lead, currentLeads) => {
                 if (currentLeads) setNavLeadsFromRaw(currentLeads);
                 loadView('lead-detail', lead.id);
@@ -518,15 +518,6 @@ async function loadView(viewName, extra, backView) {
 
         window.LeadsHub.mount(document.getElementById('leads-react-root'), leadsProps);
     } else if (viewName === 'lead-detail') {
-        // Dual-view toggle, mirrors the Leads Hub pattern exactly (app.js:577
-        // above): classic is the default; localStorage 'leadDetailHub' = 'on'
-        // opts a user into the React redesign. Both stay fully functional.
-        if (localStorage.getItem('leadDetailHub') !== 'on') {
-            window.LeadDetailHub?.unmount?.();
-            await renderLeadDetail(vc, extra, handleCallAction, loadView, backView || 'leads');
-            return;
-        }
-
         const navLeads = getNavLeads();
         const navIdx = navLeads.findIndex(l => l.id === extra);
         const leadDetailProps = {
@@ -538,11 +529,6 @@ async function loadView(viewName, extra, backView) {
             onPreviousLead: navIdx > 0 ? () => loadView('lead-detail', navLeads[navIdx - 1].id, backView) : null,
             onNextLead: (navIdx >= 0 && navIdx < navLeads.length - 1) ? () => loadView('lead-detail', navLeads[navIdx + 1].id, backView) : null,
             onBack: () => loadView(backView || 'leads'),
-            onSwitchToClassic: () => {
-                localStorage.removeItem('leadDetailHub');
-                window.LeadDetailHub?.unmount?.();
-                return renderLeadDetail(vc, extra, handleCallAction, loadView, backView || 'leads');
-            },
         };
 
         if (window.LeadDetailHub?.isMounted && typeof window.LeadDetailHub.navigate === 'function') {
@@ -1257,8 +1243,9 @@ async function loadView(viewName, extra, backView) {
 
         window.PipelineHub.mount(document.getElementById('pipeline-hub-react-root'), pipelineHubProps);
     } else if (viewName === 'playground') {
-        if (!isSuperAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderPlayground(vc);
+        // Deprecated per product direction: redirect to control-center
+        loadView('control-center').catch(() => {});
+        return;
     } else {
         vc.innerHTML = `<h2>View not found</h2>`;
     }

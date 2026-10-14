@@ -236,30 +236,30 @@ export function FilterBar({ list, onToast }) {
 
   return (
     <div className="flex items-center gap-2 flex-wrap mb-3.5">
-      <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 w-[250px]">
+      <div className="flex items-center gap-2 bg-[#151D20] border border-white/10 rounded-lg px-3 py-2 w-[250px] focus-within:border-[#C9FF68]/60 focus-within:ring-2 focus-within:ring-[#C9FF68]/20 transition-all">
         {list.loading
-          ? <Loader2 size={14} strokeWidth={2.25} className="text-blue-500 shrink-0 animate-spin" aria-label="Searching" />
-          : <Search size={14} strokeWidth={2.25} className="text-slate-400 shrink-0" />}
+          ? <Loader2 size={14} strokeWidth={2.25} className="text-[#C9FF68] shrink-0 animate-spin" aria-label="Searching" />
+          : <Search size={14} strokeWidth={2.25} className="text-[#8E9B97] shrink-0" />}
         <input
           type="text" placeholder="Search name, email, or company…" value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          className="w-full text-sm outline-none focus:border-focus-ring focus:ring-2 focus:ring-focus-ring/20"
+          className="w-full text-sm outline-none bg-transparent text-[#F4F6F2] placeholder:text-[#8E9B97]"
         />
       </div>
-      <div className="w-px self-stretch bg-slate-200 my-0.5" />
+      <div className="w-px self-stretch bg-white/10 my-0.5" />
 
       {FILTER_DEFS.filter((d) => activeFilterKeys.includes(d.key)).map((def) => (
         <Popover key={def.key} open={openKey === def.key} onOpenChange={(o) => setOpenKey(o ? def.key : null)}>
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-md px-2.5 py-1.5 text-xs font-bold"
+              className="inline-flex items-center gap-1.5 border border-[#C9FF68]/30 bg-[#C9FF68]/10 text-[#C9FF68] hover:bg-[#C9FF68]/20 rounded-md px-2.5 py-1.5 text-xs font-bold transition-colors"
             >
               {chipLabel(def, filters, uploadLogs)}
               <span
                 role="button" tabIndex={-1} aria-label={`Remove ${def.label} filter`}
                 onClick={(e) => { e.stopPropagation(); removeFilterKey(def.key); }}
-                className="opacity-60 hover:opacity-100"
+                className="opacity-70 hover:opacity-100"
               >
                 <X size={11} strokeWidth={2.5} />
               </span>
@@ -286,7 +286,7 @@ export function FilterBar({ list, onToast }) {
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="inline-flex items-center gap-1 border border-dashed border-slate-400 text-slate-600 hover:text-slate-800 hover:border-slate-500 rounded-md px-2.5 py-1.5 text-xs font-semibold"
+            className="inline-flex items-center gap-1 border border-dashed border-white/20 text-[#8E9B97] hover:text-[#F4F6F2] hover:border-white/40 rounded-md px-2.5 py-1.5 text-xs font-semibold transition-colors"
           >
             + Filter
           </button>

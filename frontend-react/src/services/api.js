@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getToken, logout } from './auth';
+import { handleSandboxRequest } from './sandboxMock';
 
 
 const api = axios.create({
@@ -31,6 +32,21 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  // If sandbox mode is active, simulate responses locally for instant, reliable interactive sandbox
+  if (localStorage.getItem('crm_is_sandbox') === 'true') {
+    config.adapter = async (cfg) => {
+      const mock = handleSandboxRequest(cfg);
+      return {
+        data: mock.data,
+        status: mock.status,
+        statusText: 'OK',
+        headers: { 'content-type': 'application/json' },
+        config: cfg,
+        request: {}
+      };
+    };
+  }
+
   // Resolve base at request time, not module load time.
   // mount() sets window.__CRM_API_BASE__ from the Vanilla JS API_BASE prop
   // before createRoot() runs, so this always gets the correct backend origin.
@@ -54,6 +70,10 @@ const SESSION_ENDED = ['Invalid or expired token', 'Not authenticated', 'Your ac
 let endingSession = false;
 
 api.interceptors.response.use((response) => response, async (error) => {
+  if (localStorage.getItem('crm_is_sandbox') === 'true') {
+    return Promise.resolve({ data: {} });
+  }
+
   const res = error.response;
   // A refused download (e.g. 403 "Exporting data is turned off…") arrives as a Blob; read it so callers can show its message.
   if (res?.data instanceof Blob && /json/.test(res.data.type || '')) {

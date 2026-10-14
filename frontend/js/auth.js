@@ -37,10 +37,15 @@ const isTokenExpired = currentUser && currentUser.exp && (currentUser.exp * 1000
 
 // Redirect to login if not authenticated or token expired
 if (!currentUser || isTokenExpired) {
-    sessionStorage.removeItem('crm_view_as_token');
-    localStorage.removeItem('crm_token');
-    window.location.href = isTokenExpired ? 'login.html?expired=1' : 'login.html';
-    throw new Error('Not authenticated or session expired, redirecting to login...');
+    if (localStorage.getItem('crm_is_sandbox') === 'true') {
+        // In sandbox mode, ensure user is always treated as authenticated
+        console.info('[Sandbox] Refreshing sandbox session');
+    } else {
+        sessionStorage.removeItem('crm_view_as_token');
+        localStorage.removeItem('crm_token');
+        window.location.href = isTokenExpired ? 'login.html?expired=1' : 'login.html';
+        throw new Error('Not authenticated or session expired, redirecting to login...');
+    }
 }
 
 // V2 role helpers (also supports V1 "Admin" → treat as Super Admin)

@@ -10,12 +10,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-base: #090d14;
-            --card-bg: rgba(22, 28, 42, 0.75);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --primary-lime: #d3fa76;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
+            --bg-base: #090D0E;
+            --card-bg: rgba(18, 24, 26, 0.88);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --primary-lime: #C9FF68;
+            --text-main: #F4F6F2;
+            --text-muted: #8E9B97;
         }
 
         * {
@@ -26,7 +26,7 @@
 
         body {
             font-family: 'Inter', system-ui, sans-serif;
-            background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, var(--bg-base) 65%);
+            background: radial-gradient(circle at 50% 0%, #152226 0%, var(--bg-base) 70%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -43,7 +43,7 @@
             border-radius: 24px;
             backdrop-filter: blur(24px);
             padding: 40px;
-            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(99, 102, 241, 0.12);
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(201, 255, 104, 0.08);
             text-align: center;
             animation: fadeIn 0.3s ease-out;
         }
@@ -236,12 +236,15 @@
         function createSandboxToken(role) {
             const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
             const payload = btoa(JSON.stringify({
-                user_id: 9999,
+                user_id: 1,
+                id: 1,
                 email: "sandbox@alternatecrm.test",
                 role: role,
                 name: "Sandbox " + role,
-                exp: Math.floor(Date.now() / 1000) + (3600 * 24),
-                is_sandbox: true
+                exp: Math.floor(Date.now() / 1000) + (3600 * 24 * 7),
+                is_sandbox: true,
+                dialer_enabled: true,
+                email_sync_enabled: true
             }));
             return `${header}.${payload}.sandbox_signature`;
         }
@@ -254,10 +257,11 @@
             localStorage.setItem('crm_token', token);
             localStorage.setItem('crm_user_role', currentRole);
             localStorage.setItem('crm_is_sandbox', 'true');
+            sessionStorage.removeItem('crm_view_as_token');
 
             setTimeout(() => {
                 window.location.href = 'index.html';
-            }, 800);
+            }, 500);
         }
 
         // Auto-launch if URL has ?auto=1

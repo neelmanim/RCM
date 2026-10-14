@@ -9,7 +9,7 @@ import { EmptyState } from '../../../../components/ui/EmptyState';
 import { SkeletonTable } from '../../../../components/ui/Skeleton';
 import { ConfirmDialog } from '../../../../components/ui/Modal';
 import { CapabilityToggles } from './CapabilityToggles';
-import { AssignAlternateMessenger } from './AssignAlternateMessenger';
+import { AssignAlternateMessenger } from './AssignMessengerDrawer';
 import { useUserAccessData } from './useUserAccessData';
 
 const PAGE_SIZE = 5; // matches legacy `_uaState = { page: 1, pageSize: 5 }`
@@ -123,7 +123,7 @@ export function UserAccessTable() {
             {pageItems.map((sdr) => {
               const callProv = sdr.effective_dialer_provider || 'none';
               const msgProv = sdr.effective_messaging_provider || 'none';
-              const onAlternate Messenger = callProv === 'messenger' || msgProv === 'messenger' || !!sdr.messenger_user_id;
+              const onAlternateMessenger = callProv === 'messenger' || msgProv === 'messenger' || !!sdr.messenger_user_id;
               // Avatar tint follows the messaging vendor, so the table reads at a glance (ported from settings.js's per-row gradient).
               const gradient = msgProv === 'aircall' ? 'linear-gradient(135deg,#0ea5e9,#38bdf8)' : 'linear-gradient(135deg,#7c3aed,#a78bfa)';
               return (
@@ -151,10 +151,10 @@ export function UserAccessTable() {
                     )}
                   </div>
                   <div className="flex gap-1.5 flex-wrap">
-                    {onAlternate Messenger && (
+                    {onAlternateMessenger && (
                       <span className="inline-block px-2.5 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600 whitespace-nowrap" title="Alternate Messenger calling agent ID — identifies this rep to Alternate Messenger for calls, not a phone number">Agent ID: {sdr.messenger_user_id || '—'}</span>
                     )}
-                    {onAlternate Messenger && sdr.messenger_from_number && (
+                    {onAlternateMessenger && sdr.messenger_from_number && (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 rounded-full text-xs text-slate-600 whitespace-nowrap" title="This rep's personal caller ID for outbound calls (voice only)"><Phone size={11} /> {sdr.messenger_from_number}</span>
                     )}
                     {sdr.messenger_whatsapp_sender_id && (
@@ -166,7 +166,7 @@ export function UserAccessTable() {
                     <button type="button" title="Edit" onClick={() => setDrawer({ mode: 'edit', targetUser: sdr })} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
                       <Pencil size={14} />
                     </button>
-                    {onAlternate Messenger && (
+                    {onAlternateMessenger && (
                       <button type="button" title="Clear Alternate Messenger assignment" onClick={() => setPendingClear(sdr)} className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50">
                         <XCircle size={14} />
                       </button>

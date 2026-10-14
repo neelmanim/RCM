@@ -11,15 +11,15 @@ export const TriggerPill = React.forwardRef(({ label, icon: Icon, className, ...
     ref={ref}
     type="button"
     className={cn(
-      'inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 whitespace-nowrap max-w-full',
+      'inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-white/10 bg-[#12181A] text-[#F4F6F2] hover:bg-[#151D20] hover:border-white/20 whitespace-nowrap max-w-full transition-colors',
       className,
     )}
     {...props}
   >
-    {Icon && <Icon size={14} className="text-slate-400 shrink-0" />}
+    {Icon && <Icon size={14} className="text-[#8E9B97] shrink-0" />}
     {/* a long value (name + email) shortens with … inside its box instead of spilling over the neighbouring button */}
     <span className="min-w-0 truncate" title={typeof label === 'string' ? label : undefined}>{label}</span>
-    <ChevronDown size={14} className="text-slate-400 shrink-0" />
+    <ChevronDown size={14} className="text-[#8E9B97] shrink-0" />
   </button>
 ));
 
@@ -142,13 +142,13 @@ function SearchableSelect({ value, onChange, options, trigger, asChild, ariaLabe
                 aria-selected={selected}
                 aria-disabled={o.disabled || undefined}
                 onClick={() => commit(o)}
-                className={`w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md text-sm ${
-                  o.disabled ? 'text-slate-300 cursor-not-allowed'
-                    : selected ? 'bg-indigo-50 text-indigo-700 font-semibold' : i === highlighted ? 'bg-slate-50' : 'hover:bg-slate-50'
+                className={`w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md text-sm transition-colors ${
+                  o.disabled ? 'text-white/20 cursor-not-allowed'
+                    : selected ? 'bg-[#C9FF68]/15 text-[#C9FF68] font-semibold' : i === highlighted ? 'bg-white/5 text-[#F4F6F2]' : 'text-[#F4F6F2] hover:bg-white/5'
                 }`}
               >
                 <span>{o.label}</span>
-                {selected && <Check size={13} strokeWidth={2.5} className="text-indigo-600 flex-shrink-0" />}
+                {selected && <Check size={13} strokeWidth={2.5} className="text-[#C9FF68] flex-shrink-0" />}
               </button>
             );
           })}

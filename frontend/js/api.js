@@ -4,6 +4,9 @@ import { API_BASE, authHeaders, isAdmin } from './auth.js';
 /** If any API call returns 401, session is expired — redirect to login. */
 function handleUnauthorized(res) {
     if (res.status === 401) {
+        if (localStorage.getItem('crm_is_sandbox') === 'true') {
+            return;
+        }
         localStorage.removeItem('crm_token');
         window.location.href = 'login.html?expired=1';
         throw new Error('Session expired. Redirecting to login...');

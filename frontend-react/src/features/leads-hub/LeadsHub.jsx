@@ -261,9 +261,9 @@ export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
 
   return (
     <div className="leadshub w-full max-w-[1800px] mx-auto px-4 py-6">
-      <div className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1 mb-5">
+      <div className="inline-flex items-center gap-1 bg-[#12181A] border border-white/10 rounded-xl p-1 mb-5">
         <button type="button" onClick={() => setTab('leads')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold ${tab === 'leads' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>
+          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${tab === 'leads' ? 'bg-[#151D20] text-[#C9FF68] shadow-sm border border-white/5' : 'text-[#8E9B97] hover:text-[#F4F6F2]'}`}>
           All Leads
         </button>
         {canManageDisqualify && [
@@ -271,7 +271,7 @@ export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
           { key: 'reassign', label: 'Reassign Requests', count: pendingReassignCount },
         ].map((t) => (
           <button key={t.key} type="button" onClick={() => setTab(t.key)}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 ${tab === t.key ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors ${tab === t.key ? 'bg-[#151D20] text-[#C9FF68] shadow-sm border border-white/5' : 'text-[#8E9B97] hover:text-[#F4F6F2]'}`}>
             {t.label}
             {t.count > 0 && <Badge variant="danger">{t.count}</Badge>}
           </button>
@@ -289,9 +289,9 @@ export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
 
           <div className="flex items-end justify-between gap-4 mb-4 flex-wrap">
             <div>
-              <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight m-0">All Leads</h1>
-              <div className="text-xs text-slate-500 mt-1">
-                <b className="text-slate-800">{list.total}</b> leads in pipeline
+              <h1 className="text-3xl font-extrabold text-[#F4F6F2] tracking-tight m-0">All Leads</h1>
+              <div className="text-xs text-[#8E9B97] mt-1">
+                <b className="text-[#C9FF68]">{list.total}</b> leads in pipeline
                 {isPodAdmin && (
                   <>
                     {' · '}{list.globalView ? 'Viewing Global' : 'Viewing My Pod'}
@@ -346,7 +346,7 @@ export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
           <FilterBar list={list} onToast={setToast} />
 
           <Table tableStyle={{ tableLayout: 'fixed' }}>
-            <TableHead className="bg-white">
+            <TableHead className="bg-[#12181A] border-b border-white/10">
               <TableRow>
                 {bulkSelectActive && (
                   <TableHeader className="w-8">
@@ -396,21 +396,21 @@ export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
                 <React.Fragment key={company}>
                   {showGroupHeader && (
                     <TableRow {...(!isNoCompany ? { 'data-tour': 'company-group' } : {})}>
-                      <td colSpan={colCount} className={`px-0 py-0 border-b ${isNoCompany ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                      <td colSpan={colCount} className={`px-0 py-0 border-b ${isNoCompany ? 'bg-amber-500/10 border-amber-500/20' : 'bg-[#151D20] border-white/5'}`}>
                         <div className="flex items-center justify-between px-3.5 py-1.5">
                           <button type="button" onClick={() => toggleGroup(company)}
-                            className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wide hover:text-slate-800 ${isNoCompany ? 'text-amber-700' : 'text-slate-500'}`}>
+                            className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wide hover:text-[#F4F6F2] ${isNoCompany ? 'text-amber-400' : 'text-[#8E9B97]'}`}>
                             <ChevronDown size={14} strokeWidth={2.5} className={`transition-transform ${collapsed.has(company) ? '-rotate-90' : ''}`} />
                             {isNoCompany ? (
                               <span className="inline-flex items-center gap-1"><TriangleAlert size={12} strokeWidth={2.5} /> No Company</span>
                             ) : company}
-                            <span className="text-[9.5px] font-bold bg-white border border-slate-200 rounded-full px-1.5 py-0.5 normal-case text-slate-400">
+                            <span className="text-[9.5px] font-bold bg-[#12181A] border border-white/10 rounded-full px-1.5 py-0.5 normal-case text-[#8E9B97]">
                               {rows.length} contact{rows.length === 1 ? '' : 's'}
                             </span>
                             {resolvedLead && (
                               <span
                                 title={`Meeting already booked via ${resolvedLead.company_resolved.resolved_by}`}
-                                className="inline-flex items-center gap-1 text-[9.5px] font-bold normal-case bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-0.5"
+                                className="inline-flex items-center gap-1 text-[9.5px] font-bold normal-case bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded-full px-1.5 py-0.5"
                               >
                                 <BadgeCheck size={11} strokeWidth={2.5} /> Connected via {resolvedLead.company_resolved.resolved_by}
                               </span>
@@ -418,7 +418,7 @@ export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
                           </button>
                           <button type="button" onClick={() => handleDisqualifyAccount(company, rows.filter((r) => r.status !== 'Disqualified' && r.status !== 'Completed').map((r) => r.id))}
                             aria-label="Disqualify account" title="Disqualify account"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50">
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/15 transition-colors">
                             <Ban size={15} strokeWidth={2.25} />
                           </button>
                         </div>

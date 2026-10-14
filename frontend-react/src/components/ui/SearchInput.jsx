@@ -13,15 +13,15 @@ import { cn } from '../../lib/cn';
 export const SearchInput = React.forwardRef(({ className, inputClassName, ...props }, ref) => (
   <div
     className={cn(
-      'flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20',
+      'flex items-center gap-2 rounded-lg border border-white/10 bg-[#151D20] px-3 focus-within:border-[#C9FF68]/60 focus-within:ring-2 focus-within:ring-[#C9FF68]/20 transition-all',
       className,
     )}
   >
-    <Search size={14} className="shrink-0 text-slate-400" />
+    <Search size={14} className="shrink-0 text-[#8E9B97]" />
     <input
       ref={ref}
       type="text"
-      className={cn('w-full py-2 text-sm text-slate-800 placeholder:text-slate-400 outline-none border-0', inputClassName)}
+      className={cn('w-full py-2 text-sm text-[#F4F6F2] placeholder:text-[#8E9B97] outline-none border-0 bg-transparent', inputClassName)}
       {...props}
     />
   </div>

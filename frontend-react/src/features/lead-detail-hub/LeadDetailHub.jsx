@@ -426,12 +426,12 @@ export function LeadDetailHub({
       />
 
       {lead.company_resolved?.resolved && !['Meeting Scheduled', '1st Discovery Meeting', 'Discovery Complete', 'Demo Scheduled', 'Demo Done', 'Completed'].includes(lead.status) && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3.5 flex items-center gap-3">
-          <span className="text-xl">✅</span>
-          <div className="text-sm text-amber-900">
-            <p className="font-bold m-0">Company Already Connected</p>
-            <p className="m-0 mt-0.5">
-              A meeting has been booked with <strong>{lead.company_resolved.resolved_by}</strong>
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-5 py-3.5 flex items-center gap-3">
+          <span className="text-xl">⚡</span>
+          <div className="text-sm text-amber-300">
+            <p className="font-bold m-0 text-amber-200">Company Already Connected</p>
+            <p className="m-0 mt-0.5 text-amber-300/80">
+              A meeting has been booked with <strong className="text-amber-100">{lead.company_resolved.resolved_by}</strong>
               {lead.company_resolved.resolved_title && ` (${lead.company_resolved.resolved_title})`} at this company.
               {lead.company_resolved.resolved_at && ` · ${fmtDate(lead.company_resolved.resolved_at)}`}
             </p>
