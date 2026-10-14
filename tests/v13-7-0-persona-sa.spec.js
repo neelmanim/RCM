@@ -339,12 +339,12 @@ test.describe('v13.7.0 persona audit — Super Admin', () => {
     await page.getByRole('button', { name: 'Campaigns', exact: true }).click();
     await shot(page, 'v13-7-0-sa-sales-tools-email');
 
-    // SMS Campaigns → Campaigns / Converse Desk CTAs (CTA not clicked — it opens Alternate Messenger).
+    // SMS Campaigns → Campaigns / Inbox CTAs (CTA not clicked — it opens Alternate Messenger).
     await page.getByRole('button', { name: 'SMS Campaigns', exact: true }).click();
     const smsErr = page.getByText(/Could not prepare this Alternate Messenger link|Alternate Messenger/i).first();
     await expect(page.getByRole('link', { name: /Open Campaigns in Alternate Messenger/ }).or(page.getByRole('button', { name: 'Retry' }))).toBeVisible({ timeout: 20000 });
-    await page.getByRole('button', { name: 'Converse Desk', exact: true }).click();
-    await expect(page.getByRole('link', { name: /Open Converse Desk in Alternate Messenger/ }).or(page.getByRole('button', { name: 'Retry' }))).toBeVisible({ timeout: 20000 });
+    await page.getByRole('button', { name: 'Inbox', exact: true }).click();
+    await expect(page.getByRole('link', { name: /Open Inbox in Alternate Messenger/ }).or(page.getByRole('button', { name: 'Retry' }))).toBeVisible({ timeout: 20000 });
     if (await page.getByRole('button', { name: 'Retry' }).count()) {
       test.info().annotations.push({ type: 'note', description: `SMS Campaigns link not ready for SA: ${await smsErr.innerText().catch(() => '')}` });
     }

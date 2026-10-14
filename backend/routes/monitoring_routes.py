@@ -21,7 +21,10 @@ UptimeRobot keyword monitor should match: "status":"ok"
 import os
 import time
 import platform
-import resource
+try:
+    import resource
+except ImportError:
+    resource = None
 import logging
 from datetime import datetime, timezone
 

@@ -219,8 +219,8 @@ def get_embed_url(
     session_id on the destination URL, copying the inbox widget's pattern;
     that left both SMS Campaigns tabs showing Alternate Messenger's own login form
     since the full app never reads session_id at all.)"""
-    if view not in ("campaigns", "converse-desk"):
-        raise HTTPException(status_code=422, detail="view must be 'campaigns' or 'converse-desk'")
+    if view not in ("campaigns", "inbox", "converse-desk"):
+        raise HTTPException(status_code=422, detail="view must be 'campaigns' or 'inbox'")
 
     settings = _get_or_create_sync_settings(db)
     if not settings.messenger_enabled:
@@ -243,7 +243,8 @@ def get_embed_url(
         raise HTTPException(status_code=503, detail="No Alternate Messenger user ID configured for your account or the organization.")
 
     from messaging_auth import AlternateMessengerAuthManager
-    redirect_target = f"{base_url}/app/#/{view}?crm=audience_manager"
+    target_view = "inbox" if view in ("inbox", "converse-desk") else view
+    redirect_target = f"{base_url}/app/#/{target_view}"
     try:
         auth_url = AlternateMessengerAuthManager.build_browser_auth_url(base_url, api_key, user_id, redirect_target)
     except RuntimeError as e:

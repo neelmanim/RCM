@@ -33,9 +33,10 @@ perf-trace-*.json
 /report.html
 /report.json
 
-# Code Review Graph
+# Code Review Graph & CodeGraph
 code-review-graph/
 .code-review-graph/
+.codegraph/
 
 # Secrets — never commit
 github-recovery-codes*.txt

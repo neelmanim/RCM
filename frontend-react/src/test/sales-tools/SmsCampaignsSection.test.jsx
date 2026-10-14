@@ -39,14 +39,14 @@ describe('SmsCampaignsSection', () => {
     expect(getEmbedUrl).toHaveBeenCalledTimes(2);
   });
 
-  it('fetches a fresh URL for Converse Desk when switching tabs', async () => {
+  it('fetches a fresh URL for Inbox when switching tabs', async () => {
     getEmbedUrl.mockResolvedValue({ url: 'https://app.alternatecrm.com/x' });
     render(<SmsCampaignsSection />);
     await screen.findByRole('link', { name: /Open Campaigns in Alternate Messenger/i });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Converse Desk' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Inbox' }));
 
-    await waitFor(() => expect(getEmbedUrl).toHaveBeenCalledWith('converse-desk'));
-    await screen.findByRole('link', { name: /Open Converse Desk in Alternate Messenger/i });
+    await waitFor(() => expect(getEmbedUrl).toHaveBeenCalledWith('inbox'));
+    await screen.findByRole('link', { name: /Open Inbox in Alternate Messenger/i });
   });
 });

@@ -82,155 +82,132 @@ export function LoginPage() {
   }, [origin]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#1B1035] via-[#4C1D95] to-[#BE185D]">
-      {/* Gradient lives on this full-bleed outer div so it always covers the
-          whole viewport width. The two panels below are wrapped in their own
-          centered, width-capped flex row — mx-auto + max-w on ONE container
-          is a more reliably-responsive way to center a flex-1-plus-fixed-width
-          pair than relying on justify-center against a flex-1 sibling's
-          leftover space (which stayed uncentered at very wide viewports —
-          the "not responsive" bug this replaces). */}
+    <div className="min-h-screen bg-gradient-to-br from-[#0B0F19] via-[#111827] to-[#1E1B4B] text-slate-100 selection:bg-[#d3fa76] selection:text-slate-900">
       <div className="mx-auto flex min-h-screen max-w-[1440px] flex-col lg:flex-row">
-      {/* ── Brand panel ─────────────────────────────────────────────── */}
-      {/* Capped at lg:max-w-3xl so this panel can't stretch indefinitely
-          on very wide/ultrawide monitors — without a cap its content stays
-          left-padded while the rest of the panel is empty gradient, which
-          reads as a rendering bug rather than a design choice. */}
-      <div className="relative flex flex-col justify-center overflow-hidden px-8 py-10 lg:flex-1 lg:max-w-3xl lg:px-16 lg:py-16">
-        <div
-          className="pointer-events-none absolute -right-24 -top-48 h-[500px] w-[500px] rounded-full opacity-25"
-          style={{ background: 'radial-gradient(circle, rgba(236,72,153,0.35) 0%, transparent 70%)' }}
-        />
-        {SPARKS.map((s) => (
-          <span
-            key={s.id}
-            className="pointer-events-none absolute select-none"
-            style={{
-              left: s.left,
-              top: s.top,
-              fontSize: s.size,
-              color: s.dim ? 'rgba(255,255,255,0.25)' : 'rgba(244,114,182,0.6)',
-              animation: `login-float-spark ${s.duration}s ease-in-out ${s.delay}s infinite`,
-            }}
-          >
-            {s.dim ? '·' : '✦'}
-          </span>
-        ))}
+        {/* ── Brand panel (Gluestack UI inspired) ───────────────────────── */}
+        <div className="relative flex flex-col justify-center overflow-hidden px-8 py-10 lg:flex-1 lg:max-w-3xl lg:px-16 lg:py-16">
+          <div
+            className="pointer-events-none absolute -right-24 -top-48 h-[520px] w-[520px] rounded-full opacity-20"
+            style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.4) 0%, transparent 70%)' }}
+          />
+          {SPARKS.map((s) => (
+            <span
+              key={s.id}
+              className="pointer-events-none absolute select-none"
+              style={{
+                left: s.left,
+                top: s.top,
+                fontSize: s.size,
+                color: s.dim ? 'rgba(255,255,255,0.2)' : 'rgba(211,250,118,0.6)',
+                animation: `login-float-spark ${s.duration}s ease-in-out ${s.delay}s infinite`,
+              }}
+            >
+              {s.dim ? '·' : '✦'}
+            </span>
+          ))}
 
-        <div className="relative z-10 mb-8 flex items-center gap-2.5 lg:mb-14">
-          <img src="img/alternatecrm-logo.png" alt="Alternate CRM" className="h-9 w-9 rounded-[10px] object-cover shadow-lg" />
-          <div className="flex flex-col leading-tight">
-            <span className="text-lg font-bold text-white">Alternate CRM</span>
-            <span className="text-[11px] font-medium text-white/60">{window.__POWERED_BY__ || 'Powered by Alternate Messenger'}</span>
+          <div className="relative z-10 mb-8 flex items-center gap-3 lg:mb-12">
+            <img src="img/alternatecrm-logo.png" alt="Alternate CRM" className="h-10 w-10 rounded-xl object-cover shadow-lg ring-1 ring-white/10" />
+            <div className="flex flex-col leading-tight">
+              <span className="text-xl font-extrabold tracking-tight text-white">Alternate CRM</span>
+              <span className="text-[11px] font-semibold text-slate-400">{window.__POWERED_BY__ || 'Powered by Alternate Messenger'}</span>
+            </div>
+          </div>
+
+          <span className="relative z-10 mb-4 inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-500/10 px-3.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#d3fa76] ring-1 ring-[#d3fa76]/20">
+            <span>⚡</span> Commercial Conversation OS
+          </span>
+
+          <h1 className="relative z-10 mb-5 max-w-lg text-3xl font-extrabold leading-[1.12] tracking-tight text-white lg:text-[2.75rem]">
+            Where raw leads become{' '}
+            <span className="bg-gradient-to-r from-[#d3fa76] via-teal-300 to-indigo-400 bg-clip-text text-transparent">
+              Salesforce-ready pipeline.
+            </span>
+          </h1>
+          <p className="relative z-10 mb-8 max-w-md text-[15px] leading-relaxed text-slate-300 lg:mb-10">
+            Enrich, deduplicate, and qualify every lead in real time. Orchestrate multi-channel outreach and push clean, sales-ready records directly into Salesforce.
+          </p>
+
+          <div className="relative z-10 mb-10 hidden lg:mb-0 lg:flex lg:items-end lg:gap-8">
+            <div className="hidden shrink-0 lg:block">
+              <ProductPreviewMock />
+            </div>
+          </div>
+
+          <div className="relative z-10 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:mt-10">
+            {FEATURES.map(({ icon: Icon, color, title, desc }, i) => {
+              const isEgg = i === FEATURES.length - 1;
+              return (
+                <div key={title} className="flex items-start gap-3 rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/10 backdrop-blur-md transition-all hover:bg-white/[0.07] hover:ring-white/20">
+                  <span
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${color} shadow-sm`}
+                    style={isEgg ? { userSelect: 'none', touchAction: 'manipulation' } : undefined}
+                    onClick={isEgg ? handleEggClick : undefined}
+                  >
+                    {isEgg && eggFlipped
+                      ? <span className="text-[17px] leading-none text-white">{'\uD83D\uDD31'}</span>
+                      : <Icon size={17} className="text-white" strokeWidth={2.25} />}
+                  </span>
+                  <div>
+                    <p className="text-[13px] font-bold text-white">{title}</p>
+                    <p className="text-[11px] leading-snug text-slate-400 mt-0.5">{desc}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        <span className="relative z-10 mb-4 inline-flex w-fit items-center rounded-full bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white/70 ring-1 ring-white/15">
-          From Leads to Revenue
-        </span>
-        <h1 className="relative z-10 mb-5 max-w-lg text-3xl font-extrabold leading-[1.1] tracking-tight text-white [text-wrap:balance] lg:text-[2.75rem]">
-          Where raw leads become{' '}
-          <span className="bg-gradient-to-r from-amber-300 to-pink-400 bg-clip-text text-transparent">
-            Salesforce-ready pipeline.
-          </span>
-        </h1>
-        <p className="relative z-10 mb-8 max-w-md text-[15px] leading-relaxed text-white/65 lg:mb-10">
-          Enrich, deduplicate, and qualify every lead here — then push the sales-ready result straight into
-          Salesforce, so your team never works from a half-formed record.
-        </p>
+        {/* ── Modern Gluestack Sign-In Panel ───────────────────────────── */}
+        <div className="flex w-full flex-1 shrink-0 flex-col justify-center bg-[#0e1420]/90 px-6 py-10 sm:px-10 lg:sticky lg:top-0 lg:h-screen lg:w-[460px] lg:flex-none lg:px-12 border-l border-white/[0.06] backdrop-blur-2xl">
+          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
+            <img src="img/alternatecrm-logo.png" alt="Alternate CRM" className="h-9 w-9 rounded-xl object-cover" />
+            <span className="text-lg font-bold text-white">Alternate CRM</span>
+          </div>
 
-        <div className="relative z-10 mb-10 hidden lg:mb-0 lg:flex lg:items-end lg:gap-8">
-          <div className="hidden shrink-0 lg:block">
-            <ProductPreviewMock />
-            <p
-              className="mt-4 -rotate-2 text-2xl text-pink-200"
-              style={{ fontFamily: "'Caveat', cursive" }}
+          <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] p-7 shadow-2xl">
+            <h2 className="mb-1.5 text-2xl font-extrabold tracking-tight text-white">Welcome back</h2>
+            <p className="mb-6 text-sm text-slate-400">Sign in to your Alternate CRM workspace</p>
+
+            <a
+              href={googleHref}
+              onClick={() => setLoading(true)}
+              className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-white text-slate-900 px-6 py-3.5 text-sm font-bold shadow-md transition-all duration-150 hover:-translate-y-0.5 hover:bg-slate-100 hover:shadow-lg active:translate-y-0"
             >
-              Continuous improvement<br />is better than delayed perfection.
-              <svg width="150" height="14" viewBox="0 0 150 14" className="mt-0.5 text-pink-300" fill="none">
-                <path d="M2 8C30 2 60 12 90 6C110 2 130 8 148 4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-              </svg>
+              <GoogleIcon />
+              Continue with Google
+            </a>
+
+            <div className="relative my-6 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/10" />
+              </div>
+              <span className="relative bg-[#101726] px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Or explore live
+              </span>
+            </div>
+
+            <a
+              href="sandbox.html"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#d3fa76]/30 bg-[#d3fa76]/10 px-6 py-3 text-sm font-bold text-[#d3fa76] transition-all duration-150 hover:bg-[#d3fa76]/20 hover:border-[#d3fa76]/50"
+            >
+              <span>⚡</span> Try Live Sandbox / Quick Peek
+            </a>
+
+            <p className="mt-5 text-center text-xs text-slate-400">
+              New to Alternate CRM? Just sign in above — we'll let your admin know.
             </p>
           </div>
+
+          <p className="mt-8 flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-400">
+            <Lock size={12} className="shrink-0 text-slate-400" />
+            Enterprise grade security · Synced with Salesforce
+          </p>
         </div>
-
-        <div className="relative z-10 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:mt-10">
-          {FEATURES.map(({ icon: Icon, color, title, desc }, i) => {
-            const isEgg = i === FEATURES.length - 1;
-            return (
-              <div key={title} className="flex items-start gap-3 rounded-xl bg-white/[0.06] p-3.5 ring-1 ring-white/10 backdrop-blur">
-                <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${color}`}
-                  style={isEgg ? { userSelect: 'none', touchAction: 'manipulation' } : undefined}
-                  onClick={isEgg ? handleEggClick : undefined}
-                >
-                  {isEgg && eggFlipped
-                    ? <span className="text-[17px] leading-none text-white">{'\uD83D\uDD31'}</span>
-                    : <Icon size={17} className="text-white" strokeWidth={2.25} />}
-                </span>
-                <div>
-                  <p className="text-[13px] font-bold text-white">{title}</p>
-                  <p className="text-[11px] leading-snug text-white/45">{desc}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Login panel ──────────────────────────────────────────────── */}
-      {/* lg:sticky + lg:h-screen: without this, this panel's height (and
-          therefore where its vertically-centered content lands) is set by
-          flexbox stretch to match the brand panel's content height — which
-          grows with viewport width/font rendering and can exceed a laptop's
-          shorter browser window, silently centering the sign-in button
-          below the fold with no scroll indicator. Pinning this panel to the
-          real viewport height keeps the button reliably visible regardless
-          of how tall the brand panel's content gets. */}
-      <div className="flex w-full flex-1 shrink-0 flex-col justify-center bg-[#FDFCFB] px-6 py-10 sm:px-10 lg:sticky lg:top-0 lg:h-screen lg:w-[440px] lg:flex-none lg:px-12">
-        <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-          <img src="img/alternatecrm-logo.png" alt="Alternate CRM" className="h-9 w-9 rounded-[10px] object-cover" />
-          <span className="text-lg font-bold text-slate-900">Alternate CRM</span>
-        </div>
-
-        <h2 className="mb-2 text-2xl font-bold tracking-tight text-slate-900">Welcome back</h2>
-        <p className="mb-8 text-sm text-slate-500">Sign in to your Alternate CRM account</p>
-
-        <a
-          href={googleHref}
-          onClick={() => setLoading(true)}
-          className="flex items-center justify-center gap-3.5 rounded-xl border-2 border-slate-200 bg-white px-6 py-4 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:-translate-y-px hover:border-violet-400 hover:bg-violet-50/40 hover:shadow-md"
-        >
-          <GoogleIcon />
-          Continue with Google
-        </a>
-
-        {/* ponytail: no separate "request access" form — access is only ever
-            granted from inside Alternate CRM (Team & Access), so there's nothing
-            for a self-service form to submit to. Signing in with Google IS
-            the request: auth_routes.py records it and notifies Super Admins
-            the first time an unrecognized email tries, and the toast below
-            (params.get('error') === 'unauthorized') already tells the
-            person that's what just happened. */}
-        <p className="mt-5 text-center text-xs text-slate-400">
-          New to Alternate CRM? Just sign in above — we'll let your admin know.
-        </p>
-
-        <p className="mt-8 text-center text-xs leading-relaxed text-slate-400">
-          By signing in, you agree to our{' '}
-          <a href="terms.html" className="font-medium text-slate-500 underline hover:text-violet-600">Terms of Use</a>{' '}
-          and{' '}
-          <a href="privacy.html" className="font-medium text-slate-500 underline hover:text-violet-600">Privacy Policy</a>.
-        </p>
-        <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-400">
-          <Lock size={11} className="shrink-0" />
-          Your data is secure and synced with Salesforce
-        </p>
-      </div>
       </div>
 
       {loading && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-[#0f172a]/70 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-[#090d14]/80 backdrop-blur-md">
           <BrandLoader />
           <p className="text-sm font-medium text-white">Wait for it… the bots are working.</p>
         </div>

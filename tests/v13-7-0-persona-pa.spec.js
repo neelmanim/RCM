@@ -314,7 +314,7 @@ test.describe('v13.7.0 Pod Admin persona', () => {
     await page.getByRole('button', { name: 'Templates', exact: true }).click();
     await shot(page, 'v13-7-0-pa-sales-tools-email');
     await page.getByRole('button', { name: 'SMS Campaigns', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Converse Desk', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Inbox', exact: true })).toBeVisible();
     await expect(page.getByText('Create and send SMS campaigns via Alternate Messenger.')).toBeVisible();
     await shot(page, 'v13-7-0-pa-sales-tools-sms');
 

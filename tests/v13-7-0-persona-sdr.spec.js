@@ -249,7 +249,7 @@ test.describe('v13.7.0 SDR persona', () => {
     await shot(page, 'v13-7-0-sdr-sales-tools-email');
 
     await hub.getByRole('button', { name: 'SMS Campaigns' }).click();
-    await expect(hub.getByRole('button', { name: 'Converse Desk' })).toBeVisible();
+    await expect(hub.getByRole('button', { name: 'Inbox' })).toBeVisible();
     await shot(page, 'v13-7-0-sdr-sales-tools-sms');
 
     // Open a live, non-demo cadence (QA v13.7 preferred) read-only: Builder + Reporting.

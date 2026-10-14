@@ -85,43 +85,22 @@ class TestLeadExtraFields:
 
 
 class TestCreateContactExtraFields:
-    def test_extra_fields_merged_into_payload_omitting_falsy_values(self):
-        with patch("audience_manager.requests.post") as mock_post:
-            mock_post.return_value = MagicMock(
-                status_code=200, json=lambda: {"record_id": "abc123"}, raise_for_status=lambda: None
-            )
-            create_contact(
-                "https://app.alternatecrm.com", "key", "user1",
-                "John", "Doe", "+15551234567", email="john@test.com",
-                extra_fields={"status": "Lead Assigned", "state": "CA", "group": None, "owner": ""},
-            )
-            payload = mock_post.call_args.kwargs["json"]
-            assert payload["status"] == "Lead Assigned"
-            assert payload["state"] == "CA"
-            assert "group" not in payload
-            assert "owner" not in payload
+    def test_create_contact_is_retired_safe_noop(self):
+        res = create_contact(
+            "https://app.alternatecrm.com", "key", "user1",
+            "John", "Doe", "+15551234567", email="john@test.com",
+            extra_fields={"status": "Lead Assigned", "state": "CA"},
+        )
+        assert res is None
 
 
 class TestUpdateContact:
-    def test_patches_record_and_strips_immutable_fields(self):
-        with patch("audience_manager.requests.patch") as mock_patch:
-            mock_patch.return_value = MagicMock(status_code=200, raise_for_status=lambda: None)
-            ok = update_contact(
-                "https://app.alternatecrm.com", "key", "rec123",
-                {"first_name": "Janet", "status": "Calling", "mobile_number": "+15559999999"},
-            )
-            assert ok is True
-            call = mock_patch.call_args
-            assert call.args[0] == "https://app.alternatecrm.com/api/v2/converse_integration/record/contacts/rec123"
-            assert call.kwargs["json"]["crm_name"] == "audience_manager"
-            record_data = call.kwargs["json"]["record_data"]
-            assert record_data["first_name"] == "Janet"
-            assert record_data["status"] == "Calling"
-            assert "mobile_number" not in record_data
-
-    def test_returns_false_on_failure_without_raising(self):
-        with patch("audience_manager.requests.patch", side_effect=Exception("boom")):
-            assert update_contact("https://app.alternatecrm.com", "key", "rec123", {"first_name": "X"}) is False
+    def test_update_contact_is_retired_safe_noop(self):
+        ok = update_contact(
+            "https://app.alternatecrm.com", "key", "rec123",
+            {"first_name": "Janet", "status": "Calling"},
+        )
+        assert ok is True
 
 
 class TestSyncLeadUpdateToAM:
@@ -135,12 +114,8 @@ class TestSyncLeadUpdateToAM:
         lead.am_record_id = "rec999"
         db.commit()
 
-        with patch("audience_manager.update_contact", return_value=True) as mock_update:
-            sync_lead_update_to_am(lead.id)
-            assert mock_update.call_args.args[2] == "rec999"
-            record_data = mock_update.call_args.args[3]
-            assert record_data["first_name"] == "Jane"
-            assert record_data["last_name"] == "Roe"
+        # sync_lead_update_to_am is now a retired no-op, completes without raising
+        sync_lead_update_to_am(lead.id)
 
     def test_skips_a_lead_that_was_never_synced(self, db):
         db.add(models.SyncSettings(

@@ -1,25 +1,50 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import { DM_Sans, Manrope } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const dmSans = DM_Sans({
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-dm-sans",
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const manrope = Manrope({
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-manrope",
+  display: "swap",
 });
 
 export const metadata = {
-  title: "Alternate CRM — Next-Gen AI & Multichannel CRM Platform",
-  description: "Accelerate your pipeline, streamline communications, and supercharge sales execution with Alternate CRM.",
+  title: "AlternateCRM — One OS. Every conversation.",
+  description:
+    "AlternateCRM is the modular Conversation OS. Turn every conversation into momentum, with one connected foundation for people, AI and customer relationships.",
+};
+
+export const viewport = {
+  themeColor: "#080b0d",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body>{children}</body>
+    <html lang="en" className={`${dmSans.variable} ${manrope.variable}`}>
+      <head>
+        <link
+          href="https://assets.calendly.com/assets/external/widget.css"
+          rel="stylesheet"
+        />
+      </head>
+      <body>
+        {children}
+        <Script
+          src="https://assets.calendly.com/assets/external/widget.js"
+          strategy="lazyOnload"
+        />
+      </body>
     </html>
   );
 }
+

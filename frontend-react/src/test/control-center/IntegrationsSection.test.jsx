@@ -176,14 +176,14 @@ describe('IntegrationsSection', () => {
     expect(screen.getByText('Instantly.ai Sync')).toBeInTheDocument();
   });
 
-  it('renders Aircall + Alternate Messenger + Klenty on the Calling & Messaging tab', async () => {
+  it('renders Aircall + Klenty on the Calling & Messaging tab (Alternate Messenger retired)', async () => {
     const user = userEvent.setup();
     render(<IntegrationsSection userRole="Super Admin" />);
     await waitForReady();
 
     await user.click(screen.getByRole('button', { name: 'Calling & Messaging' }));
     expect(await screen.findByText('Aircall Configuration')).toBeInTheDocument();
-    expect(screen.getByText('Alternate Messenger Conversations')).toBeInTheDocument();
+    expect(screen.queryByText('Alternate Messenger Conversations')).not.toBeInTheDocument();
     expect(screen.getByText('Klenty Call-Activity Bridge')).toBeInTheDocument();
   });
 
@@ -392,54 +392,7 @@ describe('IntegrationsSection', () => {
   // RCA 2026-09-03: Alternate Messenger's API key used to pre-fill with the real
   // plaintext secret and resend it unchanged on every save. Now masked like
   // Nylas/Aircall, and omitted from the save payload unless actually edited
-  // — the backend has no "blank = unchanged" logic for this field, so
-  // sending it blank would silently wipe the stored key.
-  it('masks a saved Alternate Messenger API key and does not resend it unchanged', async () => {
-    SettingsService.patchSyncSettings.mockResolvedValue({});
-    SettingsService.getSyncSettings.mockResolvedValue({ ...syncSettings, messenger_api_key: 'real-secret-key' });
-    const user = userEvent.setup();
-    render(<IntegrationsSection userRole="Super Admin" />);
-    await waitForReady();
-    await user.click(screen.getByRole('button', { name: 'Calling & Messaging' }));
-
-    const messengerCard = (await screen.findByText('Alternate Messenger Conversations')).closest('.bg-white');
-    const apiKeyInput = within(messengerCard).getByPlaceholderText('•••••••• (saved — leave blank to keep)');
-    expect(apiKeyInput).toHaveValue('');
-    expect(apiKeyInput).toHaveAttribute('type', 'password');
-
-    await user.click(within(messengerCard).getByText('Save Configuration'));
-    await waitFor(() => expect(SettingsService.patchSyncSettings).toHaveBeenCalled());
-    const payload = SettingsService.patchSyncSettings.mock.calls[0][0];
-    expect(payload).not.toHaveProperty('messenger_api_key');
-  });
-
-  // Real prod gap: Account ID/User ID/Sender ID overwrite unconditionally
-  // server-side (no blank-preserves logic), so a form field that happens to
-  // render blank (e.g. a stale/incomplete fetch) used to wipe a real, already-
-  // working saved value on the very next save. Same "omit when blank"
-  // protection as the API key above, extended to these three fields.
-  it('does not resend a blank Alternate Messenger Account ID/User ID/Sender ID, protecting an existing saved value', async () => {
-    SettingsService.patchSyncSettings.mockResolvedValue({});
-    SettingsService.getSyncSettings.mockResolvedValue({
-      ...syncSettings, messenger_enabled: true, messenger_api_key: 'existing-secret',
-      messenger_user_id: 'u-123', messenger_account_id: '', messenger_sender_id: '',
-    });
-    const user = userEvent.setup();
-    render(<IntegrationsSection userRole="Super Admin" />);
-    await waitForReady();
-    await user.click(screen.getByRole('button', { name: 'Calling & Messaging' }));
-
-    const messengerCard = (await screen.findByText('Alternate Messenger Conversations')).closest('.bg-white');
-    expect(within(messengerCard).getByText('● Account ID Missing')).toBeInTheDocument();
-
-    await user.click(within(messengerCard).getByText('Save Configuration'));
-    await waitFor(() => expect(SettingsService.patchSyncSettings).toHaveBeenCalled());
-    const payload = SettingsService.patchSyncSettings.mock.calls[0][0];
-    expect(payload).not.toHaveProperty('messenger_account_id');
-    expect(payload).not.toHaveProperty('messenger_sender_id');
-    // Non-blank fields still go through as normal.
-    expect(payload).toHaveProperty('messenger_user_id', 'u-123');
-  });
+  // (Alternate Messenger Conversations card retired)
 
   it('adds a clarifying hint under the Aircall "Calling Provider" dropdown', async () => {
     const user = userEvent.setup();

@@ -161,10 +161,9 @@ export function IntegrationsSection({ userRole }) {
           {isSuperAdmin ? (
             <>
               <AircallCard dialerConf={dialerConf} syncSettings={syncSettings} onChanged={loadAll} />
-              <AlternateMessenger syncSettings={syncSettings} onChanged={loadAll} />
               <KlentyCard dialerConf={dialerConf} onChanged={loadAll} />
             </>
-          ) : <AdminOnlyNotice text="Aircall, Alternate Messenger, and Klenty settings are Super Admin only." />}
+          ) : <AdminOnlyNotice text="Aircall and Klenty settings are Super Admin only." />}
         </div>
       )}
 
@@ -381,159 +380,7 @@ function AircallCard({ dialerConf, syncSettings, onChanged }) {
   );
 }
 
-// ── Alternate Messenger Conversations ────────────────────────────────────────────────
-// Ported from settings.js:653-727 (fields) + settings_ai_dialer.js:738-905
-// (conv* handlers → SettingsService.getSyncSettings/patchSyncSettings, and
-// DialerService.testConnection('messaging_provider')).
-//
-// 2026-09-03: the API key field used to pre-fill with the real plaintext
-// secret from GET /admin/sync-settings (matching legacy's own unmasked
-// behavior) — per audit, masked now like Nylas/Aircall: the field starts
-// blank with a "(saved)" placeholder and only sends a new value when the
-// admin actually types one, leaving the stored key untouched otherwise
-// (same "omitted/blank = unchanged" contract patchSyncSettings already
-// gives every other field here — see NylasCard's comment above).
-function AlternateMessenger({ syncSettings, onChanged }) {
-  const s = syncSettings || {};
-  const hasApiKey = !!s.messenger_api_key;
-  const [form, setForm] = useState({
-    messenger_enabled: !!s.messenger_enabled,
-    messenger_base_url: s.messenger_base_url || 'https://app.alternatecrm.com',
-    messenger_api_key: '',
-    messenger_user_id: s.messenger_user_id || '',
-    messenger_account_id: s.messenger_account_id || '',
-    messenger_sender_id: s.messenger_sender_id || '',
-    messaging_provider: s.messaging_provider || 'messenger',
-    sandbox_test_phone_number: s.sandbox_test_phone_number || '',
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(null);
-  const [clearing, setClearing] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const statusBadge = !form.messenger_enabled ? { v: 'danger', t: '● Disabled' }
-    : !(hasApiKey || form.messenger_api_key.trim()) ? { v: 'warning', t: '● API Key Missing' }
-    : !form.messenger_user_id ? { v: 'warning', t: '● User ID Missing' }
-    : !form.messenger_account_id ? { v: 'warning', t: '● Account ID Missing' }
-    : { v: 'success', t: '● Enabled' };
-
-  const save = async () => {
-    setError(''); setSuccess('');
-    setSaving(true);
-    try {
-      // messenger_api_key, messenger_account_id, messenger_user_id and
-      // messenger_sender_id all overwrite unconditionally server-side (no
-      // blank-preserves logic, unlike Nylas) — omit each one whenever it's
-      // blank so a field that happens to render empty on this load never
-      // wipes a real, already-working saved value on the next save.
-      const MASKABLE_FIELDS = ['messenger_api_key', 'messenger_account_id', 'messenger_user_id', 'messenger_sender_id'];
-      const payload = { ...form };
-      for (const key of MASKABLE_FIELDS) {
-        if (payload[key].trim()) payload[key] = payload[key].trim();
-        else delete payload[key];
-      }
-      await SettingsService.patchSyncSettings(payload);
-      setForm((f) => ({ ...f, messenger_api_key: '' }));
-      setSuccess('Conversations configuration saved successfully.');
-      await onChanged();
-    } catch (e) {
-      setError(e.response?.data?.detail || e.message || 'Failed to save configuration.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const test = async () => {
-    setTesting(true); setTestResult(null);
-    try {
-      const result = await DialerService.testConnection('messaging_provider');
-      setTestResult(result);
-    } catch (e) {
-      setTestResult({ success: false, message: e.message || 'Connection test failed' });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const clear = async () => {
-    setClearing(true);
-    setError(''); setSuccess('');
-    try {
-      await SettingsService.patchSyncSettings({
-        messenger_enabled: false, messenger_api_key: '', messenger_user_id: '',
-        messenger_account_id: '', messenger_sender_id: '', clear_messenger_credentials: true,
-      });
-      setForm((f) => ({ ...f, messenger_enabled: false, messenger_api_key: '', messenger_user_id: '', messenger_account_id: '', messenger_sender_id: '' }));
-      setSuccess('Credentials cleared successfully.');
-      await onChanged();
-    } catch (e) {
-      setError(e.response?.data?.detail || e.message || 'Failed to clear credentials.');
-    } finally {
-      setClearing(false);
-      setConfirmClear(false);
-    }
-  };
-
-  return (
-    <Card>
-      <CardHeader title="Alternate Messenger Conversations" subtitle="Embed Messaging Provider conversation component in lead detail pages"
-        actions={<Badge variant={statusBadge.v}>{statusBadge.t}</Badge>} />
-      <CardContent className="space-y-3">
-        <Switch checked={form.messenger_enabled} onChange={(e) => setForm((f) => ({ ...f, messenger_enabled: e.target.checked }))}
-          label="Enable Conversations Tab" hint="Show the Conversations tab on lead detail pages" />
-
-        <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Messaging Provider</label>
-          <Select ariaLabel="Messaging Provider" value={form.messaging_provider} onChange={(v) => setForm((f) => ({ ...f, messaging_provider: v }))}
-            options={[{ value: 'messenger', label: 'Alternate Messenger / Messaging Provider' }, { value: 'aircall', label: 'Aircall' }]} />
-        </div>
-
-        <Input label="Sandbox Test Phone Number" value={form.sandbox_test_phone_number} onChange={set('sandbox_test_phone_number')}
-          placeholder="e.g. 919545455721" hint="A real number you control — every Playground cadence-test send goes here, never to a real lead." />
-
-        <Input label="Base URL" value={form.messenger_base_url} onChange={set('messenger_base_url')} placeholder="https://app.alternatecrm.com" />
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="API Key" type="password" value={form.messenger_api_key} onChange={set('messenger_api_key')}
-            placeholder={hasApiKey ? '•••••••• (saved — leave blank to keep)' : 'e.g. 88d57264020ca091fcf14b2ec01ad2e2'} />
-          <Input label="User ID" value={form.messenger_user_id} onChange={set('messenger_user_id')} placeholder="e.g. 1128360" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="Account ID (Converse Desk)" value={form.messenger_account_id} onChange={set('messenger_account_id')}
-            placeholder="e.g. 80054247" hint="Your Alternate Messenger/Converse Desk account identifier — same for every org environment." />
-          <Input label="Sender Number (org default)" value={form.messenger_sender_id} onChange={set('messenger_sender_id')}
-            placeholder="e.g. 918956778474"
-            hint="Used for both SMS and WhatsApp cadence sends — the two channels share one number. Applies to every rep without their own number set in Team & Access → Agent Assignments, where a rep's personal number always takes priority over this one." />
-        </div>
-        <p className="text-xs text-green-700 bg-green-50 rounded-lg p-2">Authentication is automatic — JWTs are generated using HMAC signatures. No manual token entry needed.</p>
-
-        <Banner text={error} tone="error" />
-        <Banner text={success} tone="ok" />
-        {testResult && <Banner text={testResult.message} tone={testResult.success ? 'ok' : 'error'} />}
-      </CardContent>
-      <CardFooter>
-        <Button variant="outline" size="sm" onClick={() => setConfirmClear(true)} disabled={clearing}>{clearing ? 'Clearing…' : 'Clear Credentials'}</Button>
-        <Button variant="outline" size="sm" onClick={test} disabled={testing}>{testing ? 'Testing…' : 'Test Connection'}</Button>
-        <Button size="sm" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Configuration'}</Button>
-      </CardFooter>
-
-      <ConfirmDialog
-        open={confirmClear}
-        onClose={() => setConfirmClear(false)}
-        title="Clear Alternate Messenger credentials?"
-        message="This will disable the integration until re-configured."
-        confirmLabel="Clear"
-        confirmVariant="danger"
-        onConfirm={clear}
-        loading={clearing}
-      />
-    </Card>
-  );
-}
 
 // ── Klenty Call-Activity Bridge ─────────────────────────────────────────────
 // Was backend-only until this audit: klenty_enabled/klenty_api_key have

@@ -472,9 +472,9 @@ def get_messaging_config(lead_id: str, db: Session = Depends(get_db), user: dict
             pass
 
     if not record_id:
-        return {"enabled": True, "has_phone": True, "synced": False, "reason": "Could not sync contact to Audience Manager."}
+        return {"enabled": True, "has_phone": True, "synced": False, "reason": "Could not sync contact."}
 
-    iframe_url = f"{base_url}/fastapp/desk/#/inbox?crm=audience_manager&record_id={record_id}&record_type=contacts"
+    iframe_url = f"{base_url}/fastapp/desk/#/inbox?record_id={record_id}&record_type=contacts"
 
     # Server-side auth
     auth_ok = False

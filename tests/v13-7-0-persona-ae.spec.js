@@ -249,7 +249,7 @@ test.describe('v13.7.0 close-out — AE', () => {
     await shot(page, 'v13-7-0-ae-sales-tools-email');
 
     await page.getByRole('button', { name: 'SMS Campaigns', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Converse Desk', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Inbox', exact: true })).toBeVisible();
     await expect(page.getByText(/Open Campaigns in Alternate Messenger|Could not prepare|Preparing your Alternate Messenger session/).first()).toBeVisible({ timeout: 15000 });
     await shot(page, 'v13-7-0-ae-sales-tools-sms');
 

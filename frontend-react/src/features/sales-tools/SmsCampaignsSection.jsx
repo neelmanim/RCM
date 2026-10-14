@@ -30,7 +30,7 @@ import { ConversationsService } from '../../services/api';
  */
 const SMS_TABS = [
   { key: 'campaigns', label: 'Campaigns', icon: Send, cta: 'Open Campaigns in Alternate Messenger' },
-  { key: 'converse-desk', label: 'Converse Desk', icon: MessagesSquare, cta: 'Open Converse Desk in Alternate Messenger' },
+  { key: 'inbox', label: 'Inbox', icon: MessagesSquare, cta: 'Open Inbox in Alternate Messenger' },
 ];
 
 function useEmbedUrl(key) {
@@ -95,7 +95,7 @@ export function SmsCampaignsSection() {
         <Tabs tabs={SMS_TABS} active={active} onChange={setActive} />
       </div>
       <p className="text-xs text-slate-500 mb-3">
-        {active === 'campaigns' ? 'Create and send SMS campaigns via Alternate Messenger.' : 'Track replies and ongoing SMS conversations via Alternate Messenger.'}
+        {active === 'campaigns' ? 'Create and send SMS campaigns via Alternate Messenger.' : 'View replies and campaign messages in Inbox.'}
       </p>
       <OpenInAlternateMessenger key={activeTab.key} tabKey={activeTab.key} cta={activeTab.cta} Icon={activeTab.icon} />
     </div>

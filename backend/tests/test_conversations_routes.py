@@ -193,15 +193,15 @@ class TestEmbedUrl:
         assert "userId=org-wide-user" in url
         assert "apiKey=key" in url
         assert "signature=" in url and "timestamp=" in url
-        assert "redirect_url=https%3A%2F%2Fapp.alternatecrm.com%2Fapp%2F%23%2Fcampaigns%3Fcrm%3Daudience_manager" in url
+        assert "redirect_url=https%3A%2F%2Fapp.alternatecrm.com%2Fapp%2F%23%2Fcampaigns" in url
 
-    def test_converse_desk_view_redirects_to_its_own_destination(self, db, client_as_sdr):
+    def test_inbox_view_redirects_to_its_own_destination(self, db, client_as_sdr):
         self._configure(db)
-        resp = client_as_sdr.get("/api/conversations/embed-url", params={"view": "converse-desk"})
+        resp = client_as_sdr.get("/api/conversations/embed-url", params={"view": "inbox"})
         assert resp.status_code == 200
         url = resp.json()["url"]
         assert url.startswith("https://app.alternatecrm.com/api/v2/crm/authenticate?")
-        assert "redirect_url=https%3A%2F%2Fapp.alternatecrm.com%2Fapp%2F%23%2Fconverse-desk%3Fcrm%3Daudience_manager" in url
+        assert "redirect_url=https%3A%2F%2Fapp.alternatecrm.com%2Fapp%2F%23%2Finbox" in url
 
     def test_502_when_messaging_auth_fails(self, db, client_as_sdr):
         self._configure(db)

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sandbox & Quick Peek — Alternate CRM</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #090d14;
+            --card-bg: rgba(22, 28, 42, 0.75);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --primary-lime: #d3fa76;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, var(--bg-base) 65%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-main);
+            padding: 24px;
+        }
+
+        .sandbox-shell {
+            width: 100%;
+            max-width: 580px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            backdrop-filter: blur(24px);
+            padding: 40px;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(99, 102, 241, 0.12);
+            text-align: center;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(211, 250, 118, 0.1);
+            border: 1px solid rgba(211, 250, 118, 0.25);
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--primary-lime);
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        h1 {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 10px;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 28px;
+        }
+
+        .persona-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 28px;
+            text-align: left;
+        }
+
+        .persona-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .persona-card:hover, .persona-card.active {
+            background: rgba(99, 102, 241, 0.12);
+            border-color: rgba(99, 102, 241, 0.45);
+            transform: translateY(-2px);
+        }
+
+        .persona-card.active {
+            border-color: var(--primary-lime);
+            box-shadow: 0 0 16px rgba(211, 250, 118, 0.15);
+        }
+
+        .persona-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .persona-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.35;
+        }
+
+        .btn-launch {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            background: var(--primary-lime);
+            color: #0b130a;
+            border: none;
+            border-radius: 14px;
+            padding: 15px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-launch:hover {
+            background: #e2ffa2;
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(211, 250, 118, 0.3);
+        }
+
+        .loading-state {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            padding: 20px 0;
+        }
+
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--primary-lime);
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .footer-note {
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="sandbox-shell">
+        <div class="brand-badge">⚡ Interactive Sandbox & Quick Peek</div>
+        <h1>Explore Alternate CRM Live</h1>
+        <p class="subtitle">Select your role to preview the CRM with pre-configured mock data and active lead pipelines.</p>
+
+        <div id="selection-area">
+            <div class="persona-grid">
+                <div class="persona-card active" onclick="selectPersona(this, 'Super Admin', 'super-admin')">
+                    <div class="persona-title">👑 Super Admin</div>
+                    <div class="persona-desc">Full visibility: control center, integrations, all rep activities and analytics.</div>
+                </div>
+                <div class="persona-card" onclick="selectPersona(this, 'SDR', 'sdr')">
+                    <div class="persona-title">📞 SDR Outreach</div>
+                    <div class="persona-desc">Power dialer, SMS campaigns, lead calling flow, and daily targets.</div>
+                </div>
+                <div class="persona-card" onclick="selectPersona(this, 'Account Executive', 'ae')">
+                    <div class="persona-title">💼 Account Executive</div>
+                    <div class="persona-desc">Discovery meetings, demo stages, deals pipeline, and revenue tracking.</div>
+                </div>
+                <div class="persona-card" onclick="selectPersona(this, 'CSM', 'csm')">
+                    <div class="persona-title">🤝 CSM Portal</div>
+                    <div class="persona-desc">Account health scores, renewal monitoring, and touchpoint tracking.</div>
+                </div>
+            </div>
+
+            <button class="btn-launch" id="launch-btn" onclick="launchSandbox()">
+                Launch Sandbox Mode <span>⚡</span>
+            </button>
+        </div>
+
+        <div class="loading-state" id="loading-area">
+            <div class="spinner"></div>
+            <h2 style="font-size: 18px; font-weight: 700;">Preparing your sandbox...</h2>
+            <p style="font-size: 13px; color: var(--text-muted);">Configuring session tokens and loading mock data...</p>
+        </div>
+
+        <div class="footer-note">
+            Isolated sandbox environment · No real emails or SMS sent to leads.
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        let currentRole = 'Super Admin';
+        let currentKey = 'super-admin';
+
+        function selectPersona(card, role, key) {
+            document.querySelectorAll('.persona-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            currentRole = role;
+            currentKey = key;
+        }
+
+        // Base64 helper for creating client-side JWT mock payload
+        function createSandboxToken(role) {
+            const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+            const payload = btoa(JSON.stringify({
+                user_id: 9999,
+                email: "sandbox@alternatecrm.test",
+                role: role,
+                name: "Sandbox " + role,
+                exp: Math.floor(Date.now() / 1000) + (3600 * 24),
+                is_sandbox: true
+            }));
+            return `${header}.${payload}.sandbox_signature`;
+        }
+
+        function launchSandbox() {
+            document.getElementById('selection-area').style.display = 'none';
+            document.getElementById('loading-area').style.display = 'flex';
+
+            const token = createSandboxToken(currentRole);
+            localStorage.setItem('crm_token', token);
+            localStorage.setItem('crm_user_role', currentRole);
+            localStorage.setItem('crm_is_sandbox', 'true');
+
+            setTimeout(() => {
+                window.location.href = 'index.html';
+            }, 800);
+        }
+
+        // Auto-launch if URL has ?auto=1
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('auto') === '1') {
+            launchSandbox();
+        }
+    </script>
+</body>
+</html>

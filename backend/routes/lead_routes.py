@@ -1546,10 +1546,10 @@ def get_messaging_config(
             "enabled": True,
             "has_phone": True,
             "synced": False,
-            "reason": "Could not sync contact to Audience Manager. Try again later.",
+            "reason": "Could not sync contact. Try again later.",
         }
 
-    iframe_url = f"{base_url}/fastapp/desk/#/inbox?crm=audience_manager&record_id={record_id}&record_type=contacts"
+    iframe_url = f"{base_url}/fastapp/desk/#/inbox?record_id={record_id}&record_type=contacts"
 
     # Server-side auth: use shared AlternateMessengerAuthManager for cached HMAC-based JWT
     auth_ok = False
