@@ -236,11 +236,13 @@
         function createSandboxToken(role) {
             const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
             const payload = btoa(JSON.stringify({
+                sub: "sandbox-1",
                 user_id: 1,
                 id: 1,
                 email: "sandbox@alternatecrm.test",
                 role: role,
                 name: "Sandbox " + role,
+                pod_id: 1,
                 exp: Math.floor(Date.now() / 1000) + (3600 * 24 * 7),
                 is_sandbox: true,
                 dialer_enabled: true,

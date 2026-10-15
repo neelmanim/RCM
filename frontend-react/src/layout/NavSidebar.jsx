@@ -484,17 +484,23 @@ export function NavSidebar({
     />
     <aside className={`nh-sidebar${collapsed ? ' nh-sidebar--collapsed' : ''}${mobileNavOpen ? ' nh-sidebar--mobile-open' : ''}`}>
 
-      {/* Logo */}
+      {/* Brand Header */}
       <div className="nh-logo">
-        <img
-          src="img/brand/icon-lime.svg"
-          alt="Alternate CRM"
-          className="nh-logo__icon"
-        />
+        <div className="w-8 h-8 rounded-xl bg-[#C9FF68] flex items-center justify-center text-[#090D0E] shrink-0 font-black shadow-[0_0_15px_rgba(201,255,104,0.3)]">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="2" x2="12" y2="22"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+            <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+            <line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/>
+          </svg>
+        </div>
         {!collapsed && (
           <div className="nh-logo__text">
-            <span className="nh-logo__name">Alternate CRM</span>
-            <span className="nh-logo__sub">{POWERED_BY}</span>
+            <div className="flex items-center gap-1.5 leading-none">
+              <span className="nh-logo__name font-black text-sm text-[#F4F6F2] tracking-tight">alternate<span className="text-[#C9FF68]">crm</span></span>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-white/10 text-[#9BA9A5]">OS</span>
+            </div>
+            <span className="nh-logo__sub text-[10px] text-[#9BA9A5] mt-1 font-medium tracking-wide">Connected Workspace</span>
           </div>
         )}
       </div>
@@ -552,25 +558,27 @@ export function NavSidebar({
         </ul>
       </nav>
 
-      {/* User footer — avatar + name + logout (always visible) */}
+      {/* User footer — elevated card */}
       <div
         className="nh-footer"
         onMouseEnter={e => collapsed && showTooltip(e, userName || 'Account')}
         onMouseLeave={hideTooltip}
       >
-        <Avatar
-          name={userName}
-          background={`linear-gradient(135deg, ${roleColor}, #7c3aed)`}
-          className="nh-avatar"
-          size={34}
-        />
+        <div className="relative shrink-0">
+          <Avatar
+            name={userName}
+            background={`linear-gradient(135deg, ${roleColor}, #7c3aed)`}
+            className="nh-avatar"
+            size={34}
+          />
+          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#C9FF68] ring-2 ring-[#090D0E]" />
+        </div>
         {!collapsed && (
           <div className="nh-footer__info">
-            <span className="nh-footer__name">{userName}</span>
-            <span className="nh-footer__role">{userRole}</span>
+            <span className="nh-footer__name font-bold text-xs text-[#F4F6F2]">{userName}</span>
+            <span className="nh-footer__role text-[10px] font-semibold text-[#9BA9A5]">{userRole}</span>
           </div>
         )}
-        {/* Logout — always visible (fixes Part 1 bug) */}
         <button
           className="nh-logout-btn"
           onClick={onLogout}

@@ -28,7 +28,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css?v=20260819a">
     <link rel="stylesheet" href="css/messenger_widget.css?v=20260729a">
-    <link rel="stylesheet" href="js/nav-hub.css?v=20261014v2330">
+    <link rel="stylesheet" href="js/nav-hub.css?v=20261015v0045">
     <!-- livekit + PapaParse: defer so they don't block first paint (perf audit P3) -->
     <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.9.1/dist/livekit-client.umd.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js" defer></script>
@@ -156,99 +156,9 @@
         </main>
     </div><!-- /.app-container -->
 
-    <!-- ── New Lead Modal ──────────────────────────────────────────────── -->
-    <div id="new-lead-modal" class="modal">
-        <div class="modal-content" style="max-width:560px;">
-            <div class="modal-header">
-                <h2>Create New Lead</h2>
-                <span class="close-modal">&times;</span>
-            </div>
-            <div class="modal-body">
-                <form id="new-lead-form">
-                    <div class="new-lead-grid">
-                        <div class="form-group">
-                            <label for="lead-first-name">First Name</label>
-                            <input type="text" id="lead-first-name" placeholder="John">
-                        </div>
-                        <div class="form-group">
-                            <label for="lead-last-name">Last Name <span style="color:#ef4444;">*</span></label>
-                            <input type="text" id="lead-last-name" required placeholder="Doe">
-                        </div>
-                        <div class="form-group">
-                            <label for="lead-company">Company <span style="color:#ef4444;">*</span></label>
-                            <input type="text" id="lead-company" required placeholder="Acme Corp">
-                        </div>
-                        <div class="form-group">
-                            <label for="lead-title">Title / Role</label>
-                            <input type="text" id="lead-title" placeholder="VP of Sales">
-                        </div>
-                        <div class="form-group">
-                            <label for="lead-phone">Phone</label>
-                            <input type="tel" id="lead-phone" placeholder="+1 (555) 123-4567">
-                        </div>
-                        <div class="form-group">
-                            <label for="lead-phone-secondary">Secondary Phone</label>
-                            <input type="tel" id="lead-phone-secondary" placeholder="+1 (555) 987-6543">
-                        </div>
-                        <div class="form-group">
-                            <label for="lead-email">Email</label>
-                            <input type="email" id="lead-email" placeholder="john@acme.com">
-                        </div>
-                        <div class="form-group">
-                            <label for="lead-linkedin">LinkedIn URL</label>
-                            <input type="url" id="lead-linkedin" placeholder="https://linkedin.com/in/johndoe">
-                        </div>
-                    </div>
-                    <div class="form-group" style="margin-top:4px;">
-                        <label for="lead-status">Initial Status</label>
-                        <select id="lead-status">
-                            <option value="Lead Assigned">Lead Assigned</option>
-                            <option value="Research">Research</option>
-                        </select>
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn btn-outline close-modal-btn">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save Lead</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
+    <!-- Legacy static HTML modals deprecated in favor of React dialogs (e.g. CreateLeadModal) -->
 
-    <!-- ── No Show Modal ──────────────────────────────────────────────── -->
-    <div id="no-show-modal" class="modal">
-        <div class="modal-content" style="max-width:440px;">
-            <div class="modal-header" style="border-bottom-color:#fde68a;background:#fffbeb;">
-                <h2 style="display:flex;align-items:center;gap:8px;color:#92400e;font-size:1.1rem;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                    Mark No Show
-                </h2>
-                <span class="close-modal close-no-show-modal" style="cursor:pointer;font-size:1.3rem;color:var(--text-muted);">&times;</span>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="no-show-lead-id">
-                <p style="font-size:0.85rem;color:var(--text-main);margin:0 0 4px 0;">
-                    <strong id="no-show-lead-name"></strong> will be moved back to <strong>Calling</strong> status.
-                </p>
-                <p style="font-size:0.78rem;color:var(--text-muted);margin:0 0 16px 0;">
-                    This action is logged and the Pod Admin will be notified.
-                </p>
-                <div class="form-group">
-                    <label for="no-show-reason" style="font-weight:600;font-size:0.85rem;">
-                        Reason <span style="font-size:0.75rem;color:#ef4444;font-weight:600;">(required — min 10 chars)</span>
-                    </label>
-                    <textarea id="no-show-reason" rows="3" placeholder="Describe why the meeting was missed…" style="width:100%;padding:10px 14px;border:1px solid var(--border-color);border-radius:var(--radius-md);font-family:inherit;font-size:0.9rem;outline:none;resize:vertical;min-height:70px;"></textarea>
-                    <div id="no-show-char-count" style="text-align:right;font-size:0.72rem;color:var(--text-muted);margin-top:4px;">0 / 10 min</div>
-                </div>
-                <div class="modal-actions">
-                    <button class="btn btn-outline close-no-show-modal">Cancel</button>
-                    <button class="btn" id="submit-no-show-btn" disabled style="background:#f59e0b;color:#fff;padding:8px 20px;border-radius:8px;font-weight:600;opacity:0.5;cursor:not-allowed;">
-                        Confirm No Show
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+
 
     <!-- ── Disqualify Account Modal ──────────────────────────────────────── -->
     <div id="disqualify-modal" class="modal">

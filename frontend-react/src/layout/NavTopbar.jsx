@@ -15,6 +15,7 @@ import { Bell, Check, CheckCircle2, Clock, Compass, X } from 'lucide-react';
 import { Avatar } from '../components/ui/Avatar';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
+import { CreateLeadModal } from './CreateLeadModal';
 import { EmptyState } from '../components/ui/EmptyState';
 import { IconButton } from '../components/ui/IconButton';
 import { describeDue, isApproval, splitTitle, taskKind } from '../components/tasks/taskMeta';
@@ -283,6 +284,13 @@ export function NavTopbar({
 
   // ── Other ─────────────────────────────────────────────────────────────────
   const [syncing, setSyncing] = useState(false);
+  const [createLeadOpen, setCreateLeadOpen] = useState(false);
+
+  useEffect(() => {
+    const onOpen = () => setCreateLeadOpen(true);
+    window.addEventListener('alternate:open-new-lead', onOpen);
+    return () => window.removeEventListener('alternate:open-new-lead', onOpen);
+  }, []);
 
   // Called once here (not inside AircallEverywhereDrawer) so there's only
   // ever one Aircall SDK instance. Also used below to hide the legacy
@@ -733,7 +741,7 @@ export function NavTopbar({
         {!isCSM && (
           <button
             className="nh-btn nh-btn--primary"
-            onClick={() => onAction?.('newLead')}
+            onClick={() => setCreateLeadOpen(true)}
             title="Create a new lead"
             aria-label="New Lead"
             id="nh-new-lead-btn"
@@ -744,6 +752,12 @@ export function NavTopbar({
         )}
 
       </div>
+
+      <CreateLeadModal
+        isOpen={createLeadOpen}
+        onClose={() => setCreateLeadOpen(false)}
+        onLeadCreated={(lead) => onAction?.('leadCreated', lead)}
+      />
     </header>
   );
 }

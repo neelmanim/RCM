@@ -245,13 +245,13 @@ export function showLoader(container) {
     // Every view goes through loadView → showLoader, so this gives
     // consistent progressive-loading UX across the entire app.
     const _skel = (w, h = '14px', r = '6px') =>
-        `<div style="background:var(--skeleton-bg,#e5e7eb);border-radius:${r};width:${w};height:${h};animation:skeletonPulse 1.4s ease-in-out infinite;"></div>`;
+        `<div style="background:var(--skeleton-bg,#1A2326);border-radius:${r};width:${w};height:${h};animation:skeletonPulse 1.4s ease-in-out infinite;"></div>`;
 
     container.innerHTML = `
         <style>
             @keyframes skeletonPulse {
                 0%, 100% { opacity: 1; }
-                50%      { opacity: 0.4; }
+                50%      { opacity: 0.35; }
             }
         </style>
         <div style="padding:28px 32px;max-width:1200px;">
@@ -264,7 +264,7 @@ export function showLoader(container) {
             <!-- Stats row skeleton -->
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px;">
                 ${Array(4).fill('').map(() => `
-                    <div style="background:var(--card-bg,#fff);border-radius:12px;padding:20px;border:1px solid var(--border,#e5e7eb);">
+                    <div style="background:var(--card-bg,#12181A);border-radius:12px;padding:20px;border:1px solid var(--border,rgba(255,255,255,0.08));">
                         ${_skel('80px','12px')}
                         <div style="margin-top:12px;">${_skel('120px','32px','8px')}</div>
                         <div style="margin-top:8px;">${_skel('60px','10px')}</div>
@@ -273,13 +273,13 @@ export function showLoader(container) {
             </div>
 
             <!-- Table skeleton -->
-            <div style="background:var(--card-bg,#fff);border-radius:12px;border:1px solid var(--border,#e5e7eb);overflow:hidden;">
-                <div style="padding:16px 20px;border-bottom:1px solid var(--border,#e5e7eb);display:flex;align-items:center;gap:12px;">
+            <div style="background:var(--card-bg,#12181A);border-radius:12px;border:1px solid var(--border,rgba(255,255,255,0.08));overflow:hidden;">
+                <div style="padding:16px 20px;border-bottom:1px solid var(--border,rgba(255,255,255,0.08));display:flex;align-items:center;gap:12px;">
                     ${_skel('160px','18px')}
                     <div style="margin-left:auto;">${_skel('200px','32px','8px')}</div>
                 </div>
                 ${Array(6).fill('').map(() => `
-                    <div style="padding:14px 20px;border-bottom:1px solid var(--border,#f1f5f9);display:flex;align-items:center;gap:16px;">
+                    <div style="padding:14px 20px;border-bottom:1px solid var(--border,rgba(255,255,255,0.05));display:flex;align-items:center;gap:16px;">
                         ${_skel('36px','36px','50%')}
                         ${_skel('140px')}
                         ${_skel('100px')}

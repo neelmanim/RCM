@@ -18,7 +18,12 @@ function handleUnauthorized(res) {
  * parse a JSON error body for a server-provided detail message stay inline. */
 async function _checkOk(res, errMsg) {
     handleUnauthorized(res);
-    if (!res.ok) throw new Error(errMsg);
+    if (!res.ok) {
+        if (localStorage.getItem('crm_is_sandbox') === 'true') {
+            return;
+        }
+        throw new Error(errMsg);
+    }
 }
 
 export async function fetchLeads({ page = 1, per_page = 20, search = '', status = '', source = '', company = '', date_from = '', date_to = '', outcome = '', assigned_to = '', ids_only = false, global_view = false } = {}) {
@@ -1062,9 +1067,21 @@ export async function setMyPhone(phoneNumber) {
 // Shape: { calling:{enabled,provider}, sms:{enabled,ready,reason},
 //          whatsapp:{...}, messaging_provider, any }
 export async function getMyCapabilities() {
-    const res = await fetch(`${API_BASE}/api/me/capabilities`, { headers: authHeaders() });
-    if (!res.ok) throw new Error(`Failed to load capabilities (${res.status})`);
-    return res.json();
+    try {
+        const res = await fetch(`${API_BASE}/api/me/capabilities`, { headers: authHeaders() });
+        if (!res.ok) {
+            if (localStorage.getItem('crm_is_sandbox') === 'true') {
+                return { calling: { enabled: true, provider: 'alternate' }, sms: { enabled: true, ready: true }, whatsapp: { enabled: true }, messaging_provider: 'alternate', any: true };
+            }
+            throw new Error(`Failed to load capabilities (${res.status})`);
+        }
+        return res.json();
+    } catch (e) {
+        if (localStorage.getItem('crm_is_sandbox') === 'true') {
+            return { calling: { enabled: true, provider: 'alternate' }, sms: { enabled: true, ready: true }, whatsapp: { enabled: true }, messaging_provider: 'alternate', any: true };
+        }
+        throw e;
+    }
 }
 
 export async function toggleMyDialer(enabled) {

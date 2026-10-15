@@ -320,15 +320,15 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 20px;
-  background: rgba(255, 255, 255, 0.9);
+  padding: 0 24px;
+  background: rgba(9, 13, 14, 0.85);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   z-index: 25;
   position: sticky;
   top: 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   flex-shrink: 0;
   /* needed so nh-ai-overlay positions relative to topbar */
   overflow: visible;
@@ -340,46 +340,46 @@
   display: flex;
   align-items: center;
   flex: 1;
-  max-width: 360px;
+  max-width: 380px;
 }
 
 .nh-search__icon {
   position: absolute;
-  left: 12px;
-  color: #94a3b8;
+  left: 14px;
+  color: #9BA9A5;
   display: flex;
   pointer-events: none;
 }
 
 .nh-search__input {
   width: 100%;
-  padding: 8.5px 38px 8.5px 36px;
+  padding: 9px 40px 9px 38px;
   border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #12181A;
   font-size: 0.82rem;
   font-family: inherit;
-  color: #090D0E;
+  color: #F4F6F2;
   outline: none;
   transition: all 0.2s;
 }
 .nh-search__input:focus {
-  border-color: #090D0E;
-  box-shadow: 0 0 0 3px rgba(9, 13, 14, 0.08);
-  background: white;
+  border-color: #C9FF68;
+  box-shadow: 0 0 0 3px rgba(201, 255, 104, 0.15);
+  background: #151D20;
 }
-.nh-search__input::placeholder { color: #94a3b8; }
+.nh-search__input::placeholder { color: #9BA9A5; opacity: 0.7; }
 
 .nh-search__kbd {
   position: absolute;
   right: 10px;
-  background: rgba(0,0,0,0.05);
-  color: #64748b;
+  background: rgba(255, 255, 255, 0.08);
+  color: #9BA9A5;
   font-size: 0.68rem;
   font-family: inherit;
   padding: 2px 6px;
   border-radius: 6px;
-  border: 1px solid rgba(0,0,0,0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   pointer-events: none;
   line-height: 1.4;
   font-weight: 600;
@@ -389,7 +389,7 @@
 .nh-topbar__actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-left: auto;
 }
 
@@ -398,19 +398,19 @@
 
 .nh-bell__btn {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-  background: white;
-  color: #475569;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #12181A;
+  color: #9BA9A5;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.18s ease;
 }
-.nh-bell__btn:hover { background: #f8fafc; color: #090D0E; border-color: #cbd5e1; }
+.nh-bell__btn:hover { background: #172124; color: #F4F6F2; border-color: rgba(255, 255, 255, 0.2); }
 
 .nh-bell__badge {
   position: absolute;
@@ -420,14 +420,14 @@
   height: 17px;
   padding: 0 4px;
   border-radius: 999px;
-  background: #090D0E;
-  color: #C9FF68;
+  background: #C9FF68;
+  color: #090D0E;
   font-size: 0.6rem;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
 
 .nh-bell__error-dot {
@@ -437,18 +437,18 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #94a3b8;
-  border: 1px solid white;
+  background: #ef4444;
+  border: 1.5px solid #12181A;
 }
 
 .nh-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 7.5px 14px;
-  border-radius: 10px;
+  padding: 8px 15px;
+  border-radius: 11px;
   border: none;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
@@ -457,32 +457,34 @@
 }
 
 .nh-btn--primary {
-  background: #090D0E;
-  color: #C9FF68;
-  border: 1px solid rgba(201, 255, 104, 0.25);
-  box-shadow: 0 2px 8px rgba(9, 13, 14, 0.12);
+  background: #C9FF68;
+  color: #090D0E;
+  font-weight: 800;
+  border: 1px solid #C9FF68;
+  box-shadow: 0 2px 10px rgba(201, 255, 104, 0.25);
 }
 .nh-btn--primary:hover {
-  background: #151C1E;
-  box-shadow: 0 4px 12px rgba(9, 13, 14, 0.2);
+  background: #D8FF85;
+  box-shadow: 0 4px 16px rgba(201, 255, 104, 0.35);
   transform: translateY(-1px);
 }
 
 .nh-btn--ghost {
-  background: white;
-  color: #334155;
-  border: 1px solid #e2e8f0;
+  background: #12181A;
+  color: #F4F6F2;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
-.nh-btn--ghost:hover { background: #f8fafc; border-color: #cbd5e1; color: #090D0E; }
+.nh-btn--ghost:hover { background: #151D20; border-color: rgba(255, 255, 255, 0.2); color: #C9FF68; }
 .nh-btn--ghost:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .nh-btn--ai {
   background: rgba(201, 255, 104, 0.12);
-  color: #090D0E;
-  border: 1px solid rgba(201, 255, 104, 0.4);
+  color: #C9FF68;
+  border: 1px solid rgba(201, 255, 104, 0.35);
 }
 .nh-btn--ai:hover {
   background: rgba(201, 255, 104, 0.22);
+  box-shadow: 0 0 14px rgba(201, 255, 104, 0.2);
 }
 
 .nh-btn--live {
@@ -518,14 +520,14 @@
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  min-width: 340px;
-  max-width: 480px;
+  min-width: 360px;
+  max-width: 500px;
   max-height: 420px;
   overflow-y: auto;
-  background: #ffffff;
-  border: 1px solid #E2E8F0;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06);
+  background: #12181A;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.3);
   z-index: 9999;
   animation: nh-fade-in 120ms ease;
 }
@@ -541,24 +543,24 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #94A3B8;
-  background: #F8FAFC;
-  border-bottom: 1px solid #F1F5F9;
+  color: #C9FF68;
+  background: #151D20;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .nh-search__result {
   padding: 10px 14px;
-  border-bottom: 1px solid #F8FAFC;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   cursor: pointer;
   transition: background 120ms ease;
 }
 .nh-search__result:last-of-type { border-bottom: none; }
-.nh-search__result:hover { background: #F1F5F9; }
+.nh-search__result:hover { background: rgba(255, 255, 255, 0.06); }
 
 .nh-search__result-name {
   font-size: 13px;
   font-weight: 600;
-  color: #0F172A;
+  color: #F4F6F2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -567,7 +569,7 @@
 
 .nh-search__result-sub {
   font-size: 11.5px;
-  color: #64748B;
+  color: #9BA9A5;
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -576,9 +578,9 @@
 
 .nh-search__result-badge {
   font-size: 10px;
-  font-weight: 600;
-  background: #EEF2FF;
-  color: #4F46E5;
+  font-weight: 700;
+  background: rgba(201, 255, 104, 0.15);
+  color: #C9FF68;
   border-radius: 20px;
   padding: 2px 8px;
   flex-shrink: 0;
@@ -587,30 +589,30 @@
 .nh-search__empty {
   padding: 16px 14px;
   font-size: 13px;
-  color: #94A3B8;
+  color: #9BA9A5;
   text-align: center;
 }
 
 .nh-search__footer {
-  padding: 9px 14px;
+  padding: 10px 14px;
   font-size: 12px;
-  color: #64748B;
-  background: #F8FAFC;
-  border-top: 1px solid #F1F5F9;
+  color: #9BA9A5;
+  background: #151D20;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
   text-align: center;
   transition: background 120ms;
-  border-radius: 0 0 12px 12px;
+  border-radius: 0 0 14px 14px;
 }
-.nh-search__footer:hover { background: #EEF2FF; color: #4F46E5; }
-.nh-search__footer strong { color: #4F46E5; }
+.nh-search__footer:hover { background: #192428; color: #C9FF68; }
+.nh-search__footer strong { color: #C9FF68; }
 
 /* Search loading spinner */
 .nh-search__spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid #E2E8F0;
-  border-top-color: #4F46E5;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #C9FF68;
   border-radius: 50%;
   animation: nh-spin 0.6s linear infinite;
   flex-shrink: 0;
@@ -632,10 +634,10 @@
   left: 50%;
   transform: translateX(-50%);
   width: min(520px, calc(100vw - 32px));
-  background: #ffffff;
-  border: 1px solid #E2E8F0;
+  background: #11171D;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.16), 0 4px 12px rgba(0,0,0,0.08);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.7), 0 4px 16px rgba(0,0,0,0.4);
   z-index: 9998;
   animation: nh-fade-in 150ms ease;
   overflow: hidden;
@@ -647,7 +649,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #090D0E;
+  background: #151D20;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .nh-overlay-close {
@@ -676,6 +678,7 @@
 
 .nh-ai-overlay__body {
   padding: 16px 18px 18px;
+  background: #11171D;
 }
 
 .nh-ai-overlay__input-row {
@@ -687,57 +690,58 @@
 .nh-ai-overlay__input {
   flex: 1;
   padding: 9.5px 14px;
-  border: 1.5px solid #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
   font-size: 13px;
   font-family: inherit;
-  color: #090D0E;
-  background: #f8fafc;
+  color: #F4F6F2;
+  background: #151D20;
   outline: none;
   transition: all 0.2s;
 }
 .nh-ai-overlay__input:focus {
-  border-color: #090D0E;
-  box-shadow: 0 0 0 3px rgba(9, 13, 14, 0.08);
-  background: white;
+  border-color: #C9FF68;
+  box-shadow: 0 0 0 3px rgba(201, 255, 104, 0.15);
+  background: #182226;
 }
-.nh-ai-overlay__input::placeholder { color: #94a3b8; }
+.nh-ai-overlay__input::placeholder { color: #9BA9A5; opacity: 0.6; }
 .nh-ai-overlay__input:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .nh-ai-overlay__submit {
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  border: 1px solid rgba(201, 255, 104, 0.25);
-  background: #090D0E;
-  color: #C9FF68;
+  border: 1px solid rgba(201, 255, 104, 0.3);
+  background: #C9FF68;
+  color: #090D0E;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.18s;
+  box-shadow: 0 2px 8px rgba(201, 255, 104, 0.2);
 }
-.nh-ai-overlay__submit:hover:not(:disabled) { background: #151C1E; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(9, 13, 14, 0.2); }
+.nh-ai-overlay__submit:hover:not(:disabled) { background: #D8FF85; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(201, 255, 104, 0.3); }
 .nh-ai-overlay__submit:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
 .nh-ai-overlay__result {
   margin-top: 12px;
   padding: 14px 16px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: #151D20;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   font-size: 13px;
   line-height: 1.6;
-  color: #090D0E;
+  color: #F4F6F2;
   max-height: 280px;
   overflow-y: auto;
 }
 
 .nh-ai-overlay__result--error {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
 }
 
 .nh-ai-overlay__analytics-link {
@@ -745,7 +749,7 @@
   margin-top: 10px;
   background: none;
   border: none;
-  color: #090D0E;
+  color: #C9FF68;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -753,7 +757,7 @@
   font-family: inherit;
   padding: 0;
 }
-.nh-ai-overlay__analytics-link:hover { text-decoration: underline; color: #047857; }
+.nh-ai-overlay__analytics-link:hover { text-decoration: underline; color: #D8FF85; }
 
 .nh-ai-overlay__hints {
   display: flex;
@@ -763,44 +767,38 @@
 }
 
 .nh-ai-overlay__hint {
-  background: #eef2ff;
-  border: 1px solid #c7d2fe;
-  color: #4f46e5;
+  background: rgba(201, 255, 104, 0.1);
+  border: 1px solid rgba(201, 255, 104, 0.25);
+  color: #C9FF68;
   font-size: 11.5px;
-  font-weight: 500;
+  font-weight: 600;
   font-family: inherit;
   padding: 5px 10px;
   border-radius: 20px;
   cursor: pointer;
   transition: background 0.15s;
 }
-.nh-ai-overlay__hint:hover { background: #e0e7ff; }
+.nh-ai-overlay__hint:hover { background: rgba(201, 255, 104, 0.2); }
 
-/* ── V48 Phase 4: Aircall Everywhere global drawer ──────────────────────────
-   Trigger button lives in NavTopbar's action row (persistent across every
-   view — see nav-entry.jsx, never unmounted on loadView()). The panel itself
-   portals to document.body so it's a true position:fixed sheet independent
-   of the topbar's own stacking context. z-index sits above everything else
-   in this file (ai-overlay tops out at 9999) since this can be forced open
-   during an active call and has to win over any other overlay. */
-
-.nh-aircall-btn--idle    { background: transparent; color: #64748b; border: 1.5px solid #e2e8f0; }
-.nh-aircall-btn--idle:hover    { background: #f1f5f9; }
-.nh-aircall-btn--ready    { background: transparent; color: #16a34a; border: 1.5px solid #bbf7d0; }
-.nh-aircall-btn--ready:hover    { background: #f0fdf4; }
-.nh-aircall-btn--notready { background: transparent; color: #b45309; border: 1.5px solid #fde68a; }
-.nh-aircall-btn--notready:hover { background: #fffbeb; }
+/* ── V48 Phase 4: Aircall Everywhere global drawer ────────────────────────── */
+.nh-aircall-btn--idle    { background: transparent; color: #9BA9A5; border: 1px solid rgba(255, 255, 255, 0.1); }
+.nh-aircall-btn--idle:hover    { background: rgba(255, 255, 255, 0.06); color: #F4F6F2; }
+.nh-aircall-btn--ready    { background: rgba(16, 185, 129, 0.1); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+.nh-aircall-btn--ready:hover    { background: rgba(16, 185, 129, 0.2); }
+.nh-aircall-btn--notready { background: rgba(245, 158, 11, 0.1); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+.nh-aircall-btn--notready:hover { background: rgba(245, 158, 11, 0.2); }
 .nh-aircall-btn--oncall {
-  background: #4f46e5;
-  color: white;
-  border: 1.5px solid #4f46e5;
+  background: #C9FF68;
+  color: #090D0E;
+  font-weight: 800;
+  border: 1px solid #C9FF68;
   animation: nh-live-pulse 2s ease-in-out infinite;
 }
 
 .nh-aircall-optback,
 .nh-aircall-optout {
   font-size: 12px;
-  color: #94a3b8;
+  color: #9BA9A5;
   cursor: pointer;
   background: none;
   border: none;
@@ -810,14 +808,12 @@
 }
 .nh-aircall-optback { text-decoration: underline; }
 .nh-aircall-optback:hover,
-.nh-aircall-optout:hover { color: #64748b; }
+.nh-aircall-optout:hover { color: #C9FF68; }
 
-/* Footer strip, not a glued-on afterthought under the embed — separated the
-   with the same border color the rest of the nav uses. */
 .nh-aircall-optout {
   margin-top: 4px;
   padding-top: 10px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 .nh-aircall-optout:hover { text-decoration: underline; }
 
@@ -827,8 +823,9 @@
   bottom: 0;
   right: 0;
   width: min(440px, 100vw);
-  background: #ffffff;
-  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.16), -4px 0 12px rgba(0, 0, 0, 0.08);
+  background: #11171D;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: -20px 0 50px rgba(0, 0, 0, 0.7);
   z-index: 10001;
   display: flex;
   flex-direction: column;
@@ -841,8 +838,8 @@
   .nh-aircall-drawer { transition: none; }
 }
 
-.nh-aircall-drawer__header { padding: 16px 20px; flex-shrink: 0; }
-.nh-aircall-drawer__header span { font-size: 14px; font-weight: 700; color: #4f46e5; }
+.nh-aircall-drawer__header { padding: 16px 20px; flex-shrink: 0; background: #151D20; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.nh-aircall-drawer__header span { font-size: 14px; font-weight: 700; color: #C9FF68; }
 .nh-aircall-drawer__title { display: flex; align-items: center; gap: 7px; }
 
 .nh-aircall-drawer__body {
@@ -852,6 +849,7 @@
   flex-direction: column;
   gap: 12px;
   padding: 20px;
+  background: #11171D;
 }
 
 .nh-aircall-drawer__hint {

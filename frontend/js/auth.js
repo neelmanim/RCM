@@ -30,7 +30,22 @@ function parseJwt(token) {
     catch { return null; }
 }
 
-export const currentUser = CRM_TOKEN ? parseJwt(CRM_TOKEN) : null;
+let _parsedUser = CRM_TOKEN ? parseJwt(CRM_TOKEN) : null;
+if (!_parsedUser && localStorage.getItem('crm_is_sandbox') === 'true') {
+    _parsedUser = {
+        sub: 'sandbox-1',
+        id: 1,
+        user_id: 1,
+        email: 'sandbox@alternatecrm.test',
+        role: localStorage.getItem('crm_user_role') || 'Super Admin',
+        name: 'Sandbox User',
+        pod_id: 1,
+        exp: Math.floor(Date.now() / 1000) + 86400 * 7,
+        is_sandbox: true,
+        dialer_enabled: true
+    };
+}
+export const currentUser = _parsedUser;
 
 // Check if token is expired (exp is in seconds since epoch)
 const isTokenExpired = currentUser && currentUser.exp && (currentUser.exp * 1000 < Date.now());
@@ -39,7 +54,7 @@ const isTokenExpired = currentUser && currentUser.exp && (currentUser.exp * 1000
 if (!currentUser || isTokenExpired) {
     if (localStorage.getItem('crm_is_sandbox') === 'true') {
         // In sandbox mode, ensure user is always treated as authenticated
-        console.info('[Sandbox] Refreshing sandbox session');
+        console.info('[Sandbox] Active sandbox session');
     } else {
         sessionStorage.removeItem('crm_view_as_token');
         localStorage.removeItem('crm_token');

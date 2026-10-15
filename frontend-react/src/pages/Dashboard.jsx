@@ -87,28 +87,28 @@ export const Dashboard = ({ onLeadClick, onNavigate, userName = '', userRole = '
   const todaySmart = { key: 'given_today', label: 'Given to you today', from: utc(dayStart), to: utc(dayEnd) };
   const MEETING_STATUSES = ['Meeting Scheduled', 'Demo Scheduled', 'Demo Done', 'Completed'];
   const repTiles = [
-    { label: 'Assigned to me', value: fmt(total), icon: ClipboardList, iconClass: 'bg-blue-50 text-blue-600', caption: lifecycle ? `${fmt(lifecycle['New to me'])} new · ${fmt(lifecycle.Inherited)} inherited · ${fmt(lifecycle['In progress'])} in progress` : 'All leads with you right now',
+    { label: 'Assigned to me', value: fmt(total), icon: ClipboardList, iconClass: 'bg-[#C9FF68]/15 text-[#C9FF68] border border-[#C9FF68]/30', caption: lifecycle ? `${fmt(lifecycle['New to me'])} new · ${fmt(lifecycle.Inherited)} inherited · ${fmt(lifecycle['In progress'])} in progress` : 'All leads with you right now',
       onClick: toLeads({}), hint: 'Open all your leads' },
-    { label: 'Given today', value: fmt(myDay?.given?.total), icon: Inbox, iconClass: 'bg-indigo-50 text-indigo-600', valueClass: 'text-indigo-700',
+    { label: 'Given today', value: fmt(myDay?.given?.total), icon: Inbox, iconClass: 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30', valueClass: 'text-indigo-300',
       caption: myDay ? `${fmt(myDay.given.assigned)} assigned · ${fmt(myDay.given.reset)} reset` : 'New or reset today',
       onClick: toLeads({ smart: todaySmart }), hint: 'Open the leads given to you today' },
-    { label: 'Not yet called', value: fmt(myDay?.now?.not_yet_called), icon: PhoneMissed, iconClass: 'bg-amber-50 text-amber-600', valueClass: 'text-amber-600', caption: 'Never called — start here',
+    { label: 'Not yet called', value: fmt(myDay?.now?.not_yet_called), icon: PhoneMissed, iconClass: 'bg-amber-500/15 text-amber-400 border border-amber-500/30', valueClass: 'text-amber-300', caption: 'Never called — start here',
       onClick: toLeads({ smart: { key: 'not_yet_called', label: 'Leads nobody has called yet' } }), hint: 'Open the leads nobody has called yet' },
-    { label: 'Calls today', value: fmt(myDay?.did?.calls), icon: Phone, iconClass: 'bg-sky-50 text-sky-600', valueClass: 'text-sky-700', caption: 'Open the Power Dialer for the call list',
+    { label: 'Calls today', value: fmt(myDay?.did?.calls), icon: Phone, iconClass: 'bg-sky-500/15 text-sky-400 border border-sky-500/30', valueClass: 'text-sky-300', caption: 'Open the Power Dialer for the call list',
       onClick: () => go(onNavigate, 'my-calls'), hint: "Today's calls and outcomes live in the Power Dialer" },
-    { label: 'Calling stage', value: fmt(sc.Calling ?? 0), icon: PhoneCall, iconClass: 'bg-emerald-50 text-emerald-600', valueClass: 'text-emerald-700', caption: 'In the Calling status',
+    { label: 'Calling stage', value: fmt(sc.Calling ?? 0), icon: PhoneCall, iconClass: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30', valueClass: 'text-emerald-400', caption: 'In the Calling status',
       onClick: toLeads({ statuses: ['Calling'] }), hint: 'Open leads in Calling' },
-    { label: 'Meetings+', value: fmt(meetingsPlus), icon: CalendarCheck, iconClass: 'bg-purple-50 text-purple-600', valueClass: 'text-purple-700', caption: 'Meeting stage or beyond',
+    { label: 'Meetings+', value: fmt(meetingsPlus), icon: CalendarCheck, iconClass: 'bg-purple-500/15 text-purple-400 border border-purple-500/30', valueClass: 'text-purple-300', caption: 'Meeting stage or beyond',
       onClick: toLeads({ statuses: MEETING_STATUSES }), hint: 'Open leads at meeting stage or beyond' },
   ];
   const adminTiles = [
-    { label: 'Total leads', value: fmt(total), icon: Users, iconClass: 'bg-blue-50 text-blue-600', caption: 'All sources', onClick: toLeads({}), hint: 'Open all leads' },
-    { label: 'Calling', value: fmt(sc.Calling ?? 0), icon: PhoneCall, iconClass: 'bg-emerald-50 text-emerald-600', valueClass: 'text-emerald-700', caption: 'Active calling', onClick: toLeads({ statuses: ['Calling'] }), hint: 'Open leads in Calling' },
-    { label: 'Meetings+', value: fmt(sc['Meeting Scheduled'] ?? 0), icon: CalendarCheck, iconClass: 'bg-amber-50 text-amber-600', valueClass: 'text-amber-600', caption: 'Qualified pipeline', onClick: toLeads({ statuses: ['Meeting Scheduled'] }), hint: 'Open leads with a meeting scheduled' },
-    { label: 'Lead assigned', value: fmt(sc['Lead Assigned'] ?? 0), icon: ClipboardList, iconClass: 'bg-blue-50 text-blue-600', caption: 'Awaiting research', onClick: toLeads({ statuses: ['Lead Assigned'] }), hint: 'Open leads in Lead Assigned' },
-    { label: 'Demo scheduled', value: fmt(sc['Demo Scheduled'] ?? 0), icon: Presentation, iconClass: 'bg-indigo-50 text-indigo-600', caption: 'Pipeline', onClick: toLeads({ statuses: ['Demo Scheduled'] }), hint: 'Open leads with a demo scheduled' },
-    { label: 'Demos done', value: fmt((sc['Demo Done'] ?? 0) + (sc.Completed ?? 0)), icon: BadgeCheck, iconClass: 'bg-teal-50 text-teal-600', caption: 'Synced to Salesforce', onClick: toLeads({ statuses: ['Demo Done', 'Completed'] }), hint: 'Open leads with a demo done' },
-    { label: 'No phone', value: fmt(stats?.parked_count ?? 0), icon: PhoneOff, iconClass: 'bg-red-50 text-red-600', valueClass: 'text-red-600', caption: 'Needs attention', alert: (stats?.parked_count ?? 0) > 0, onClick: toLeads({ statuses: ['No Phone - Parked'] }), hint: 'Open leads parked for no phone number' },
+    { label: 'Total leads', value: fmt(total), icon: Users, iconClass: 'bg-[#C9FF68]/15 text-[#C9FF68] border border-[#C9FF68]/30', caption: 'All sources', onClick: toLeads({}), hint: 'Open all leads' },
+    { label: 'Calling', value: fmt(sc.Calling ?? 0), icon: PhoneCall, iconClass: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30', valueClass: 'text-emerald-400', caption: 'Active calling', onClick: toLeads({ statuses: ['Calling'] }), hint: 'Open leads in Calling' },
+    { label: 'Meetings+', value: fmt(sc['Meeting Scheduled'] ?? 0), icon: CalendarCheck, iconClass: 'bg-purple-500/15 text-purple-400 border border-purple-500/30', valueClass: 'text-purple-300', caption: 'Qualified pipeline', onClick: toLeads({ statuses: ['Meeting Scheduled'] }), hint: 'Open leads with a meeting scheduled' },
+    { label: 'Lead assigned', value: fmt(sc['Lead Assigned'] ?? 0), icon: ClipboardList, iconClass: 'bg-sky-500/15 text-sky-400 border border-sky-500/30', valueClass: 'text-sky-300', caption: 'Awaiting research', onClick: toLeads({ statuses: ['Lead Assigned'] }), hint: 'Open leads in Lead Assigned' },
+    { label: 'Demo scheduled', value: fmt(sc['Demo Scheduled'] ?? 0), icon: Presentation, iconClass: 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30', valueClass: 'text-indigo-300', caption: 'Pipeline', onClick: toLeads({ statuses: ['Demo Scheduled'] }), hint: 'Open leads with a demo scheduled' },
+    { label: 'Demos done', value: fmt((sc['Demo Done'] ?? 0) + (sc.Completed ?? 0)), icon: BadgeCheck, iconClass: 'bg-teal-500/15 text-teal-400 border border-teal-500/30', valueClass: 'text-teal-300', caption: 'Synced to Salesforce', onClick: toLeads({ statuses: ['Demo Done', 'Completed'] }), hint: 'Open leads with a demo done' },
+    { label: 'No phone', value: fmt(stats?.parked_count ?? 0), icon: PhoneOff, iconClass: 'bg-rose-500/15 text-rose-400 border border-rose-500/30', valueClass: 'text-rose-400', caption: 'Needs attention', alert: (stats?.parked_count ?? 0) > 0, onClick: toLeads({ statuses: ['No Phone - Parked'] }), hint: 'Open leads parked for no phone number' },
   ];
   const tiles = isRep ? repTiles : adminTiles;
   const gridCols = isRep ? '2xl:grid-cols-6' : 'xl:grid-cols-4 2xl:grid-cols-7';

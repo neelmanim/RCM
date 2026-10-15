@@ -109,9 +109,7 @@ const vc = document.getElementById('view-container');
                 showManualDialWidget();
             }
             if (action === 'newLead') {
-                // Open the new-lead-modal directly (the modal HTML is still in index.html)
-                const modal = document.getElementById('new-lead-modal');
-                if (modal) modal.style.display = 'flex';
+                window.dispatchEvent(new CustomEvent('alternate:open-new-lead'));
             }
             if (action === 'askAI') {
                 // window._expandAiBar is set up by the AI bar init block below

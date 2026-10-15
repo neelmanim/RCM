@@ -15,14 +15,14 @@ export function StatStrip({ tiles, columns, className = 'mb-5' }) {
               role: 'button', tabIndex: 0, title: t.hint, onClick: t.onClick,
               onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); t.onClick(); } },
             } : {})}
-            className={`px-5 py-4 flex items-center gap-3 hover:shadow-lg ${t.onClick ? 'cursor-pointer hover:border-[#C9FF68]/40 focus:outline-none focus:ring-2 focus:ring-[#C9FF68]/30' : ''} ${t.alert ? 'ring-1 ring-red-400/40' : ''}`}>
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${t.iconClass || 'bg-white/5 text-[#9BA9A5]'}`}>
-              <Icon size={18} strokeWidth={2} />
+            className={`px-5 py-4 flex items-center gap-3 bg-gradient-to-b from-[#141C1E] to-[#101517] border border-white/10 hover:border-[#C9FF68]/40 hover:-translate-y-0.5 transition-all duration-200 shadow-md ${t.onClick ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#C9FF68]/30' : ''} ${t.alert ? 'ring-1 ring-red-400/40' : ''}`}>
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${t.iconClass || 'bg-white/5 text-[#9BA9A5]'}`}>
+              <Icon size={20} strokeWidth={2.2} />
             </div>
             <div className="min-w-0">
-              <div data-stat-value className={`text-xl font-extrabold ${t.valueClass || 'text-[#F4F6F2]'}`}>{t.value}</div>
-              <div data-stat-label className="text-xs font-bold text-[#9BA9A5]">{t.label}</div>
-              {t.caption && <div className="text-[11px] leading-tight text-[#9BA9A5]/70">{t.caption}</div>}
+              <div data-stat-value className={`text-2xl font-black tracking-tight ${t.valueClass || 'text-[#F4F6F2]'}`}>{t.value}</div>
+              <div data-stat-label className="text-xs font-bold text-[#9BA9A5] mt-0.5">{t.label}</div>
+              {t.caption && <div className="text-[11px] leading-tight text-[#9BA9A5]/70 mt-0.5">{t.caption}</div>}
             </div>
           </Card>
         );
