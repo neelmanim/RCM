@@ -1,0 +1,7 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/sandbox", "destination": "/sandbox.html" },
+    { "source": "/demo", "destination": "/sandbox.html" }
+  ]
+}

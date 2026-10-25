@@ -537,6 +537,30 @@ export function NavSidebar({
             );
           })}
 
+          {/* Conversation OS Sandbox Demo */}
+          <li className="nh-nav__item">
+            <a
+              href="sandbox.html"
+              className="nh-nav__link"
+              style={{ color: '#818cf8' }}
+              onMouseEnter={e => showTooltip(e, 'Conversation OS Sandbox')}
+              onMouseLeave={hideTooltip}
+              aria-label="Conversation OS Sandbox"
+            >
+              <span className="nh-nav__icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+              </span>
+              {!collapsed && (
+                <span className="nh-nav__label flex items-center justify-between w-full">
+                  <span className="font-semibold text-indigo-300">Conversation OS</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/25 text-indigo-200 font-bold border border-indigo-500/30">DEMO</span>
+                </span>
+              )}
+            </a>
+          </li>
+
           {/* Feedback — separator before */}
           <li className="nh-nav__item nh-nav__item--feedback">
             <a

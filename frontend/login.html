@@ -20,9 +20,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="js/login-hub.css?v=20261025v1735">
+    <link rel="stylesheet" href="js/login-hub.css?v=20261025v2315">
     <style>
-        html, body { height: 100%; margin: 0; background-color: #11171D; }
+        html, body { min-height: 100%; margin: 0; background-color: #11171D; }
         body { font-family: 'Inter', system-ui, sans-serif; }
     </style>
     <!-- Microsoft Clarity -->
@@ -36,11 +36,23 @@
 </head>
 
 <body>
+    <!-- Top Announcement Bar for Conversation OS Sandbox -->
+    <div style="background: linear-gradient(90deg, #3730a3, #4f46e5 50%, #6366f1); color: #ffffff; padding: 10px 20px; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.15); box-shadow: 0 4px 12px rgba(0,0,0,0.25); position: relative; z-index: 9999;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="background: #10b981; color: #ffffff; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 8px; border-radius: 9999px;">Live Preview</span>
+            <span>Experience the new <strong>Conversation OS</strong> & <strong>Modular App Store</strong></span>
+        </div>
+        <a href="sandbox.html" style="background: #ffffff; color: #4338ca; padding: 6px 14px; border-radius: 8px; text-decoration: none; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); transition: transform 0.15s ease;" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'">
+            <span>⚡ Launch 1-Click Interactive Sandbox</span>
+            <span>&rarr;</span>
+        </a>
+    </div>
+
     <div id="login-root"></div>
 
     <script src="config.js"></script>
     <script src="js/generated-version.js"></script>
-    <script src="js/login-hub.js?v=20261025v1735" defer></script>
+    <script src="js/login-hub.js?v=20261025v2315" defer></script>
 </body>
 
 </html>
