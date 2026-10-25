@@ -1386,4 +1386,36 @@ h3 {
   margin: 0;
 }
 
+/* Footer Release Version Badge */
+.footer-version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--lime);
+  background: rgba(211, 250, 118, 0.08);
+  border: 1px solid rgba(211, 250, 118, 0.28);
+  padding: 3px 9px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.footer-version-badge:hover {
+  background: rgba(211, 250, 118, 0.18);
+  border-color: var(--lime);
+  transform: translateY(-1px);
+}
+
+.version-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 8px var(--lime);
+}
+
 

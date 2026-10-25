@@ -132,7 +132,7 @@ class TestInboundLeadCapture:
             "email": "MARCUS@figma.test",  # Test case insensitivity
             "company": "Figma Inc",
             "team_size": "51-200",
-            "primary_interest": "Conversation OS Migration",
+            "primary_interest": "Conversation OS Enterprise",
             "notes": "Ready to move forward with enterprise demo"
         }
 
@@ -153,7 +153,7 @@ class TestInboundLeadCapture:
 
         # Must append re-engagement note
         notes_text = " ".join(n.content for n in existing_lead.notes)
-        assert "Conversation OS Migration" in notes_text
+        assert "Conversation OS Enterprise" in notes_text
         assert "Ready to move forward" in notes_text
 
     def test_inbound_lead_reopen_terminal_lead(self, client, db):

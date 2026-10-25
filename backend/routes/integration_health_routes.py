@@ -53,7 +53,7 @@ def dialer_health(
     """
     settings = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
     if not settings:
-        return {"status": "error", "message": "SyncSettings row missing — run migrations"}
+        return {"status": "error", "message": "SyncSettings row missing — initialize default settings"}
 
     checks = {}
     overall_ok = True
@@ -176,7 +176,7 @@ def chat_health(
     """
     settings = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
     if not settings:
-        return {"status": "error", "message": "SyncSettings row missing — run migrations"}
+        return {"status": "error", "message": "SyncSettings row missing — initialize default settings"}
 
     checks = {}
     overall_ok = True
@@ -371,7 +371,7 @@ def klenty_health(
     """
     settings = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
     if not settings:
-        return {"status": "error", "message": "SyncSettings row missing — run migrations"}
+        return {"status": "error", "message": "SyncSettings row missing — initialize default settings"}
 
     checks = {}
     overall_ok = True

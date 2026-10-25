@@ -668,7 +668,7 @@ def initiate_call(db: Session, user: dict, lead_id: str, phone_number: str,
     Start an outbound call through the active dialer provider.
     Creates a DialerCall record regardless of outcome.
     call_mode: 'bridge' (3-party, SDR phone) or 'browser' (2-party, WebRTC)
-    request_base_url: the origin of the FastAPI request (e.g. https://crm.onrender.com/)
+    request_base_url: the origin of the FastAPI request (e.g. https://api.alternatecrm.com/)
                       used to build the webhook notify_url — no env var needed.
     """
     provider = get_provider_for_user(db, user)

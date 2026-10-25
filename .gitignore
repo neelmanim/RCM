@@ -9,31 +9,22 @@ scratch/
 *.pyc
 *.db
 backend/*.db
-scripts/migration/data/
 backend/uploads/
 frontend/mock.html
 .DS_Store
 **/.DS_Store
 
-# Playwright / test artifacts
+# Test & Debug scratch artifacts
 playwright-report/
 test-results/
-tests/screenshots/
 *.webm
-audit_*.png
-sandbox_test_screenshot.png
-
-# Repo-root debug/scratch artifacts (perf traces, one-off exports, local dbs)
+*.png
+*.trace.zip
 /perf-trace*.json
 /report.html
 /report.json
-/*.db
 /test_*.log
 /test_auth_debug.js
-*.trace.zip
-perf-trace-*.json
-/report.html
-/report.json
 
 # Code Review Graph & CodeGraph
 code-review-graph/
@@ -43,32 +34,17 @@ code-review-graph/
 # Secrets — never commit
 github-recovery-codes*.txt
 
-# CRM data exports (PII — leads, SDR names/phones/emails)
+# CRM data exports (PII)
 meetings_booked_export_*.csv
 missed_meetings_export_*.csv
 sdr_cold_calling_summary_*.csv
 
-# Ad-hoc gzip experiments — only commit .gz files the app actually serves
+# Ad-hoc gzip experiments
 *.gz
 
-# Daily start/close-of-day scratch context — session-local, not project docs
+# Local scratch context
 docs/analysis/
 docs/daily_logs/
 
-# frontend-react/src/generated/version.js is generated from VERSION by
-# scripts/sync-version.mjs, but is only ever consumed at Vite build time
-# (like any other bundle source) — its *output* (the built nav-hub.js etc.)
-# is what's committed and served, same as every other bundle. Ignored here.
-#
-# frontend/js/generated-version.js is NOT ignored: frontend/ is deployed as
-# a raw static site with no build step (Render's frontend service just runs
-# `echo ... > config.js`), so this file must be committed directly — there's
-# nothing that would regenerate it at deploy time otherwise.
 frontend-react/src/generated/version.js
-
-# Personal Claude Code config (may hold personal MCP server registrations
-# with private API keys, e.g. the `alternatecrm` MCP server — see
-# docs/MCP_SETUP.md). Previously only excluded by contributors' own global
-# gitignore, not this repo's — new clones had no protection against
-# accidentally committing a personal key here.
 .claude/settings.local.json

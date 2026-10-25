@@ -83,7 +83,7 @@ def _run_startup_tasks():
     If any step fails, subsequent steps still execute — all are non-fatal.
 
     RCA 2026-08-26 (staging OOM): lifespan's startup phase was observed
-    firing this function twice within a single process (confirmed via Render
+    firing this function twice within a single process (confirmed via platform
     boot logs — every startup log line, including all 15 scheduler
     registrations, appeared twice ~40-90ms apart). _schedule_recurring's
     timers don't dedupe by name across independent calls, so two calls to
@@ -114,7 +114,7 @@ def _run_startup_tasks():
         if db_type == "sqlite":
             logger.critical(
                 "[Startup] ⚠️  RUNNING ON SQLITE — DATABASE_URL may be missing! "
-                "All lead queries will return 0. Check Render env vars immediately."
+                "All lead queries will return 0. Check Railway / platform env vars immediately."
             )
         else:
             safe_url = db_url.split("@")[-1] if "@" in db_url else db_url
@@ -208,7 +208,7 @@ async def lifespan(app):
     FastAPI lifespan handler.
     Yields IMMEDIATELY so uvicorn binds the port right away,
     then kicks off heavy startup tasks in a background thread.
-    This prevents Render's 'port scan timeout' error.
+    This prevents platform health probe and port scan timeouts.
     """
     import threading
     startup_thread = threading.Thread(

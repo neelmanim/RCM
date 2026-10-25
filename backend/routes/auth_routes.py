@@ -53,7 +53,7 @@ def login(origin: str = ""):
 async def auth_callback(code: str = None, error: str = None, state: str = "", request: Request = None, db: Session = Depends(get_db)):
     """Google redirects here after the user approves. Exchange code → JWT.
 
-    The `state` param carries the FRONTEND ORIGIN (e.g. 'https://messenger-frontend-develop.onrender.com')
+    The `state` param carries the FRONTEND ORIGIN (e.g. 'https://app.alternatecrm.com')
     set by login.html so we redirect the token back to whichever frontend initiated the login.
     Falls back to FRONTEND_URL env var for backwards compatibility.
     """
@@ -163,8 +163,8 @@ async def auth_callback(code: str = None, error: str = None, state: str = "", re
 
 @router.get("/health", dependencies=[Depends(public_endpoint)])
 def health(db: Session = Depends(get_db)):
-    """Shallow health check used by Render's health probe.
-    Always returns 200 to prevent restart loops during startup/migration.
+    """Shallow health check used by platform health probes.
+    Always returns 200 to prevent restart loops during startup.
     Check 'startup_complete' to know when the service is fully ready.
     For table-level lock detection use /health/deep.
     """
@@ -192,7 +192,7 @@ def health(db: Session = Depends(get_db)):
 @router.get("/health/deep", dependencies=[Depends(public_endpoint)])
 def deep_health(db: Session = Depends(get_db)):
     """Deep health check — detects DB lock outages, memory, and startup state.
-    Use for monitoring and debugging; NOT for Render's health probe.
+    Use for monitoring and debugging; NOT for platform health probes.
     If 'db_tables_accessible' is False while 'db_connected' is True,
     the DB is connected but queries are being blocked by a lock.
     """

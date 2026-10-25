@@ -1,6 +1,6 @@
 """
 Shared application state — avoids circular imports between main.py and route modules.
-Set by the startup background thread once all schema migrations complete.
+Set by the startup background thread once schema initialization completes.
 """
 from datetime import datetime, timezone
 

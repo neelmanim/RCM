@@ -424,7 +424,7 @@ def revoke_public_api_key(
     return {"success": True, "message": "Public API key revoked."}
 
 
-# ── Emergency Column Migration (Super Admin) ─────────────────────────────────
+# ── Emergency Schema Column Repair (Super Admin) ─────────────────────────────
 
 @router.post("/force-add-column")
 def force_add_column(
@@ -433,7 +433,7 @@ def force_add_column(
     admin: dict = Depends(require_super_admin),
 ):
     """Force-add a column via raw SQL, bypassing SQLAlchemy ORM/inspector.
-    Use when the startup migration silently skips a column.
+    Use when the schema requires manual column addition.
     Body: { "table": "leads", "column": "discovery_meeting_count", "type": "INTEGER DEFAULT 0" }
     Super Admin only.
     """

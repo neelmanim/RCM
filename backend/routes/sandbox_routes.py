@@ -46,10 +46,13 @@ _refresh_progress = {
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _is_staging() -> bool:
-    """Auto-detect staging via RENDER_EXTERNAL_URL or SANDBOX_ALLOW_SELF_TEST."""
-    ext_url = os.getenv("RENDER_EXTERNAL_URL", "")
+    """Auto-detect staging via ENVIRONMENT, RAILWAY_PUBLIC_DOMAIN or SANDBOX_ALLOW_SELF_TEST."""
     if os.getenv("SANDBOX_ALLOW_SELF_TEST", "").lower() in ("true", "1"):
         return True
+    env_name = os.getenv("ENVIRONMENT", "").lower()
+    if env_name == "staging":
+        return True
+    ext_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", "") or os.getenv("BACKEND_URL", "")
     return "staging" in ext_url.lower()
 
 
@@ -355,7 +358,9 @@ def save_connection(
         raise HTTPException(status_code=400, detail="Production URL and sandbox token are required.")
 
     # Guard: prevent connecting to self
-    my_url = os.getenv("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
+    my_url = (os.getenv("BACKEND_URL") or os.getenv("RAILWAY_PUBLIC_DOMAIN", "")).strip().rstrip("/")
+    if my_url and not my_url.startswith("http"):
+        my_url = f"https://{my_url}"
     allow_self = os.getenv("SANDBOX_ALLOW_SELF_TEST", "").lower() in ("true", "1")
     if my_url and prod_url.rstrip("/") == my_url and not allow_self:
         raise HTTPException(status_code=400, detail="This is the staging URL, not production.")

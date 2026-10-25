@@ -46,10 +46,8 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 ### Scope Boundaries — Ignore These Paths
 The following directories are **deprioritized or inactive**. Do NOT read, search, or
 analyze them unless the user explicitly asks:
-- `frontend-react/` — React migration (deprioritized)
-- `backend-react/` — React backend (not in production)
-- `tests/screenshots/` — Binary PNG files (never read these)
-- `tests/specs/` — Legacy Playwright spec stubs
+- `frontend-react/` — React frontend (secondary)
+- `backend-react/` — React backend (inactive)
 
 ### Graph Tool Rules
 - Always use `detail_level="minimal"` on graph tools unless full detail is needed

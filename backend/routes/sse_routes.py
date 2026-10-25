@@ -7,7 +7,7 @@ GET /api/calls/events
   - Streams JSON events to the SDR's browser via SSE
   - Replaces 2-second polling in dialer_widget.js
   - Sends a keepalive comment every 25s to prevent proxy/load-balancer
-    timeouts (Render, nginx, etc. typically have 30s idle timeouts)
+    timeouts (reverse proxies typically have 30s-60s idle timeouts)
 
 Event format (newline-delimited SSE):
   data: {"type": "CALL_STATUS", "call_id": "...", "status": "CALL_ANSWERED",

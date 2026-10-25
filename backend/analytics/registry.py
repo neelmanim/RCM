@@ -8,7 +8,7 @@ version of each of 5 metrics, all "v1 / published", and nothing here is
 user-editable — a dataclass  is the whole registry. Phase 3
 ("Metric Governance + Versioning" in the master doc) is where a draft/publish
 workflow needs persistence and an audit trail; this module's field names map
-1:1 onto a future table so that migration is mechanical, not a redesign.
+1:1 onto a future table so that mapping is straightforward, not a redesign.
 
 The registry describes BUSINESS MEANING, not SQL — see MetricDefinition's
 docstring. Execution lives in adapters.py; resolution/scoping/logging lives

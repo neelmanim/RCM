@@ -24,8 +24,7 @@ def _pick_variant(node_data: dict, enrollment_id: str, node_id: str) -> dict:
     not random) so a retried send always lands on the same variant as the
     first attempt — no separate "assigned variant" column to keep in sync.
     Falls back to node_data itself (equivalent to a single, un-keyed variant)
-    when there's no variants array — existing single-subject cadences need
-    no migration.
+    when there's no variants array for seamless backward compatibility.
     """
     variants = node_data.get("variants")
     if not variants:

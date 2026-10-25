@@ -7,7 +7,7 @@ strategic recommendations.  Results are cached for 15 minutes via cache.py
 (Redis → in-memory) to avoid hammering the LLM on every page load.
 
 RCA 2026-06-17: replaced unbounded module-level _cache dict with cache.py
-to prevent memory leaks on the 512MB Render Starter instance.
+to prevent memory leaks in container environments.
 """
 
 import os
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/api", tags=["Growth Intelligence"])
 # ── Cache (15 min TTL) ───────────────────────────────────────────────────────
 # RCA 2026-06-17: replaced unbounded module-level _cache dict with cache.py.
 # cache.py uses Redis (Upstash) → in-memory with proper TTL eviction.
-# The old dict had no size limit and leaked on the 512MB Render Starter.
+# The old dict had no size limit and leaked memory.
 CACHE_TTL = 900  # 15 minutes
 _GI_NS = "growth_intelligence"  # namespace in cache.py
 

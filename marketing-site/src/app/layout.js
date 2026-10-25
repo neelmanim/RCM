@@ -38,12 +38,6 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${dmSans.variable} ${manrope.variable}`}>
-      <head>
-        <link
-          href="https://assets.calendly.com/assets/external/widget.css"
-          rel="stylesheet"
-        />
-      </head>
       <body>
         {children}
         <Script id="microsoft-clarity" strategy="afterInteractive">
@@ -55,10 +49,6 @@ export default function RootLayout({ children }) {
             })(window, document, "clarity", "script", "z366fhqfpn");
           `}
         </Script>
-        <Script
-          src="https://assets.calendly.com/assets/external/widget.js"
-          strategy="lazyOnload"
-        />
       </body>
     </html>
   );

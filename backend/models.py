@@ -262,7 +262,7 @@ def get_outcome_by_value(value, db=None):
     """Look up a single outcome config by its value string. Returns None if not found."""
     return next((o for o in get_outcome_config(db) if o["value"] == value), None)
 
-# Legacy outcome mapping for data migration
+# Legacy outcome mapping
 LEGACY_OUTCOME_MAP = {
     "Call Completed":      "Meeting Scheduled",
     "Customer Declined":   "Not Interested",
@@ -275,14 +275,6 @@ class Pod(Base):
 
     id              = Column(String, primary_key=True, default=generate_uuid)
     name            = Column(String, nullable=False)
-    # admin_id removed — use pod_admins table for multi-admin support
-    # RCA 2026-08-25: unused as of this release — _get_active_lead_cap() no
-    # longer reads a per-pod override (see its docstring: this was never
-    # exposed by any API/UI, so a pod's value could only diverge from the
-    # global default via a direct DB write, making the actually-enforced cap
-    # invisible). Column kept for now, dropped in a follow-up migration once
-    # this is verified live, per this file's own convention for column
-    # removal (see the pods.admin_id DROP COLUMN note above).
     active_lead_cap = Column(Integer, default=500, nullable=False)
     timezone        = Column(String, nullable=True)   # IANA name (e.g. "America/New_York"); unset = UTC.
                                                         # Lets Analytics bucket "a day" by this team's own
@@ -1150,8 +1142,7 @@ class SyncSettings(Base):
     @property
     def messenger_api_key(self):
         """Plaintext key, decrypted on read. A pre-encryption row fails to
-        decrypt and *is* the key, so return it rather than disabling every
-        SMS/WhatsApp send until the backfill migration catches up.
+        decrypt and is returned directly.
         """
         raw = self.messenger_api_key_encrypted
         if not raw:
@@ -2193,7 +2184,7 @@ class DialerQueueStatus(Base):
 class ErrorLog(Base):
     """
     System-wide error log — captures frontend + backend errors in plain English.
-    Designed so non-technical admins can understand issues without Render logs.
+    Designed so non-technical admins can understand issues without raw server logs.
     Includes dedup_count to collapse repeated errors (error storm prevention).
     """
     __tablename__ = "error_logs"
@@ -2351,8 +2342,7 @@ class JourneyVersion(Base):
     journey_id       = Column(String, ForeignKey("journeys.id", ondelete="CASCADE"), nullable=False, index=True)
     version_number   = Column(Integer, nullable=False)
     # {nodes:[{id,type,position:{x,y},data:{config}}], edges:[{id,source,target,condition_expr?}]}
-    # GIN index (ix_journey_versions_graph_gin) is created via migrations.py —
-    # Postgres-only, no SQLAlchemy-portable way to declare jsonb_path_ops here.
+    # GIN index (ix_journey_versions_graph_gin) provides jsonb_path_ops query acceleration on Postgres.
     graph_definition = Column(_JSONVariant, nullable=False)
     status           = Column(String, nullable=False, default="draft")   # draft | published | superseded
     published_at     = Column(DateTime(timezone=True), nullable=True)

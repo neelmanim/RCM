@@ -278,7 +278,7 @@ function StagingPanel({ onToast }) {
                 </div>
                 {!conn.connected ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
-                        <Input label="Production URL" placeholder="https://your-prod.onrender.com"
+                        <Input label="Production URL" placeholder="https://api.alternatecrm.com"
                             value={prodUrl} onChange={(e) => setProdUrl(e.target.value)} containerClassName="mb-0" />
                         <Input label="Sandbox Token" type="password" placeholder="sb_live_xxxxx"
                             value={prodToken} onChange={(e) => setProdToken(e.target.value)} containerClassName="mb-0" />

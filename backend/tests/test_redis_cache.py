@@ -1,5 +1,5 @@
 """
-Tests for v9.1.0 Redis cache migration.
+Tests for Redis caching and resilience.
 
 All tests use mock Redis — no actual Upstash connection needed.
 Covers: Redis disabled, Redis enabled, Redis fallback, key format, stampede guard.

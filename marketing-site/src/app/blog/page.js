@@ -21,7 +21,7 @@ export default function Blog() {
       category: "RevOps",
       date: "Oct 10, 2026",
       readTime: "6 min read",
-      excerpt: "Sales reps spend 68% of their time clicking between dialers, email sequencers, Salesforce tabs, and meeting notetakers. Here is how dogfooding cut rep overhead in half.",
+      excerpt: "Sales reps spend 68% of their time clicking between dialers, email sequencers, Salesforce tabs, and meeting notetakers. Here is how unifying the workflow cut rep overhead in half.",
       tag: "Case Study"
     }
   ];

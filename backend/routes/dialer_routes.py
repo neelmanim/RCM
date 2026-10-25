@@ -145,9 +145,8 @@ def start_call(request: Request, body: dict, user: dict = Depends(get_current_us
             logger.info(f"[ManualDial] Found existing lead {lead_id} for phone {phone_number}")
         else:
             # Create anonymous lead — only use real Column fields (notes is a relationship)
-            # sf_lead_id: production DB has NOT NULL constraint at DB level (ORM says nullable=True
-            # but schema was created before that migration). Use a MANUAL- sentinel so the row can
-            # be created without a real Salesforce ID while still satisfying the unique constraint.
+            # sf_lead_id: Use a MANUAL- sentinel so the anonymous lead row can
+            # be created without a real Salesforce ID while still satisfying uniqueness.
             anon = _m.Lead(
                 id=str(uuid.uuid4()),
                 sf_lead_id=f"MANUAL-{uuid.uuid4().hex[:16]}",   # unique sentinel, not a real SF ID

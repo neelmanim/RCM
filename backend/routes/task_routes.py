@@ -196,7 +196,7 @@ def get_my_tasks(status: str = "open", user: dict = Depends(get_current_user), d
 def get_pending_tasks(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     """Return tasks for current user that are due and not yet dismissed/done.
 
-    RCA-2026-05-29: Wrapped in OperationalError guard — Render Postgres can briefly
+    RCA-2026-05-29: Wrapped in OperationalError guard — Postgres can briefly
     refuse TCP connections under burst load (psycopg2.OperationalError at socket level).
     Return 503 + Retry-After so the frontend silently retries instead of logging a 500.
     """
@@ -222,7 +222,7 @@ def get_pending_tasks(user: dict = Depends(get_current_user), db: Session = Depe
             .all()
         )
     except OperationalError:
-        # Transient DB connect failure (e.g. Render Postgres TCP timeout under burst).
+        # Transient DB connect failure (e.g. Postgres TCP timeout under burst).
         # Return 503 so the frontend can silently retry — do NOT surface as a 500.
         raise HTTPException(
             status_code=503,

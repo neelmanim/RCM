@@ -1,6 +1,6 @@
 """
 Lightweight scheduled jobs using threading.Timer loops.
-Suitable for Render free tier (no cron, no Celery).
+Suitable for multi-worker container deployments.
 """
 import os
 import threading
@@ -264,7 +264,7 @@ def _cleanup_old_error_logs():
     """
     Delete error logs older than ERROR_LOG_RETENTION_DAYS (default: 15).
     Runs nightly alongside the activity log cleanup.
-    Logs success/failure to Render logs — NOT to error_logs (avoid recursion).
+    Logs success/failure to standard logging — NOT to error_logs (avoid recursion).
     Emits a startup warning if the error_logs table has grown unusually large.
     """
     try:
@@ -1678,8 +1678,7 @@ def _schedule_recurring(func, interval_seconds, name):
 
 def _keep_alive_ping():
     """
-    Self-ping to prevent Render free tier from spinning down.
-    Render spins down after ~15 min of inactivity; we ping every 10 min.
+    Self-ping to ensure backend health endpoints remain responsive.
     """
     try:
         import urllib.request
@@ -1864,7 +1863,7 @@ def _scheduled_email_campaign_job():
         from config import backend_base_url as _resolve_base_url
         backend_base_url = _resolve_base_url()
         if not backend_base_url:
-            logger.error("[ScheduledEmailCampaign] no BACKEND_URL/RENDER_EXTERNAL_URL — skipping this tick (unsubscribe links need it)")
+            logger.error("[ScheduledEmailCampaign] no BACKEND_URL or public domain set — skipping this tick (unsubscribe links need it)")
             return
 
         db = SessionLocal()
@@ -1919,14 +1918,10 @@ def start_scheduled_jobs():
     RCA 2026-10-05: this used to check the lock exactly once and give up
     for the rest of the process's life on a loss. The ~15s retry below
     handles a crashed/SIGKILL'd leader (its connection may take a few
-    seconds to be recognized as dead). It does NOT handle Render's normal
-    zero-downtime deploy: the OLD container (and its lock-holding
-    connection) is *guaranteed* still alive for this entire window, since
-    Render only tears it down after the NEW container passes its health
-    check — which this very startup path gates. That race can never be won
-    by retrying harder here; it can only be won by continuing to retry
-    *after* giving up, in the background, until the old container actually
-    exits. Confirmed live: a routine staging deploy left every scheduled
+    seconds to be recognized as dead). During zero-downtime rolling deploys,
+    the old container is alive until the new container passes health checks.
+    Continuing to retry in the background ensures the scheduler starts as soon
+    as the previous instance exits.
     job (including journey_engine_tick) dead until the NEXT deploy —
     discovered only because a test enrollment sat unprocessed for 10+
     minutes. Falling through to _retry_leader_election_in_background()

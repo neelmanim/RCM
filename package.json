@@ -1,12 +1,10 @@
 {
   "name": "crm-alternate",
-  "version": "1.0.0",
-  "description": "",
+  "version": "14.4.0",
+  "description": "Conversation OS CRM Platform",
   "main": "index.js",
   "scripts": {
-    "test": "npx playwright test",
-    "test:headed": "npx playwright test --headed",
-    "test:debug": "npx playwright test --debug"
+    "version:sync": "node scripts/sync-version.mjs"
   },
   "repository": {
     "type": "git",
@@ -19,9 +17,5 @@
   "bugs": {
     "url": "https://github.com/neelmanimishrasf/crmalternate/issues"
   },
-  "homepage": "https://github.com/neelmanimishrasf/crmalternate#readme",
-  "devDependencies": {
-    "@playwright/test": "^1.58.2",
-    "dotenv": "^17.4.2"
-  }
+  "homepage": "https://github.com/neelmanimishrasf/crmalternate#readme"
 }

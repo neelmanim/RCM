@@ -60,7 +60,7 @@ _FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
 
 def _base_url(request: Request) -> str:
     """The origin the caller used (the issuer must match the URL typed into
-    Claude — prod sits behind a custom domain, so not RENDER_EXTERNAL_URL)."""
+    Claude — prod sits behind custom domain https://api.alternatecrm.com)."""
     proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
     return f"{proto}://{request.headers.get('host', request.url.netloc)}"
 

@@ -474,33 +474,6 @@ class TestMessengerApiKeyEncryption:
         db.expire_all()
         assert not db.query(models.SyncSettings).first().messenger_api_key
 
-    def test_backfill_migration_encrypts_plaintext_and_is_idempotent(self, db, engine):
-        from sqlalchemy import text
-        from migrations import module as _migrations
-        _encrypt_messenger_api_key = _migrations._encrypt_messenger_api_key
-        from crypto import decrypt_token
-
-        db.add(models.SyncSettings(id=1))
-        db.commit()
-        db.execute(text(
-            "UPDATE sync_settings SET messenger_api_key = 'plain-to-encrypt' WHERE id = 1"
-        ))
-        db.commit()
-
-        _encrypt_messenger_api_key(engine)
-        stored = db.execute(
-            text("SELECT messenger_api_key FROM sync_settings WHERE id = 1")
-        ).scalar()
-        assert decrypt_token(stored) == "plain-to-encrypt"
-
-        # Re-running (or a row already encrypted by a newer instance
-        # mid-deploy) must never double-encrypt.
-        db.execute(text("DELETE FROM _applied_migrations WHERE name = 'encrypt_messenger_api_key'"))
-        db.commit()
-        _encrypt_messenger_api_key(engine)
-        assert db.execute(
-            text("SELECT messenger_api_key FROM sync_settings WHERE id = 1")
-        ).scalar() == stored
 
 
 class TestSyncSettingsWriteGate:

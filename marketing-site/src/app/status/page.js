@@ -42,7 +42,7 @@ export default function Status() {
     { name: "Autonomous Cadence Dispatcher & Email Engine", status: "operational", uptime: "100.0%" },
     { name: "Enterprise CRM Sync (Salesforce, HubSpot, Postgres)", status: "operational", uptime: "99.97%" },
     { name: "Zero-Config Client-Side Stateful Sandbox", status: "operational", uptime: "100.0%" },
-    { name: "Public Inbound Lead Capture & Dogfooding Gateway", status: healthStatus, uptime: "99.99%" }
+    { name: "Enterprise Inbound Priority Gateway", status: healthStatus, uptime: "99.99%" }
   ];
 
   return (
@@ -161,7 +161,7 @@ export default function Status() {
             <div className="border-l-2 border-[#d3fa76]/40 pl-5 relative">
               <div className="absolute w-2.5 h-2.5 bg-[#d3fa76] rounded-full left-[-6px] top-1.5 shadow-[0_0_6px_rgba(211,250,118,0.8)]" />
               <div className="flex items-center gap-3 mb-1">
-                <span className="text-xs font-bold text-white">Scheduled Database Migration & Failover Test</span>
+                <span className="text-xs font-bold text-white">Scheduled Database Maintenance & Failover Drill</span>
                 <span className="text-xs text-[#7a8a84]">Oct 14, 2026</span>
               </div>
               <p className="text-xs text-[#9ba9a5] leading-relaxed">
