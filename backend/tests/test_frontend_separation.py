@@ -183,7 +183,7 @@ class TestFrontendConfigFiles:
         staging_path = os.path.join(frontend_dir, "config.staging.js")
         content = open(staging_path).read()
         assert "API_BASE" in content
-        assert "messenger-crm-staging" in content
+        assert "api.alternatecrm" in content
 
     def test_index_html_loads_config(self, frontend_dir):
         """index.html must include a <script src='config.js'> tag."""

@@ -323,6 +323,18 @@ export function LoginPage() {
           <span>Continue with Google</span>
         </a>
 
+        {/* 1-Click Interactive Sandbox Demo */}
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.setItem('crm_is_sandbox', 'true');
+            window.location.href = 'index.html#/dashboard';
+          }}
+          className="w-full mt-3 bg-gradient-to-r from-indigo-900/40 to-violet-900/40 hover:from-indigo-900/60 hover:to-violet-900/60 border border-indigo-500/40 text-indigo-300 font-bold py-3 px-6 rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-indigo-950/50"
+        >
+          <span>⚡ Try 1-Click Interactive Demo (No Signup)</span>
+        </button>
+
         {/* Footer info note */}
         <div className="mt-8 text-center">
           <p className="text-xs text-[#94A3B8]">
