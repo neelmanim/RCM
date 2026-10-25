@@ -41,13 +41,6 @@ function persistQueueState(state) {
   } catch { /* storage unavailable — just won't restore across a remount */ }
 }
 
-// Test-only: this sessionStorage entry otherwise leaks between unrelated
-// test cases in the same file (each renderHook() looks like a same-session
-// remount to it). Not used by app code.
-export function _resetQueueCacheForTests() {
-  try { window.sessionStorage.removeItem(QUEUE_STATE_KEY); } catch { /* noop */ }
-}
-
 // Server status values (models.DialerQueueStatus) <-> the frontend's own
 // vocabulary (QueueList's STATUS_BADGE) — kept distinct on both ends so a
 // compliance-relevant DNC skip is never collapsed into an ordinary one.

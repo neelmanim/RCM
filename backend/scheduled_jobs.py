@@ -1977,13 +1977,12 @@ def _register_jobs():
         logger.warning("[Startup] Journey engine tick disabled via JOURNEY_ENGINE_ENABLED=false")
 
     # Phase 4: execution_logs partitions are also created at startup
-    # (migrations.py::_ensure_execution_log_partitions), but a long-lived
+    # (database.py::_ensure_execution_log_partitions), but a long-lived
     # instance that never restarts would eventually run out of the "current
     # + 2 months ahead" window created at boot — recurring daily keeps it
     # topped up regardless of deploy cadence.
     def _journey_partition_upkeep():
-        from database import engine as _db_engine
-        from migrations import _ensure_execution_log_partitions
+        from database import engine as _db_engine, _ensure_execution_log_partitions
         _ensure_execution_log_partitions(_db_engine)
     _schedule_recurring(_journey_partition_upkeep, 86400, "journey_partition_upkeep")   # 24h
     _schedule_recurring(_aggregate_daily_summaries, 86400, "daily_aggregation")     # 24h

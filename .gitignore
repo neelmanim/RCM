@@ -1,7 +1,5 @@
 node_modules/
 .env
-.env.test
-scripts/.prod.env
 backend/venv/
 mcp_server/.venv/
 __pycache__/
@@ -14,17 +12,13 @@ frontend/mock.html
 .DS_Store
 **/.DS_Store
 
-# Test & Debug scratch artifacts
-playwright-report/
-test-results/
+# Scratch artifacts
 *.webm
 *.png
 *.trace.zip
 /perf-trace*.json
 /report.html
 /report.json
-/test_*.log
-/test_auth_debug.js
 
 # Code Review Graph & CodeGraph
 code-review-graph/

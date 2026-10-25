@@ -20,8 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 import models
-from database import engine, SessionLocal
-from migrations import run_schema_migrations
+from database import engine, SessionLocal, init_database
 from salesforce import get_sf_client, sync_leads_from_salesforce
 
 # RCA 2026-08-21: nothing in this codebase ever called logging.basicConfig
@@ -41,7 +40,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# NOTE: Schema creation (create_all + migrations) runs in a background thread
+# NOTE: Schema initialization runs in a background thread
 # so it doesn't block uvicorn port binding. The schema is already in place
 # from previous deployments, so if it hangs/fails, the app still works.
 
@@ -120,32 +119,17 @@ def _run_startup_tasks():
             safe_url = db_url.split("@")[-1] if "@" in db_url else db_url
             logger.info(f"[Startup] DB type: {db_type} | host: {safe_url}")
 
-        # Run migrations FIRST — before any ORM query that SELECTs all columns.
-        # If migrations run after an ORM query, a missing column (e.g. messenger_email)
-        # will crash the sanity query and abort the whole try-block, preventing
-        # the migration from ever executing. (RCA 2026-05-18)
-        #
-        # create_all() gets its OWN try/except (RCA 2026-08-04): brand-new
-        # tables aren't safely idempotent under concurrent multi-worker boot —
-        # two workers both seeing "table missing" via inspector, then racing
-        # on the actual CREATE TABLE, throws a duplicate-key error on Postgres'
-        # internal catalog for whichever worker loses the race. That's harmless
-        # (the table exists either way) EXCEPT it used to abort this whole
-        # try-block before run_schema_migrations() ever ran — permanently
-        # blocking every column migration below on every subsequent boot,
-        # since create_all() keeps hitting the same "already exists" error
-        # forever once it's happened once. Sales Journey's 5 new tables hit
-        # this in production on the first real Postgres deploy.
+        # Run schema initialization FIRST — before any ORM query that SELECTs all columns.
         try:
             models.Base.metadata.create_all(bind=engine)
         except Exception as create_all_e:
             logger.warning(f"[Startup] create_all() failed (non-fatal — tables likely already exist from a concurrent worker): {create_all_e}")
 
-        run_schema_migrations(engine)
+        init_database(engine)
         logger.info("[Startup] Database schema ready")
         _log_memory("schema_ready")
 
-        # Lead/user count sanity check — runs AFTER migrations so new columns exist.
+        # Lead/user count sanity check — runs AFTER schema initialization so columns exist.
         # Catches mass data loss or wrong DB connection string.
         try:
             with SessionLocal() as sanity_db:
@@ -289,20 +273,10 @@ app.add_middleware(CacheHeaderMiddleware)
 from middleware_view_as import ViewAsReadOnlyMiddleware
 app.add_middleware(ViewAsReadOnlyMiddleware)
 
-# ── Startup readiness gate — REMOVED ─────────────────────────────────────────
-# Previously gated API requests until schema migration completed. Removed
-# because create_all() consistently hangs on the remote DB connection during
-# cold starts, causing 45+ seconds of 503 errors. The schema is already in
-# place from previous deployments, so gating provides no benefit.
-# See: RCA prod incident 2026-05-06
+# ── Startup readiness gate ───────────────────────────────────────────────────
+# The schema is already in place from deployments, so request gating is unnecessary.
 
 # ── UndefinedColumn race handler ─────────────────────────────────────────────
-# RCA 2026-07-24: because the gate above stays removed (a blocking gate caused
-# the worse 45s regression), a deploy that adds a column a hot-path SELECT
-# touches has a brief window where new code serves traffic before its own
-# ALTER TABLE commits (7 requests, ~1s, self-healed — /admin/call-logs and
-# /my/tasks/pending both `SELECT *`-join leads for calendar_event_agenda).
-# Shared with the test app (conftest.py) so behavior matches in tests.
 from exception_handlers import register_exception_handlers
 register_exception_handlers(app)
 

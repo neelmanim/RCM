@@ -1,6 +1,6 @@
 ---
 name: Settings & Admin Architecture Map
-description: Map of every settings/admin/config surface in the CRM (legacy JS views + backend routes) — load before touching Settings, Admin, Sync, Sandbox, Public API, SDR Settings, POD Management, Upload Center, or System Logs, or before continuing the Settings → Control Center React-migration consolidation.
+description: Map of every settings/admin/config surface in the CRM (legacy JS views + backend routes) — load before touching Settings, Admin, Sync, Sandbox, Public API, SDR Settings, POD Management, Upload Center, or System Logs, or before continuing the Settings → Control Center React modernization consolidation.
 ---
 
 ## Purpose
@@ -37,28 +37,28 @@ Control Center.
 
 ### Other admin-facing nav entries that are really config/admin surfaces, not merged with Settings today
 - `#admin` (`frontend/js/views/admin.js`) — "Admin Panel"/"Team Management": users, roles, POD assignment.
-- `#pods` — **Already React-migrated** (`PodsHub`, v11.5.7+), Team Roster tab.
+- `#pods` — **Already React upgraded** (`PodsHub`, v11.5.7+), Team Roster tab.
 - `#upload` (`upload.js`, `upload_csv.js`, `upload_gsheet.js`) — CSV/Google Sheet lead import. Operational workflow, arguably stays separate from "config".
 - `#audit-logs` (`audit_logs.js`), `#sf-logs`/`audit_sf_logs.js` (`sf_logs.js`) — read-only audit trails. Nav label "System Logs".
 - `#assignments` (`assignments.js`) — lead auto-assignment rules, admin-only.
 - `#disqualify-requests` (`disqualify_requests.js`) — an operational queue/inbox, not config; likely stays out of Control Center.
-- `#activity-monitor` — **Already React-migrated** (`ActivityMonitorHub`), consolidates the old Call Monitor + Activity Feed (see `/Users/neelmani-mishra/.claude/plans/i-was-working-on-idempotent-ritchie.md` for that migration's plan — check whether it's marked done before assuming legacy `call_monitor.js`/`activity_feed.js` are gone).
+- `#activity-monitor` — **Already React upgraded** (`ActivityMonitorHub`), consolidates the old Call Monitor + Activity Feed (see `/Users/neelmani-mishra/.claude/plans/i-was-working-on-idempotent-ritchie.md` for that update's plan — check whether it's marked done before assuming legacy `call_monitor.js`/`activity_feed.js` are gone).
 
 ### Nav reality check (`frontend-react/src/layout/NavSidebar.jsx`)
 Today's top-level items include, separately: Settings, Admin, Upload Center,
 System Logs, Activity Monitor, POD Management, My Settings — 7 different nav
 entries for what is conceptually one "manage the org" concern, at varying
-migration states (Pods Hub and Activity Monitor already React islands;
+modernization states (Pods Hub and Activity Monitor already React islands;
 Settings/Admin/Upload/Logs still legacy `innerHTML` views).
 
 ## Known problems (root-caused, not guessed)
 
 1. **The `sync` tab is a grab-bag.** Its label promises Salesforce sync only; it silently also holds POD settings, call/pipeline settings, and call outcomes config. Anyone looking for "how do I change call outcomes" won't think to click "Sync Settings".
-2. **`settings_ai_dialer.js`'s name lies about its scope.** It binds the entire Calling & Messaging tab (Aircall, Alternate Messenger, per-user capability grid) — not just "AI dialer" — because it grew from an AI-dialer-only origin (see `[[project_messaging_access_migration_incident]]`-style history: this file predates the Alternate Messenger multi-provider work).
+2. **`settings_ai_dialer.js`'s name lies about its scope.** It binds the entire Calling & Messaging tab (Aircall, Alternate Messenger, per-user capability grid) — not just "AI dialer" — because it grew from an AI-dialer-only origin (see `[[project_messaging_access_incident]]`-style history: this file predates the Alternate Messenger multi-provider work).
 3. **No single "org configuration" concept.** A Super Admin managing the org today bounces across Settings (6 tabs), Admin (users/roles), Upload Center, System Logs, and POD Management — 5 separate top-level surfaces, each with its own header/layout conventions, none sharing the React `components/ui/` primitives that Leads Hub, Pods Hub, Power Dialer Hub, Activity Monitor already standardized on (see `168058d` "standardize UI patterns onto components/ui/ across the whole React app").
 4. **My Settings vs Settings** is the one split that's actually correct (different audience) — don't merge these into one page in the Control Center plan, just make sure the Control Center doesn't accidentally absorb personal-prefs UX.
 
-## Consolidation direction (React migration target — "Control Center")
+## Consolidation direction (React consolidation target — "Control Center")
 
 Discussed with the user 2026-09-02, no code written yet. Target shape:
 one React-mounted `ControlCenterHub` (same pattern as PodsHub/ActivityMonitorHub:
@@ -78,7 +78,7 @@ into Control Center.
 
 This is a large multi-phase frontend-react effort; do not start implementing
 without a proper phased plan reviewed with the user first (mirror the phasing
-style used for the Activity Monitor migration plan: backend-first where an
+style used for the Activity Monitor modernization plan: backend-first where an
 endpoint reshape is needed, one section at a time, legacy kept as fallback
 until parity is verified, ponytail-review + ponytail-audit before any
 staging→main promotion per this repo's `CLAUDE.md`).
@@ -93,7 +93,7 @@ relevant rows) with the new reality rather than leaving it stale, and record
 what shipped under a dated line in this Maintenance section so future reads
 know which parts of the plan above are done vs. still aspirational.
 
-- 2026-09-02: Initial map written (no code changes). Confirmed `activity-monitor` and `pods` nav entries already exist and route to React hubs — verify against `/Users/neelmani-mishra/.claude/plans/i-was-working-on-idempotent-ritchie.md` before assuming that migration is fully complete (legacy `call_monitor.js`/`activity_feed.js` may still be present as fallback).
+- 2026-09-02: Initial map written (no code changes). Confirmed `activity-monitor` and `pods` nav entries already exist and route to React hubs — verify against `/Users/neelmani-mishra/.claude/plans/i-was-working-on-idempotent-ritchie.md` before assuming that consolidation is fully complete (legacy `call_monitor.js`/`activity_feed.js` may still be present as fallback).
 - 2026-09-02: Control Center Phases 0-5 all built (scaffold, Integrations, Team & Access, AI & Automation, Data, Monitoring — see the plan file) plus Phase 1.5 (access-granted email on `PATCH /admin/users/{id}/settings`). This is a **new, additive, personal-only surface** (`frontend-react/src/features/control-center/`) — every legacy page/row in the table above is still the one real users and every other admin actually see and use; nothing in this skill's "Current surface map" changed as a result. Corrected the `ai` tab row above (bind logic is in `settings_ai_dialer.js`, not inline) — caught while porting it.
 - 2026-09-03 (v11.11.1): Monitoring section extended to full parity with `audit_logs.js` — added Login History, Feedback (the section's one write action), Error Logs, Call Logs, and Perf Health (Super Admin only, matching legacy's own gate) tabs. All 5 reuse existing, already-gated backend endpoints; no backend changes. `audit_logs.js` itself remains completely untouched and is still what everyone else uses — this only closes the parity gap on the Control Center side.
 - 2026-09-04 (v11.12.3+): Closed the last real parity gaps and widened access:

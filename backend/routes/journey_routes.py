@@ -925,10 +925,8 @@ def clear_test_leads(db: Session = Depends(get_db), user: dict = Depends(require
     """Bulk-removes every Cadence/Messaging Sandbox test lead. Explicitly
     deletes JourneyEnrollment rows first (which in turn cascades their own
     JourneyExecutionQueue rows) rather than relying solely on the DB's
-    lead_id ON DELETE CASCADE — belt-and-suspenders, since this codebase's
-    test suite runs on SQLite without foreign_keys enforcement turned on and
-    so can't itself prove the DB-level cascade fires. SmsLog/DialerCall/
-    CallLog/Task rows are still left to the DB's own lead_id cascade."""
+    lead_id ON DELETE CASCADE. SmsLog/DialerCall/
+    CallLog/Task rows are left to the DB's own lead_id cascade."""
     test_lead_ids = [row[0] for row in db.query(models.Lead.id).filter(models.Lead.is_test.is_(True)).all()]
     if test_lead_ids:
         enrollment_ids = [row[0] for row in db.query(models.JourneyEnrollment.id).filter(

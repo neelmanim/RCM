@@ -3,9 +3,6 @@
   "version": "14.4.0",
   "description": "Conversation OS CRM Platform",
   "main": "index.js",
-  "scripts": {
-    "version:sync": "node scripts/sync-version.mjs"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/neelmanimishrasf/crmalternate.git"

@@ -13,7 +13,7 @@ Perform a thorough, risk-aware code review using the knowledge graph.
 2. Run `get_affected_flows` to find impacted execution paths.
 3. For each high-risk function, run `query_graph` with pattern="tests_for" to check test coverage.
 4. Run `get_impact_radius` to understand the blast radius.
-5. For any untested changes, suggest specific test cases.
+5. Verify all changes follow architectural standards and error handling.
 
 ### Output Format
 

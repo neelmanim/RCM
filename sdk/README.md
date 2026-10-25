@@ -228,8 +228,6 @@ sdk/
 │   └── .env.example
 ├── demo/
 │   └── index.html              ← Standalone demo (open in browser)
-└── tests/
-    └── test_sdk_proxy.py       ← Proxy test suite (18 tests)
 ```
 
 ---

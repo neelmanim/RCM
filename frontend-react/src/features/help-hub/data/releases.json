@@ -1596,7 +1596,7 @@
         "variant": "warning"
       }
     ],
-    "summary": "**Fixed a data-migration bug that granted or denied SMS/WhatsApp access based on the wrong signal.** Some Aircall-only callers with no Alternate Messenger agent identity had been incorrectly granted SMS/WhatsApp access, while some real, already-active Alternate Messenger agents had been incorrectly denied it. Both are now corrected based on whether a Alternate Messenger agent ID is actually configured."
+    "summary": "**Fixed a data-update bug that granted or denied SMS/WhatsApp access based on the wrong signal.** Some Aircall-only callers with no Alternate Messenger agent identity had been incorrectly granted SMS/WhatsApp access, while some real, already-active Alternate Messenger agents had been incorrectly denied it. Both are now corrected based on whether a Alternate Messenger agent ID is actually configured."
   },
   {
     "version": "v11.10.4",
@@ -2459,7 +2459,7 @@
         "variant": "danger"
       }
     ],
-    "summary": "**Pre-migration bug-fix pass on the redesigned Leads experience (beta)** — fixed a stale date filter, a filter combination that silently cancelled itself, Saved Views dropping search text, silent failures on inline edits and bulk actions, a lingering \"Unknown\" placeholder, multiple popovers staying open at once, and a company-connection badge that could reference a lead's own status as if a different lead resolved it. **Analytics Hub: the SDR Performance table now scrolls within its own bounded panel** instead of growing past the page with no reliable way to reach the rows below."
+    "summary": "**Pre-update bug-fix pass on the redesigned Leads experience (beta)** — fixed a stale date filter, a filter combination that silently cancelled itself, Saved Views dropping search text, silent failures on inline edits and bulk actions, a lingering \"Unknown\" placeholder, multiple popovers staying open at once, and a company-connection badge that could reference a lead's own status as if a different lead resolved it. **Analytics Hub: the SDR Performance table now scrolls within its own bounded panel** instead of growing past the page with no reliable way to reach the rows below."
   },
   {
     "version": "v10.9.11",
@@ -3210,7 +3210,7 @@
     ],
     "title": null,
     "items": [
-      "**🔧 Topbar buttons fully fixed:** New Lead, Dial, Search (⌘K), and Ask AI were all broken after the NavHub React migration. All four are now re-wired with correct event bridging — every action works as expected.",
+      "**🔧 Topbar buttons fully fixed:** New Lead, Dial, Search (⌘K), and Ask AI were all broken after the NavHub React upgrade. All four are now re-wired with correct event bridging — every action works as expected.",
       "**✨ Ask AI rebuilt as React overlay:** The Ask AI feature now opens as a proper full-screen overlay with smooth animation. Results render correctly with charts and live data — the previous blank panel bug is fixed.",
       "**📊 Mixpanel analytics hardened:** Fixed double-initialisation bug that was causing duplicate events. Added 14 new tracked events covering search, Ask AI, dashboard KPI clicks, and topbar actions.",
       "**📱 Dashboard now responsive:** The dashboard layout adapts to tablet and phone screen sizes. The login page was also made fully responsive in v9.7.12.",
@@ -3309,7 +3309,7 @@
     ],
     "title": null,
     "items": [
-      "**📖 Technical Handoff Bible published:** A comprehensive internal reference page is now live at `/technicalunderstanding.html` (Admin/Super Admin only). Covers full architecture, environment variables, all integrations, deployment runbook, incident playbooks, rollback procedure, database migration system, scheduler jobs, and AI agent rules — everything needed to onboard or troubleshoot from one URL."
+      "**📖 Technical Handoff Bible published:** A comprehensive internal reference page is now live at `/technicalunderstanding.html` (Admin/Super Admin only). Covers full architecture, environment variables, all integrations, deployment runbook, incident playbooks, rollback procedure, database schema system, scheduler jobs, and AI agent rules — everything needed to onboard or troubleshoot from one URL."
     ]
   },
   {
@@ -3327,7 +3327,7 @@
     ],
     "title": null,
     "items": [
-      "**💥 Fixed: server crash (OOM) after Dashboard migration to React:** The production server was running out of memory and restarting. Root cause: the new React Dashboard was firing 7 API calls simultaneously the moment it opened — including a heavy Groq AI call. These have been staggered (200–800ms apart) so they no longer pile on the server at once. Dashboard still loads fully; data just fills in smoothly.",
+      "**💥 Fixed: server crash (OOM) after Dashboard upgrade to React:** The production server was running out of memory and restarting. Root cause: the new React Dashboard was firing 7 API calls simultaneously the moment it opened — including a heavy Groq AI call. These have been staggered (200–800ms apart) so they no longer pile on the server at once. Dashboard still loads fully; data just fills in smoothly.",
       "**💾 Fixed: pipeline intelligence memory leak:** The Groq AI pipeline scoring cache had no size limit — it stored one entry per user and never cleaned up. It now uses the same managed cache as the rest of the app, with Redis backing and automatic 15-minute expiry.",
       "**⚡ Dashboard load speed unchanged:** The staggered loading is barely noticeable — skeletons appear immediately, and the data cards fill in within 1 second of each other. The overall time-to-complete is the same as before."
     ]
@@ -4393,10 +4393,6 @@
       {
         "label": "⚙️ BACKEND",
         "variant": "info"
-      },
-      {
-        "label": "🧪 TESTS",
-        "variant": "default"
       }
     ],
     "title": null,

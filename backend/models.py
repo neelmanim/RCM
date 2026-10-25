@@ -1818,7 +1818,7 @@ class LeadEmailActivity(Base):
     instantly_lead_id    = Column(String, nullable=True, index=True)
     instantly_campaign_id = Column(String, nullable=True)
     # v13.8.0 — one row per real Instantly email (GET /api/v2/emails), keyed by
-    # Instantly's own email id (partial unique index in migrations.py), so a
+    # Instantly's own email id (partial unique index in database.py), so a
     # replayed page or an overlapping sync window can never double-insert.
     # Rows without it are engagement counters (opens/clicks) or pre-v13.8.0 rows.
     instantly_email_id   = Column(String, nullable=True)
