@@ -20,6 +20,8 @@ playwright-report/
 test-results/
 tests/screenshots/
 *.webm
+audit_*.png
+sandbox_test_screenshot.png
 
 # Repo-root debug/scratch artifacts (perf traces, one-off exports, local dbs)
 /perf-trace*.json

@@ -18,10 +18,12 @@ Alternate CRM MCP server in mcp_server/).
 """
 import logging
 import re
+import uuid
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from sqlalchemy.orm import Session
-
+from pydantic import BaseModel
 from auth import require_api_key, public_endpoint
 from database import get_db
 from salesforce import get_sf_client, sf_lightning_url
@@ -342,3 +344,269 @@ def get_lead_calls_public(
     # The API key is a Super-Admin-reach service actor (see _API_KEY_ACTOR).
     return _get_lead_calls(lead_id=lead_id, page=page, limit=limit, db=db,
                            user={"sub": _API_KEY_ACTOR.id, "role": _API_KEY_ACTOR.role})
+
+
+# ── Dogfooding: Inbound Lead Capture from Marketing Site ──────────────────────
+
+# ── Dogfooding: Inbound Lead Capture from Marketing Site ──────────────────────
+
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+'\-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,}$")
+
+
+def _sanitize_inbound_text(val: Optional[str], max_len: int = 500) -> str:
+    """Strip dangerous HTML/script tags and normalize whitespace."""
+    if not val:
+        return ""
+    clean = re.sub(r"<[^>]*?>", "", str(val))
+    return clean.strip()[:max_len]
+
+
+class InboundLeadPayload(BaseModel):
+    first_name: str
+    last_name: Optional[str] = ""
+    email: str
+    company: Optional[str] = ""
+    phone: Optional[str] = ""
+    team_size: Optional[str] = ""
+    primary_interest: Optional[str] = ""
+    notes: Optional[str] = ""
+    source: Optional[str] = "Website - Early Access Request"
+    website_hp: Optional[str] = ""  # Honeypot field for bot spam trapping
+
+
+@router.post("/leads/inbound", dependencies=[Depends(public_endpoint)])
+def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_db)):
+    """
+    Public inbound lead capture endpoint for AlternateCRM's marketing site.
+    Ingests visitor early-access requests directly into AlternateCRM's database
+    for real dogfooding (Pipeline, Dialer queue, Cadences, and Dashboard activity).
+    """
+    # 1. Anti-bot honeypot check: Bots fill hidden website_hp field
+    if payload.website_hp and payload.website_hp.strip():
+        logger.info(f"[InboundLead] Bot submission caught by honeypot: {payload.email}")
+        return {
+            "success": True,
+            "lead_id": "bot_filtered",
+            "status": "created",
+            "message": "Thank you! Your early access request has been recorded."
+        }
+
+    # 2. Strict email validation & normalization
+    clean_email = (payload.email or "").strip().lower()
+    if (
+        not clean_email
+        or len(clean_email) > 255
+        or not EMAIL_REGEX.match(clean_email)
+        or ".." in clean_email
+        or clean_email.startswith(".")
+        or clean_email.endswith(".")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Please provide a valid work email address (e.g., name@company.com)."
+        )
+
+    # 3. Clean and sanitize inputs against buffer-exhaustion / XSS injection
+    first_name = _sanitize_inbound_text(payload.first_name, 100)
+    if not first_name:
+        raise HTTPException(status_code=400, detail="First name is required.")
+
+    last_name = _sanitize_inbound_text(payload.last_name, 100) or "Unknown"
+
+    company = _sanitize_inbound_text(payload.company, 200)
+    if not company:
+        # Intelligent company fallback inferred from business email domain
+        domain = clean_email.split("@")[-1].lower() if "@" in clean_email else ""
+        public_providers = {
+            "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
+            "icloud.com", "aol.com", "proton.me", "protonmail.com"
+        }
+        if domain and domain not in public_providers and "." in domain:
+            company = domain.split(".")[0].capitalize()
+        else:
+            company = "Unknown"
+
+    phone = (payload.phone or "").strip()
+    if phone:
+        phone_digits = re.sub(r"[^\d+]", "", phone)
+        if len(phone_digits) < 7 or len(phone) > 50:
+            phone = None  # discard malformed phone rather than erroring out
+        else:
+            phone = _sanitize_inbound_text(phone, 50)
+    else:
+        phone = None
+
+    team_size = _sanitize_inbound_text(payload.team_size, 50)
+    interest = _sanitize_inbound_text(payload.primary_interest, 100)
+    user_notes = _sanitize_inbound_text(payload.notes, 2000)
+
+    try:
+        import ownership_history as oh
+        # Find active Admin for assignment
+        admin_user = db.query(models.User).filter(
+            models.User.role.in_(["Super Admin", "Admin", "Pod Admin"]),
+            models.User.left_at.is_(None)
+        ).order_by(models.User.created_at.asc()).first()
+
+        # 4. Deduplication & Re-engagement handling
+        existing = db.query(models.Lead).filter(models.Lead.email == clean_email).first()
+        if existing:
+            # Backfill any missing contact details
+            if (not existing.company or existing.company == "Unknown") and company != "Unknown":
+                existing.company = company
+            if not existing.phone and phone:
+                existing.phone = phone
+            if not existing.first_name:
+                existing.first_name = first_name
+
+            # Ensure Inbound and Website tags are attached
+            for tag_name in ["Inbound", "Website"]:
+                tag = db.query(models.Tag).filter(models.Tag.name == tag_name).first()
+                if not tag:
+                    tag = models.Tag(name=tag_name)
+                    db.add(tag)
+                    db.flush()
+                if tag not in existing.tags:
+                    existing.tags.append(tag)
+
+            # If existing lead was unassigned, assign to active admin
+            if not existing.assigned_users and admin_user:
+                models.assign_lead(admin_user, existing, reason=oh.R_LEAD_CREATE, actor_id="public-inbound")
+
+            # If existing lead was in a terminal state (e.g. Disqualified / Won), re-open
+            reopened = False
+            if existing.status in models.TERMINAL_STATUSES:
+                old_status = existing.status
+                existing.status = "Lead Assigned"
+                existing.lead_closed_at = None
+                existing.closed_reason = None
+                models.log_status_change(db, existing.id, old_status, "Lead Assigned", "Website Inbound Re-Engagement")
+                reopened = True
+
+            # Bump priority score to high intent
+            existing.priority_score = 100
+            existing.lead_started_at = datetime.now(timezone.utc)
+
+            # Record detailed re-engagement note
+            reengage_text = (
+                f"[Website Inbound Request] {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}\n"
+                f"• Re-Engagement: Inbound early access request received from marketing site\n"
+                f"• Team Size: {team_size or 'Not specified'}\n"
+                f"• Primary Interest: {interest or 'General Conversation OS'}\n"
+                f"• Notes: {user_notes or 'None'}"
+                + ("\n• Status Update: Lead re-opened from previous terminal state" if reopened else "")
+            )
+            db.add(models.Note(lead_id=existing.id, content=reengage_text, author="Website (Inbound)"))
+            db.commit()
+            db.refresh(existing)
+
+            # Invalidate caches
+            try:
+                from cache import invalidate
+                invalidate('dashboard'); invalidate('leads_page'); invalidate('leads_count'); invalidate('my_leads')
+            except Exception:
+                pass
+
+            return {
+                "success": True,
+                "lead_id": existing.id,
+                "status": "existing_updated",
+                "message": "Thank you! We have updated your priority early access request."
+            }
+
+        # 5. Create Brand-New Lead in AlternateCRM Database
+        lead_id = models.generate_uuid()
+        new_lead = models.Lead(
+            id=lead_id,
+            sf_lead_id=f"inbound-{uuid.uuid4().hex[:8]}",
+            first_name=first_name,
+            last_name=last_name,
+            email=clean_email,
+            phone=phone,
+            company=company,
+            status="Lead Assigned",
+            lead_source="Website - Early Access Request",
+            lead_started_at=datetime.now(timezone.utc),
+            priority_score=100,
+            talking_points=f"Inbound early access request. Primary interest: {interest or 'General OS'}. Team size: {team_size or 'Not specified'}.",
+        )
+        db.add(new_lead)
+        db.flush()
+
+        # Auto-assign to active admin or Super Admin
+        if admin_user:
+            models.assign_lead(admin_user, new_lead, reason=oh.R_LEAD_CREATE, actor_id="public-inbound")
+
+        # Add Inbound and Website tags
+        for tag_name in ["Inbound", "Website"]:
+            tag = db.query(models.Tag).filter(models.Tag.name == tag_name).first()
+            if not tag:
+                tag = models.Tag(name=tag_name)
+                db.add(tag)
+                db.flush()
+            if tag not in new_lead.tags:
+                new_lead.tags.append(tag)
+
+        # Status log
+        models.log_status_change(db, new_lead.id, None, "Lead Assigned", "Website Inbound")
+
+        # Initial detail note
+        note_content = (
+            f"[Inbound Lead Form]\n"
+            f"• Contact: {first_name} {last_name} ({clean_email})\n"
+            f"• Company: {company}\n"
+            f"• Team Size: {team_size or 'Not specified'}\n"
+            f"• Primary Interest: {interest or 'General Conversation OS'}\n"
+            f"• Notes: {user_notes or 'None'}"
+        )
+        db.add(models.Note(lead_id=new_lead.id, content=note_content, author="Website (Inbound)"))
+
+        # Log activity to user_activity_logs for real-time telemetry
+        try:
+            from activity_logger import log_activity
+            log_activity(
+                admin_user.id if admin_user else "system",
+                "CREATE_LEAD",
+                user_email=clean_email,
+                user_name=f"{first_name} {last_name}".strip(),
+                object_type="lead",
+                object_id=new_lead.id,
+                metadata={
+                    "company": company,
+                    "email": clean_email,
+                    "source": "website_early_access",
+                    "team_size": team_size,
+                    "primary_interest": interest
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log inbound activity: {e}")
+
+        db.commit()
+        db.refresh(new_lead)
+
+        # Invalidate dashboard & leads cache
+        try:
+            from cache import invalidate
+            invalidate('dashboard')
+            invalidate('leads_page')
+            invalidate('leads_count')
+            invalidate('my_leads')
+            invalidate('lead_companies')
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "lead_id": new_lead.id,
+            "status": "created",
+            "message": "Thank you! Your early access request has been recorded."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[InboundLead] Error saving inbound lead: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Unable to process your request. Please try again.")
+
+

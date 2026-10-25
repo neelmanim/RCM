@@ -4,7 +4,7 @@ import { useModules } from '../../core/modules/ModuleContext';
 import { 
   LayoutDashboard, Users, KanbanSquare, CheckSquare, 
   Store, Settings, PhoneCall, Zap, Mail, BarChart3, ShieldCheck,
-  ChevronRight, Sparkles
+  ChevronRight, Sparkles, X
 } from 'lucide-react';
 
 const ICON_MAP = {
@@ -15,7 +15,7 @@ const ICON_MAP = {
   ShieldCheck,
 };
 
-export default function AppSidebar() {
+export default function AppSidebar({ isMobileMenuOpen, onClose }) {
   const { availableModules, installedModules } = useModules();
 
   const coreNav = [
@@ -25,24 +25,39 @@ export default function AppSidebar() {
     { label: 'Tasks & Activity', path: '/tasks', icon: CheckSquare },
   ];
 
-  return (
-    <aside className="w-64 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800/80 flex flex-col justify-between flex-shrink-0 select-none">
+  const handleNavClick = () => {
+    if (onClose) onClose();
+  };
+
+  const sidebarContent = (
+    <div className="flex flex-col justify-between h-full select-none">
       {/* Top Section */}
       <div className="p-4 space-y-6">
         {/* Brand Header */}
-        <div className="flex items-center gap-3 px-2 py-1">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-600/30">
-            A
-          </div>
-          <div>
-            <div className="text-sm font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5">
-              <span>Alternate CRM</span>
-              <span className="px-1.5 py-0.2 text-[10px] font-extrabold uppercase bg-indigo-500/10 text-indigo-500 rounded">OS</span>
+        <div className="flex items-center justify-between px-2 py-1">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-600/30">
+              A
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-              Conversation Intelligence
+            <div>
+              <div className="text-sm font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span>Alternate CRM</span>
+                <span className="px-1.5 py-0.2 text-[10px] font-extrabold uppercase bg-indigo-500/10 text-indigo-500 rounded">OS</span>
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                Conversation Intelligence
+              </div>
             </div>
           </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              aria-label="Close sidebar"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* 1. Core Platform Section */}
@@ -56,6 +71,7 @@ export default function AppSidebar() {
               <NavLink
                 key={item.path}
                 to={item.path}
+                onClick={handleNavClick}
                 className={({ isActive }) =>
                   `flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                     isActive
@@ -100,6 +116,7 @@ export default function AppSidebar() {
                 <NavLink
                   key={module.id}
                   to={module.route}
+                  onClick={handleNavClick}
                   className={({ isActive }) =>
                     `flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                       isActive
@@ -129,6 +146,7 @@ export default function AppSidebar() {
         {/* App Store Navigation with Active Count Badge */}
         <NavLink
           to="/app-store"
+          onClick={handleNavClick}
           className={({ isActive }) =>
             `flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
               isActive
@@ -148,6 +166,7 @@ export default function AppSidebar() {
 
         <NavLink
           to="/settings"
+          onClick={handleNavClick}
           className={({ isActive }) =>
             `flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
               isActive
@@ -160,6 +179,30 @@ export default function AppSidebar() {
           <span>Workspace Settings</span>
         </NavLink>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Persistent Sidebar */}
+      <aside className="hidden lg:flex w-64 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800/80 flex-col justify-between flex-shrink-0 select-none">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile Drawer Overlay */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+            onClick={onClose}
+          />
+          {/* Slide-out Sidebar */}
+          <aside className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between z-10 shadow-2xl overflow-y-auto">
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }

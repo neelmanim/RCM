@@ -76,7 +76,7 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-[#F7F9F4] text-[#0F172A] font-sans selection:bg-[#C9FF68] selection:text-[#090D0E] overflow-x-hidden">
+    <div className="min-h-screen w-full flex flex-col-reverse lg:flex-row bg-[#F7F9F4] text-[#0F172A] font-sans selection:bg-[#C9FF68] selection:text-[#090D0E] overflow-x-hidden">
       {/* ── Left Hero Side (Light Cream & Marketing Presentation) ─────────── */}
       <div className="relative flex-1 flex flex-col justify-between p-8 sm:p-12 lg:p-16 xl:p-20 overflow-hidden bg-[#F7F9F4]">
         {/* Top Brand Logo */}

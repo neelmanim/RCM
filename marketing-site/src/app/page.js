@@ -4,13 +4,35 @@ import { useEffect, useState } from "react";
 
 const SANDBOX_URL =
   process.env.NEXT_PUBLIC_SANDBOX_URL || "https://app.alternatecrm.com/sandbox.html";
-const CALENDLY_URL =
-  "https://calendly.com/alternatecrm/30min?hide_landing_page_details=1&hide_gdpr_banner=1&background_color=111619&text_color=f4f5f0&primary_color=d3fa76";
+const SIGNIN_URL =
+  process.env.NEXT_PUBLIC_SIGNIN_URL || "https://app.alternatecrm.com/login.html";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE ||
+  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "http://127.0.0.1:8000"
+    : "https://app.alternatecrm.com");
 
 export default function Home() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isCalendlyOpen, setIsCalendlyOpen] = useState(false);
+  const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
+  const [modalStep, setModalStep] = useState(1);
   const [year, setYear] = useState("2026");
+
+  // Lead Form State
+  const [formData, setFormData] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    company: "",
+    phone: "",
+    teamSize: "11-50",
+    primaryInterest: "AI Power Dialer & Voice",
+    notes: "",
+    website_hp: "" // Honeypot field for bot suppression
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+  const [submittedLead, setSubmittedLead] = useState(null);
 
   useEffect(() => {
     setYear(new Date().getFullYear().toString());
@@ -37,9 +59,9 @@ export default function Home() {
     }
   }, []);
 
-  // Lock body scroll when Calendly modal is active
+  // Lock body scroll when Lead modal is active
   useEffect(() => {
-    if (isCalendlyOpen) {
+    if (isLeadModalOpen) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -47,45 +69,19 @@ export default function Home() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [isCalendlyOpen]);
+  }, [isLeadModalOpen]);
 
   // Handle ESC key to dismiss modal or mobile drawer
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
-        setIsCalendlyOpen(false);
+        setIsLeadModalOpen(false);
         setIsMenuOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
-
-  // Initialize official Calendly widget when modal is open
-  useEffect(() => {
-    if (isCalendlyOpen && typeof window !== "undefined") {
-      const initWidget = () => {
-        const container = document.getElementById("calendly-embed-container");
-        if (container && window.Calendly) {
-          container.innerHTML = "";
-          window.Calendly.initInlineWidget({
-            url: CALENDLY_URL,
-            parentElement: container,
-          });
-        }
-      };
-
-      if (window.Calendly) {
-        initWidget();
-      } else {
-        const script = document.createElement("script");
-        script.src = "https://assets.calendly.com/assets/external/widget.js";
-        script.async = true;
-        script.onload = initWidget;
-        document.body.appendChild(script);
-      }
-    }
-  }, [isCalendlyOpen]);
 
   const toggleMenu = () => {
     setIsMenuOpen((prev) => !prev);
@@ -95,13 +91,74 @@ export default function Home() {
     setIsMenuOpen(false);
   };
 
-  const openCalendly = (e) => {
+  const openLeadModal = (e) => {
     if (e) e.preventDefault();
-    setIsCalendlyOpen(true);
+    setSubmitError(null);
+    setIsLeadModalOpen(true);
   };
 
-  const closeCalendly = () => {
-    setIsCalendlyOpen(false);
+  const closeLeadModal = () => {
+    setIsLeadModalOpen(false);
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmitLead = async (e) => {
+    e.preventDefault();
+    setSubmitError(null);
+
+    const email = formData.email.trim();
+    const firstName = formData.firstName.trim();
+    if (!firstName) {
+      setSubmitError("Please enter your first name.");
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      setSubmitError("Please enter a valid work email address (e.g. name@company.com).");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/public/leads/inbound`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          first_name: firstName,
+          last_name: formData.lastName.trim(),
+          email: email,
+          company: formData.company.trim(),
+          phone: formData.phone.trim(),
+          team_size: formData.teamSize,
+          primary_interest: formData.primaryInterest,
+          notes: formData.notes.trim(),
+          website_hp: formData.website_hp || ""
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSubmitError(data.detail || "Unable to register early access. Please check your information and try again.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      setSubmittedLead({
+        name: firstName,
+        email: email,
+        company: formData.company.trim()
+      });
+      setModalStep(2);
+    } catch (err) {
+      console.warn("Lead capture network fallback:", err);
+      setSubmitError("Network connection error. You can book directly with our engineering team on Calendly below or try submitting again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -120,6 +177,8 @@ export default function Home() {
             <a href="#platform">The OS</a>
             <a href="#outcomes">Why AlternateCRM</a>
             <a href="#how">How it works</a>
+            <a href="/blog">Blog</a>
+            <a href="/status">Status</a>
           </nav>
 
           <div className="right">
@@ -135,7 +194,7 @@ export default function Home() {
             <button
               type="button"
               className="btn btn-primary"
-              onClick={openCalendly}
+              onClick={openLeadModal}
             >
               Get early access ↗
             </button>
@@ -153,7 +212,7 @@ export default function Home() {
         <nav
           className={`mobile-links ${isMenuOpen ? "open" : ""}`}
           id="mobile"
-          aria-label="Mobile"
+          aria-label="Mobile Navigation"
         >
           <a href="#platform" onClick={closeMenu}>
             The OS
@@ -163,6 +222,20 @@ export default function Home() {
           </a>
           <a href="#how" onClick={closeMenu}>
             How it works
+          </a>
+          <a href="/blog" onClick={closeMenu}>
+            Blog & Insights
+          </a>
+          <a href="/status" onClick={closeMenu}>
+            System Status
+          </a>
+          <a
+            href={SIGNIN_URL}
+            target="_blank"
+            rel="noreferrer"
+            onClick={closeMenu}
+          >
+            Sign In to Platform ↗
           </a>
           <a
             href={SANDBOX_URL}
@@ -180,7 +253,7 @@ export default function Home() {
             style={{ width: "100%", marginTop: "8px" }}
             onClick={() => {
               closeMenu();
-              openCalendly();
+              openLeadModal();
             }}
           >
             Get early access ↗
@@ -208,7 +281,7 @@ export default function Home() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={openCalendly}
+                onClick={openLeadModal}
               >
                 Get early access <span>↗</span>
               </button>
@@ -488,7 +561,7 @@ export default function Home() {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={openCalendly}
+                onClick={openLeadModal}
               >
                 Let&apos;s talk ↗
               </button>
@@ -505,35 +578,113 @@ export default function Home() {
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="wrap foot">
-        <a className="brand" href="#top">
-          <span className="mark">✳</span>
-          <span>
-            alternate<span className="suffix">crm</span>
-          </span>
-        </a>
-        <small>© {year} AlternateCRM. One OS. Every conversation.</small>
-        <nav>
-          <a href="mailto:hello@alternatecrm.com">Contact</a>
-        </nav>
+      {/* Modern SaaS Multi-Column Footer */}
+      <footer className="site-footer">
+        <div className="wrap">
+          <div className="footer-grid">
+            {/* Brand Column */}
+            <div className="footer-brand">
+              <a className="brand" href="#top">
+                <span className="mark">✳</span>
+                <span>
+                  alternate<span className="suffix">crm</span>
+                </span>
+              </a>
+              <p>
+                The Conversation Operating System for modern sales teams. Unify outreach, voice,
+                cadences, and customer intelligence in one connected platform.
+              </p>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <a
+                  href={SANDBOX_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-secondary"
+                  style={{ padding: "8px 14px", fontSize: "12px" }}
+                >
+                  ⚡ Open Live Sandbox
+                </a>
+              </div>
+            </div>
+
+            {/* Platform Column */}
+            <div className="footer-col">
+              <h4>Platform</h4>
+              <ul>
+                <li><a href="#platform">The OS Architecture</a></li>
+                <li><a href="#how">Modular App Store</a></li>
+                <li><a href={SANDBOX_URL} target="_blank" rel="noreferrer">Interactive Sandbox</a></li>
+                <li><a href="#outcomes">AI Power Dialer</a></li>
+                <li><a href="#outcomes">Pipeline Telemetry</a></li>
+              </ul>
+            </div>
+
+            {/* Resources Column */}
+            <div className="footer-col">
+              <h4>Resources</h4>
+              <ul>
+                <li><a href="/blog">Insights & Blog</a></li>
+                <li><a href="/status">System Status</a></li>
+                <li><a href="#outcomes">Customer Stories</a></li>
+                <li><a href="mailto:support@alternatecrm.com">Support Center</a></li>
+              </ul>
+            </div>
+
+            {/* Company Column */}
+            <div className="footer-col">
+              <h4>Company</h4>
+              <ul>
+                <li><a href="#outcomes">Why AlternateCRM</a></li>
+                <li><a href="#how">How it Works</a></li>
+                <li><a href="mailto:hello@alternatecrm.com">Contact Sales</a></li>
+                <li><a href="mailto:partners@alternatecrm.com">Partner Program</a></li>
+              </ul>
+            </div>
+
+            {/* Access & Legal Column */}
+            <div className="footer-col">
+              <h4>Access</h4>
+              <ul>
+                <li>
+                  <a href={SIGNIN_URL} target="_blank" rel="noreferrer" style={{ color: "var(--lime)", fontWeight: 700 }}>
+                    Sign In to App ↗
+                  </a>
+                </li>
+                <li><a href="https://app.alternatecrm.com/privacy.html" target="_blank" rel="noreferrer">Privacy Policy</a></li>
+                <li><a href="https://app.alternatecrm.com/terms.html" target="_blank" rel="noreferrer">Terms of Service</a></li>
+                <li><a href="#top" onClick={openLeadModal}>Request VIP Access</a></li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="footer-bottom">
+            <span>© {year} AlternateCRM Inc. All rights reserved. One OS. Every conversation.</span>
+            <div style={{ display: "flex", gap: "20px" }}>
+              <a href="https://app.alternatecrm.com/privacy.html" target="_blank" rel="noreferrer">Privacy</a>
+              <a href="https://app.alternatecrm.com/terms.html" target="_blank" rel="noreferrer">Terms</a>
+              <a href="/status">Status</a>
+              <a href="mailto:security@alternatecrm.com">Security</a>
+            </div>
+          </div>
+        </div>
       </footer>
 
-      {/* Calendly Booking Modal */}
-      {isCalendlyOpen && (
+      {/* ── Native 2-Step Lead Capture & Onboarding Modal ──────────────────────── */}
+      {isLeadModalOpen && (
         <div
-          className="calendly-modal-overlay"
+          className="lead-modal-overlay"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
-              closeCalendly();
+              closeLeadModal();
             }
           }}
           role="dialog"
           aria-modal="true"
-          aria-label="Schedule a conversation with AlternateCRM"
+          aria-label="AlternateCRM Early Access Request"
         >
-          <div className="calendly-modal-content">
-            <div className="calendly-modal-header">
+          <div className="lead-modal-card">
+            {/* Modal Header */}
+            <div className="lead-modal-header">
               <div className="brand" style={{ fontSize: "16px" }}>
                 <span className="mark" style={{ width: "28px", height: "28px", fontSize: "18px" }}>
                   ✳
@@ -542,43 +693,240 @@ export default function Home() {
                   alternate<span className="suffix">crm</span>
                 </span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <a
-                  href="https://calendly.com/alternatecrm/30min"
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    fontSize: "12px",
-                    color: "var(--lime)",
-                    textDecoration: "none",
-                    padding: "6px 12px",
-                    borderRadius: "6px",
-                    background: "rgba(211, 250, 118, 0.08)",
-                    border: "1px solid rgba(211, 250, 118, 0.25)",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "4px"
-                  }}
-                >
-                  Open in new tab ↗
-                </a>
-                <button
-                  type="button"
-                  className="calendly-close-btn"
-                  onClick={closeCalendly}
-                  aria-label="Close Calendly modal"
-                >
-                  ✕
-                </button>
-              </div>
+              <button
+                type="button"
+                className="lead-modal-close-btn"
+                onClick={closeLeadModal}
+                aria-label="Close dialog"
+              >
+                ✕
+              </button>
             </div>
-            <div className="calendly-iframe-wrap">
-              <div
-                id="calendly-embed-container"
-                className="calendly-inline-widget"
-                data-url={CALENDLY_URL}
-                style={{ minWidth: "320px", height: "100%", width: "100%" }}
-              />
+
+            {/* Modal Body: Step 1 (Capture) or Step 2 (Success & Booking) */}
+            <div className="lead-modal-body">
+              {modalStep === 1 ? (
+                <div>
+                  <h3 className="lead-modal-title">Get Early Access to Conversation OS</h3>
+                  <p className="lead-modal-sub">
+                    Join high-performing revenue teams using AlternateCRM. Complete this quick request
+                    to be granted VIP access and dogfood our live system.
+                  </p>
+
+                  {submitError && (
+                    <div className="form-error-banner" role="alert">
+                      ⚠️ {submitError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSubmitLead} noValidate>
+                    {/* Anti-bot Honeypot field (hidden from real users) */}
+                    <input
+                      type="text"
+                      name="website_hp"
+                      value={formData.website_hp}
+                      onChange={handleInputChange}
+                      tabIndex={-1}
+                      autoComplete="off"
+                      style={{ position: "absolute", left: "-9999px", opacity: 0, height: 0 }}
+                      aria-hidden="true"
+                    />
+
+                    <div className="form-grid">
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="firstName">
+                          First Name<span className="req">*</span>
+                        </label>
+                        <input
+                          id="firstName"
+                          name="firstName"
+                          type="text"
+                          className="form-input"
+                          placeholder="Sarah"
+                          value={formData.firstName}
+                          onChange={handleInputChange}
+                          required
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="lastName">
+                          Last Name
+                        </label>
+                        <input
+                          id="lastName"
+                          name="lastName"
+                          type="text"
+                          className="form-input"
+                          placeholder="Jenkins"
+                          value={formData.lastName}
+                          onChange={handleInputChange}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="email">
+                          Work Email<span className="req">*</span>
+                        </label>
+                        <input
+                          id="email"
+                          name="email"
+                          type="email"
+                          className="form-input"
+                          placeholder="sarah@company.com"
+                          value={formData.email}
+                          onChange={handleInputChange}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="company">
+                          Company Name
+                        </label>
+                        <input
+                          id="company"
+                          name="company"
+                          type="text"
+                          className="form-input"
+                          placeholder="Acme Corp"
+                          value={formData.company}
+                          onChange={handleInputChange}
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="teamSize">
+                          Sales Team Size
+                        </label>
+                        <select
+                          id="teamSize"
+                          name="teamSize"
+                          className="form-select"
+                          value={formData.teamSize}
+                          onChange={handleInputChange}
+                        >
+                          <option value="1-5">1 - 5 reps</option>
+                          <option value="6-20">6 - 20 reps</option>
+                          <option value="21-50">21 - 50 reps</option>
+                          <option value="50+">50+ Enterprise reps</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="primaryInterest">
+                          Primary Priority
+                        </label>
+                        <select
+                          id="primaryInterest"
+                          name="primaryInterest"
+                          className="form-select"
+                          value={formData.primaryInterest}
+                          onChange={handleInputChange}
+                        >
+                          <option value="AI Power Dialer & Voice">AI Power Dialer & Voice</option>
+                          <option value="Multi-Channel Cadences">Multi-Channel Cadences</option>
+                          <option value="Pipeline & Revenue Intelligence">Pipeline & Revenue Intelligence</option>
+                          <option value="Full CRM Migration">Full CRM Replacement</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group full">
+                        <label className="form-label" htmlFor="notes">
+                          What is your biggest sales bottleneck today? (Optional)
+                        </label>
+                        <textarea
+                          id="notes"
+                          name="notes"
+                          rows={2}
+                          className="form-textarea"
+                          placeholder="e.g. Disconnected dialer, manual notes taking up reps' time..."
+                          value={formData.notes}
+                          onChange={handleInputChange}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: "24px" }}>
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        style={{ width: "100%", padding: "14px", fontSize: "14px", borderRadius: "10px" }}
+                        disabled={isSubmitting}
+                      >
+                        {isSubmitting ? "Securing Your Early Access..." : "Claim Early Access & Preview Demo ⚡"}
+                      </button>
+                    </div>
+
+                    <div style={{ textAlign: "center", marginTop: "14px", fontSize: "11px", color: "#7a8a84" }}>
+                      🔒 Direct dogfooding integration. Zero spam guarantee. No credit card required.
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                /* ── Step 2: Confirmation & High-Value Booking/Sandbox ───────── */
+                <div className="success-banner">
+                  <div className="success-icon-wrap">✓</div>
+                  <h3 className="lead-modal-title">
+                    You&apos;re on the VIP list{submittedLead?.name ? `, ${submittedLead.name}` : ""}!
+                  </h3>
+                  <p className="lead-modal-sub" style={{ marginBottom: "20px" }}>
+                    Your request has been captured directly into AlternateCRM. Our sales team is
+                    actively dogfooding our own platform to review your workspace setup.
+                  </p>
+
+                  <div className="step2-options-grid">
+                    {/* Option 1: VIP Calendly Booking with Pre-Filled Info */}
+                    <div className="step2-card">
+                      <div className="step2-card-header">
+                        <span className="step2-card-title">Jump to the Front of the Line</span>
+                        <span className="step2-badge">VIP Onboarding</span>
+                      </div>
+                      <p>
+                        Schedule a live 15-minute 1-on-1 walkthrough with our founding engineering team
+                        to tailor Conversation OS to your workflow.
+                      </p>
+                      <a
+                        href={`https://calendly.com/alternatecrm/30min?name=${encodeURIComponent(
+                          submittedLead?.name || ""
+                        )}&email=${encodeURIComponent(
+                          submittedLead?.email || ""
+                        )}&hide_landing_page_details=1&hide_gdpr_banner=1&background_color=111619&text_color=f4f5f0&primary_color=d3fa76`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-primary"
+                        style={{ width: "100%", textAlign: "center", justifyContent: "center" }}
+                      >
+                        Book VIP 15-Min Slot on Calendly ↗
+                      </a>
+                    </div>
+
+                    {/* Option 2: Live Stateful Sandbox */}
+                    <div className="step2-card">
+                      <div className="step2-card-header">
+                        <span className="step2-card-title">Interactive Live Sandbox</span>
+                        <span className="step2-badge" style={{ color: "#38bdf8", borderColor: "rgba(56, 189, 248, 0.3)", background: "rgba(56, 189, 248, 0.1)" }}>
+                          Instant Demo
+                        </span>
+                      </div>
+                      <p>
+                        No need to wait: Test drive our fully interactive client-side sandbox right now
+                        with pre-seeded enterprise pipeline telemetry and simulated live calls.
+                      </p>
+                      <a
+                        href={SANDBOX_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-secondary"
+                        style={{ width: "100%", textAlign: "center", justifyContent: "center" }}
+                      >
+                        ⚡ Launch Interactive Sandbox (No Login Required)
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

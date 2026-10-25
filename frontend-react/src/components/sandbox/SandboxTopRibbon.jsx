@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { SandboxStore, PERSONAS } from '../../services/sandboxStore';
 import { 
   Sparkles, RotateCcw, PhoneCall, Moon, Sun, 
-  User, CheckCircle2, X, Volume2, Mic, PhoneOff
+  User, CheckCircle2, X, Volume2, Mic, PhoneOff, Menu
 } from 'lucide-react';
 
-export default function SandboxTopRibbon({ darkMode, setDarkMode }) {
+export default function SandboxTopRibbon({ darkMode, setDarkMode, onToggleMenu }) {
   const [activePersona, setActivePersona] = useState(() => SandboxStore.getActivePersona());
   const [isDialerOpen, setIsDialerOpen] = useState(false);
   const [callState, setCallState] = useState('idle'); // idle, ringing, connected, ended
@@ -79,11 +79,21 @@ export default function SandboxTopRibbon({ darkMode, setDarkMode }) {
 
       {/* Ribbon Bar */}
       <div className="h-11 bg-slate-950 border-b border-indigo-950/60 px-4 flex items-center justify-between text-xs text-slate-300 select-none z-40">
-        {/* Left: Sandbox Badge */}
-        <div className="flex items-center gap-3">
+        {/* Left: Sandbox Badge & Mobile Menu */}
+        <div className="flex items-center gap-2.5">
+          {onToggleMenu && (
+            <button
+              onClick={onToggleMenu}
+              className="lg:hidden p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white transition-colors"
+              aria-label="Toggle navigation"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+          )}
           <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 font-semibold">
             <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-            <span>Interactive Sandbox Demo</span>
+            <span className="hidden sm:inline">Interactive Sandbox Demo</span>
+            <span className="sm:hidden">Sandbox</span>
           </div>
           <span className="hidden md:inline text-slate-500 font-mono">
             Zero-Config Client-Side Engine

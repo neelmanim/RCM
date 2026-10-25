@@ -4,6 +4,7 @@ import SandboxTopRibbon from '../sandbox/SandboxTopRibbon';
 import AppSidebar from './AppSidebar';
 
 export default function AppShell() {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('crm_dark_mode');
     return saved !== null ? saved === 'true' : true; // Dark mode by default
@@ -21,11 +22,18 @@ export default function AppShell() {
   return (
     <div className={`min-h-screen flex flex-col font-sans ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       {/* 1. Persistent 1-Click Interactive Sandbox Ribbon */}
-      <SandboxTopRibbon darkMode={darkMode} setDarkMode={setDarkMode} />
+      <SandboxTopRibbon
+        darkMode={darkMode}
+        setDarkMode={setDarkMode}
+        onToggleMenu={() => setIsMobileMenuOpen(prev => !prev)}
+      />
 
       {/* 2. Main App Body (Sidebar + Content) */}
-      <div className="flex-1 flex overflow-hidden">
-        <AppSidebar />
+      <div className="flex-1 flex overflow-hidden relative">
+        <AppSidebar
+          isMobileMenuOpen={isMobileMenuOpen}
+          onClose={() => setIsMobileMenuOpen(false)}
+        />
         <main className="flex-1 overflow-y-auto bg-slate-100/50 dark:bg-slate-900/30">
           <Outlet />
         </main>
