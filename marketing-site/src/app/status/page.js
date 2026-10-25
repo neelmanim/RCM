@@ -2,6 +2,12 @@
 
 import { useEffect, useState } from "react";
 
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE ||
+  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "http://127.0.0.1:8000"
+    : "https://api.alternatecrm.com");
+
 export default function Status() {
   const [latency, setLatency] = useState(null);
   const [healthStatus, setHealthStatus] = useState("checking"); // checking, operational, degraded
@@ -10,7 +16,7 @@ export default function Status() {
     const checkHealth = async () => {
       const start = performance.now();
       try {
-        const res = await fetch("http://localhost:8000/api/public/health", {
+        const res = await fetch(`${API_BASE}/api/public/health`, {
           cache: "no-store",
           signal: AbortSignal.timeout(4000)
         });

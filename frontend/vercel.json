@@ -2,6 +2,7 @@
   "cleanUrls": true,
   "rewrites": [
     { "source": "/sandbox", "destination": "/sandbox.html" },
-    { "source": "/demo", "destination": "/sandbox.html" }
+    { "source": "/demo", "destination": "/sandbox.html" },
+    { "source": "/api/:path*", "destination": "https://api.alternatecrm.com/api/:path*" }
   ]
 }
