@@ -316,10 +316,6 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
   // /filters now returns empty for an AE anyway) is hidden.
   const isSelfScoped = userRole === 'AE' || userRole === 'SDR';
 
-  useEffect(() => {
-    try { window.mixpanel?.track('Analytics Hub Viewed', { role: userRole, self_scoped: isSelfScoped }); } catch { /* analytics is best-effort */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Filter state — these are the DRAFT values the wizard widgets edit.
   // Nothing is fetched until "Apply Filters" commits them (see `applied` below).

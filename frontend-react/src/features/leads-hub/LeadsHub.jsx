@@ -301,14 +301,6 @@ export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
                     </button>
                   </>
                 )}
-                {onSwitchToClassic && (
-                  <>
-                    {' · '}
-                    <button type="button" data-tour="switch-classic" onClick={onSwitchToClassic} className="text-slate-500 underline underline-offset-2">
-                      Switch to classic view
-                    </button>
-                  </>
-                )}
               </div>
             </div>
             <div className="flex items-center gap-2.5">

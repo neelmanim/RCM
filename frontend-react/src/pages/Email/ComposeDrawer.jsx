@@ -49,12 +49,6 @@ export function ComposeDrawer({ lead, token, apiBase, onSent, onClose }) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.detail || `Send failed (${resp.status})`);
       }
-      try {
-        window.mixpanel?.track('Email Sent', {
-          has_cc: !!cc.trim(), has_bcc: !!bcc.trim(),
-          has_attachments: attachments.length > 0, is_reply: false,
-        });
-      } catch { /* analytics is best-effort */ }
       setSubject('');
       setBody('');
       if (bodyRef.current) bodyRef.current.innerHTML = '';

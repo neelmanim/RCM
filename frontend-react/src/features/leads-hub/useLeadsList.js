@@ -40,8 +40,8 @@ function loadViewState() {
   }
 }
 
-function track(event, props) {
-  try { window.mixpanel?.track(event, props); } catch { /* analytics is best-effort */ }
+function track(_event, _props) {
+  /* mixpanel tracking removed */
 }
 
 // Tags/SDRs/companies/call-outcomes are admin-configured reference data that

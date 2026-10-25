@@ -16,19 +16,17 @@ import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import './activity-monitor-tailwind.css';
 import { registerHub } from './hub-entry';
 
-function renderCrashFallback(props) {
+function renderCrashFallback() {
   return (
-    <div className="p-8 text-center text-sm text-slate-500">
+    <div className="p-8 text-center text-sm text-slate-400">
       <p className="mb-2">Something went wrong loading Activity Monitor.</p>
-      {props.onSwitchToClassic && (
-        <button
-          type="button"
-          onClick={props.onSwitchToClassic}
-          className="text-blue-600 underline underline-offset-2 font-semibold"
-        >
-          Switch to classic view
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="text-[#C9FF68] underline underline-offset-2 font-semibold"
+      >
+        Reload page
+      </button>
     </div>
   );
 }

@@ -69,12 +69,6 @@ export function ReplyComposer({ thread, token, apiBase, onSent }) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.detail || `Send failed (${resp.status})`);
       }
-      try {
-        window.mixpanel?.track('Email Sent', {
-          has_cc: !!cc.trim(), has_bcc: !!bcc.trim(),
-          has_attachments: attachments.length > 0, is_reply: true,
-        });
-      } catch { /* analytics is best-effort */ }
       // Success: collapse and clear
       setBody('');
       if (textareaRef.current) textareaRef.current.innerHTML = '';

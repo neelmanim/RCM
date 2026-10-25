@@ -1,4 +1,4 @@
-# Render static site cache headers
+# Static site cache headers
 # JS/CSS files: no CDN cache so updates deploy instantly
 
 /js/*

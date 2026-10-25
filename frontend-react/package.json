@@ -49,7 +49,6 @@
     "axios": "^1.15.0",
     "chart.js": "^4.5.1",
     "lucide-react": "^1.8.0",
-    "mixpanel-browser": "^2.80.0",
     "react": "^19.2.4",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.2.4",

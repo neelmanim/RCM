@@ -37,7 +37,7 @@ export async function renderLeaderboard(container) {
     const rangeLabel = currentRange === 7 ? '7 Days' : currentRange === 30 ? '30 Days' : currentRange === 90 ? '90 Days' : 'All Time';
     const showTabs = isAdmin; // Only admins see both tabs
 
-    // ── Mixpanel: Leaderboard Viewed
+    // ── Leaderboard Viewed
     mp.track('Leaderboard Viewed', {
         period:      rangeLabel,
         tab:         currentTab,

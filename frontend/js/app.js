@@ -38,7 +38,6 @@ import { renderSdrSettings } from './views/sdr_settings.js';
 import { fetchPendingTasks, snoozeTask, dismissTask, fetchPendingReplies, dismissReply } from './api.js';
 import { runAiQuery, injectSmartAnalyticsStyles } from './views/smart_analytics.js';
 import { renderCallMonitor } from './views/call_monitor.js';
-import { renderPlayground } from './views/playground.js';
 import { initErrorReporter, flushPendingErrors } from './error_reporter.js';
 import { mp } from './mp.js';
 
@@ -609,7 +608,6 @@ async function loadView(viewName, extra, backView) {
             token:    localStorage.getItem('crm_token'),
             userRole: currentUser?.role,
             apiBase:  API_BASE,
-            onSwitchToClassic: () => renderPods(vc),
             // Hands off to Leads Hub pre-filtered to this rep by seeding its
             // sessionStorage view state — reuses the existing filter/fetch
             // machinery instead of building a second activity view.
@@ -1052,7 +1050,6 @@ async function loadView(viewName, extra, backView) {
             token:    localStorage.getItem('crm_token'),
             userRole: currentUser?.role,
             apiBase:  API_BASE,
-            onSwitchToClassic: () => renderCallMonitor(vc),
             onOpenLead: (leadId) => loadView('lead-detail', leadId),
         };
 

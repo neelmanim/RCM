@@ -134,7 +134,6 @@ export function JourneyList({ onOpen }) {
     setCreating(true);
     try {
       const created = await SalesJourneyService.create(newName.trim(), newPodId || null);
-      try { window.mixpanel?.track('Cadence Created', { journey_id: created.id }); } catch {}
       setShowCreate(false);
       setNewName('');
       setNewPodId('');
@@ -228,9 +227,6 @@ export function JourneyList({ onOpen }) {
       );
       const failedIds = deleteTarget.ids.filter((_, i) => results[i].status === 'rejected');
       const succeededCount = deleteTarget.ids.length - failedIds.length;
-      if (succeededCount > 0) {
-        try { window.mixpanel?.track('Cadence Deleted', { count: succeededCount, total_active_enrollments_exited: totalActiveEnrollments }); } catch {}
-      }
       await load();
       if (failedIds.length > 0) {
         setError(`Failed to delete ${failedIds.length} cadence${failedIds.length > 1 ? 's' : ''} — try again.`);

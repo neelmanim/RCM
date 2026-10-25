@@ -222,7 +222,6 @@ export function TodayStatsPanel({ onTotalChange }) {
                   value={outcomeFilter}
                   onChange={v => {
                     setOutcomeFilter(v);
-                    try { window.mixpanel?.track('Today Calls Filtered', { outcome: v || 'all' }); } catch {}
                   }}
                   options={[{ value: '', label: 'All outcomes' }, ...outcomeOptions.map(o => ({ value: o, label: o }))]}
                   placeholder="All outcomes"

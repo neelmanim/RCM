@@ -103,7 +103,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
         return;
     }
 
-    // ── Mixpanel: Lead Viewed ─────────────────────────────────────────────────
+    // ── Lead Viewed ─────────────────────────────────────────────────
     mp.track('Lead Viewed', {
         lead_id: lead.id,
         company: lead.company || '',
@@ -1174,7 +1174,7 @@ export async function renderLeadDetail(container, leadId, openCallModal, loadVie
             tab.classList.add('active');
             const panel = document.getElementById(`tab-${target}`);
             if (panel) panel.classList.add('active');
-            // ── Mixpanel: Lead Tab Switched
+            // ── Lead Tab Switched
             mp.track('Lead Tab Switched', { lead_id: leadId, tab: target, role: currentUser?.role || '' });
             // Lazy-load calls on first visit
             if (target === 'calls' && !callsLoaded) {

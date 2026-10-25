@@ -20,19 +20,17 @@ import { registerHub } from './hub-entry';
 // the whole content area blank with no way back — this fallback keeps the
 // existing "Switch to classic view" escape hatch reachable even when the
 // beta view itself has thrown.
-function renderCrashFallback(props) {
+function renderCrashFallback() {
   return (
-    <div className="p-8 text-center text-sm text-slate-500">
-      <p className="mb-2">Something went wrong loading the redesigned Leads view.</p>
-      {props.onSwitchToClassic && (
-        <button
-          type="button"
-          onClick={props.onSwitchToClassic}
-          className="text-blue-600 underline underline-offset-2 font-semibold"
-        >
-          Switch to classic view
-        </button>
-      )}
+    <div className="p-8 text-center text-sm text-slate-400">
+      <p className="mb-2">Something went wrong loading Leads.</p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="text-[#C9FF68] underline underline-offset-2 font-semibold"
+      >
+        Reload page
+      </button>
     </div>
   );
 }

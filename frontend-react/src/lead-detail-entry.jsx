@@ -22,19 +22,17 @@ import { registerHub } from './hub-entry';
 
 // A render-time crash left the whole content area blank with no way back on
 // other hubs (see leads-entry.jsx's RCA) — same fallback here.
-function renderCrashFallback(props) {
+function renderCrashFallback() {
   return (
-    <div className="p-8 text-center text-sm text-slate-500">
-      <p className="mb-2">Something went wrong loading the redesigned Lead Details view.</p>
-      {props.onSwitchToClassic && (
-        <button
-          type="button"
-          onClick={props.onSwitchToClassic}
-          className="text-blue-600 underline underline-offset-2 font-semibold"
-        >
-          Switch to classic view
-        </button>
-      )}
+    <div className="p-8 text-center text-sm text-slate-400">
+      <p className="mb-2">Something went wrong loading Lead Details.</p>
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="text-[#C9FF68] underline underline-offset-2 font-semibold"
+      >
+        Reload page
+      </button>
     </div>
   );
 }

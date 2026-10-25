@@ -389,11 +389,6 @@ export function LeadDetailHub({
             ? "This lead doesn't exist, or you don't have access to it."
             : "⚠️ Couldn't load this lead."}
         </p>
-        {onSwitchToClassic && (
-          <button type="button" onClick={onSwitchToClassic} className="text-slate-500 underline underline-offset-2 text-sm">
-            Switch to classic view
-          </button>
-        )}
       </div>
     );
   }
@@ -404,14 +399,6 @@ export function LeadDetailHub({
 
   return (
     <div className="leaddetailhub max-w-[1400px] mx-auto px-4 py-6 space-y-4">
-      {onSwitchToClassic && (
-        <div className="text-right">
-          <button type="button" onClick={onSwitchToClassic} className="text-xs text-slate-400 underline underline-offset-2">
-            Switch to classic view
-          </button>
-        </div>
-      )}
-
       <LeadHeader
         lead={lead}
         navPosition={navPosition}

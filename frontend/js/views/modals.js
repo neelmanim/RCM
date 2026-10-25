@@ -587,7 +587,7 @@ export async function openCallModal(leadId, leadName, phone, lead = {}, dialerCa
     // EC-1.4: register keyboard shortcuts after modal is rendered
     _registerKeyboardShortcuts();
 
-    // ── Mixpanel: Call Modal Opened ───────────────────────────────────────
+    // ── Call Modal Opened ───────────────────────────────────────
     mp.track('Call Modal Opened', {
         lead_id:  leadId,
         source:   dialerCallId ? 'dialer' : 'manual',

@@ -507,53 +507,5 @@
         console.info('[DialerMachine] v1.0.0 ready — state: IDLE');
     }
 
-    // ── Mixpanel: call lifecycle analytics ────────────────────────────────
-    // Hooks onto the existing _emit('transition') bus — zero coupling to call logic.
-    // Every state transition is synchronous, so we capture context at fire time.
-    global.DialerMachine.on('transition', function (data) {
-        try {
-            if (!global.mixpanel) return;
-            const { from, to, context: ctx } = data;
-            const user = global.__CRM_CURRENT_USER__ || {};
-            const base = {
-                lead_id:   ctx.leadId   || null,
-                lead_name: ctx.leadName || null,
-                call_mode: ctx.callMode || null,
-                provider:  ctx.provider || null,
-                role:      user.role    || null,
-                pod_id:    user.pod_id  || null,
-            };
-
-            // Call Initiated: any → INITIATING (user pressed Call, backend in-flight)
-            if (to === 'INITIATING') {
-                global.mixpanel.track('Call Initiated', base);
-            }
-
-            // Call Connected: RINGING → CONNECTED (call answered)
-            if (from === 'RINGING' && to === 'CONNECTED') {
-                global.mixpanel.track('Call Connected', base);
-            }
-
-            // Call Ended: anything → ENDED
-            if (to === 'ENDED') {
-                const isMissed = from === 'RINGING' || !!ctx.error;
-                if (isMissed) {
-                    // 45s Guard3 timeout or declined before answer
-                    global.mixpanel.track('Call Missed', { ...base, reason: ctx.error || 'no_answer' });
-                } else {
-                    global.mixpanel.track('Call Ended', {
-                        ...base,
-                        duration_sec: ctx.duration || 0,
-                        from_state:   from,
-                    });
-                }
-            }
-
-            // Call Failed: INITIATING → FAILED (backend error)
-            if (to === 'FAILED') {
-                global.mixpanel.track('Call Failed', { ...base, error: ctx.error || 'unknown' });
-            }
-        } catch (e) { /* silent — never interrupt the machine */ }
-    });
 
 })(window);
