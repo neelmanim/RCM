@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { SandboxStore } from '../services/sandboxStore';
+import { useModules } from '../core/modules/useModules';
 import { Link } from 'react-router-dom';
 import {
   TrendingUp, PhoneCall, Calendar, Users,
   ArrowUpRight, ChevronRight, BarChart3,
-  Layers, ShieldCheck, Zap
+  ShieldCheck, Zap, Sparkles, RefreshCw
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [leads, setLeads] = useState(() => SandboxStore.getLeads());
+  const { isInstalled } = useModules();
 
   useEffect(() => {
     const handleUpdate = () => setLeads(SandboxStore.getLeads());
@@ -29,37 +31,29 @@ export default function DashboardPage() {
     {
       label: 'Estimated deal value',
       value: `$${(totalArr / 1000000).toFixed(2)}M`,
-      rawValue: `$${totalArr.toLocaleString()}`,
       change: '+18.4% pipeline velocity',
       icon: TrendingUp,
-      accent: 'emerald',
       iconWrap: 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20'
     },
     {
       label: 'Tracked accounts',
       value: leads.length.toString(),
-      rawValue: `${leads.length} accounts`,
       change: 'Active in CRM',
       icon: Users,
-      accent: 'indigo',
       iconWrap: 'bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20'
     },
     {
       label: 'Meetings Booked',
       value: String(leads.filter(lead => lead.stage === 'Meeting Booked').length),
-      rawValue: 'Meeting stage',
       change: 'In current sprint',
       icon: Calendar,
-      accent: 'violet',
       iconWrap: 'bg-violet-500/10 text-violet-500 dark:text-violet-400 border border-violet-500/20'
     },
     {
       label: 'Total Outbound Dials',
       value: String(leads.reduce((count, lead) => count + (lead.call_logs?.length ?? 0), 0)),
-      rawValue: 'Dialer logs',
       change: 'Sub-200ms latency',
       icon: PhoneCall,
-      accent: 'cyan',
       iconWrap: 'bg-cyan-500/10 text-cyan-500 dark:text-cyan-400 border border-cyan-500/20'
     },
   ];
@@ -77,7 +71,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Pipeline distribution calculation
   const stageStats = [
     { label: 'Meeting Booked', count: leads.filter(l => l.stage === 'Meeting Booked').length, color: 'bg-indigo-500' },
     { label: 'Proposal Sent', count: leads.filter(l => l.stage === 'Proposal Sent').length, color: 'bg-sky-500' },
@@ -190,7 +183,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 sm:gap-3 flex-wrap self-end sm:self-auto justify-end">
+                <div className="flex items-center gap-3 self-end sm:self-auto">
                   <span className="text-xs font-extrabold text-slate-900 dark:text-white font-mono">
                     {lead.arr}
                   </span>
@@ -206,58 +199,102 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Right Column: Pipeline Analytics Telemetry & Quick Action */}
+        {/* Right Column: Dynamic Modules & Telemetry */}
         <div className="space-y-6">
-          {/* Real-time Pipeline Velocity Telemetry Card */}
-          <div className="crm-panel p-5 space-y-4 shadow-sm dark:shadow-[0_4px_25px_rgba(0,0,0,0.3)]">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/5">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 dark:text-indigo-400">
-                  <BarChart3 className="w-4 h-4" />
+          {/* Module 1: Live Speech-to-Intent AI HUD */}
+          {isInstalled('speech-ai') ? (
+            <div className="crm-panel p-5 space-y-3.5 border border-violet-500/30 shadow-sm dark:shadow-[0_4px_25px_rgba(0,0,0,0.3)] bg-gradient-to-br from-violet-500/[0.03] to-indigo-500/[0.03]">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-violet-500/10 text-violet-400">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Speech-to-Intent AI
+                  </h4>
                 </div>
-                <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                  Pipeline Telemetry
-                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                  Whisper Active
+                </span>
               </div>
-              <Link to="/pipeline" className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline">
-                Inspect →
-              </Link>
-            </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Deal distribution across active stages ($1.42M pipeline volume).
-            </p>
-
-            {/* Stage Breakdown Bars */}
-            <div className="space-y-2.5 pt-1">
-              {stageStats.map((st, i) => (
-                <div key={i} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-600 dark:text-slate-300">{st.label}</span>
-                    <span className="font-bold text-slate-900 dark:text-white font-mono">{st.count} deal{st.count === 1 ? '' : 's'}</span>
+              <div className="space-y-2 text-xs">
+                <div className="p-2.5 rounded-xl bg-slate-100/60 dark:bg-slate-900/60 border border-slate-200 dark:border-white/5 space-y-1">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Last Detected Intent
                   </div>
-                  <div className="w-full h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${st.color} rounded-full transition-all duration-500`}
-                      style={{ width: `${Math.max((st.count / leads.length) * 100, 10)}%` }}
-                    />
+                  <div className="font-medium text-slate-800 dark:text-slate-200 italic">
+                    “Budget approved for multi-seat Q4 deployment across 80 reps”
                   </div>
                 </div>
-              ))}
-            </div>
 
-            <div className="pt-2">
-              <Link
-                to="/pipeline"
-                className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors flex items-center justify-center gap-1.5"
-              >
-                <span>View Full Pipeline Kanban</span>
-                <ChevronRight className="w-3.5 h-3.5" />
+                <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-start gap-2 text-indigo-700 dark:text-indigo-300">
+                  <span className="font-bold text-[11px]">⚡ Battlecard:</span>
+                  <span className="text-[11px]">Enterprise Security & SOC2 Type II Architecture</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                <span>Latency: 28ms</span>
+                <span className="text-emerald-500 font-semibold flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Auto-synced
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="crm-panel p-5 space-y-2 border border-dashed border-slate-200 dark:border-white/10 text-center">
+              <Sparkles className="w-6 h-6 text-slate-400 mx-auto mb-1" />
+              <div className="text-xs font-bold text-slate-800 dark:text-white">Speech-to-Intent AI Inactive</div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Enable live call coaching and real-time objection battlecards.
+              </p>
+              <Link to="/app-store" className="inline-block text-xs font-bold text-indigo-500 hover:underline pt-1">
+                Activate in Module Catalog →
               </Link>
             </div>
-          </div>
+          )}
 
-          {/* Connected Voice & WebRTC Highlight */}
+          {/* Module 2: Pipeline Velocity Telemetry */}
+          {isInstalled('analytics') && (
+            <div className="crm-panel p-5 space-y-4 shadow-sm dark:shadow-[0_4px_25px_rgba(0,0,0,0.3)]">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-white/5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 dark:text-indigo-400">
+                    <BarChart3 className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Pipeline Velocity
+                  </h4>
+                </div>
+                <Link to="/analytics" className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline">
+                  Full Report →
+                </Link>
+              </div>
+
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Deal distribution across active stages ($1.42M pipeline volume).
+              </p>
+
+              <div className="space-y-2.5 pt-1">
+                {stageStats.map((st, i) => (
+                  <div key={i} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-slate-600 dark:text-slate-300">{st.label}</span>
+                      <span className="font-bold text-slate-900 dark:text-white font-mono">{st.count} deal{st.count === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${st.color} rounded-full transition-all duration-500`}
+                        style={{ width: `${Math.max((st.count / leads.length) * 100, 10)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Power Dialer Quick Call Action Card */}
           <div className="crm-panel p-5 space-y-3 bg-gradient-to-br from-indigo-500/[0.04] to-violet-500/[0.04] border border-indigo-500/20">
             <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
               <Zap className="w-4 h-4" />

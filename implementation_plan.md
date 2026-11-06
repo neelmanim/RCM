@@ -1,3 +1,7 @@
+# Active plan: live audit remediation
+
+User authorized fixes on 6 November 2026. Follow [audit_fix_plan.md](audit_fix_plan.md), including graph impact, scoped changes and verification. Previous plan retained below for context.
+
 # Alternate CRM cleanup and React cutover
 
 ## 0. Establish the baseline

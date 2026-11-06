@@ -4,9 +4,9 @@ export const INITIAL_LEADS = [
   {
     id: 101,
     name: 'Sarah Jenkins',
-    email: 'sjenkins@stripe.com',
-    phone: '+1 (415) 890-2341',
-    company: 'Stripe',
+    email: 'sarah@northstar.example',
+    phone: '+1 (202) 555-0101',
+    company: 'Northstar Labs',
     title: 'VP of Revenue Operations',
     stage: 'Meeting Booked',
     source: 'Inbound Enterprise Demo',
@@ -26,9 +26,9 @@ export const INITIAL_LEADS = [
   {
     id: 102,
     name: 'Marcus Vance',
-    email: 'm.vance@figma.com',
-    phone: '+1 (415) 762-9912',
-    company: 'Figma',
+    email: 'marcus@canvas.example',
+    phone: '+1 (202) 555-0102',
+    company: 'Canvas Studio',
     title: 'Head of Growth Sales',
     stage: 'Proposal Sent',
     source: 'Outbound Multichannel',
@@ -48,9 +48,9 @@ export const INITIAL_LEADS = [
   {
     id: 103,
     name: 'David O\'Connor',
-    email: 'david.oc@notion.so',
-    phone: '+1 (415) 554-1290',
-    company: 'Notion',
+    email: 'david@atlas.example',
+    phone: '+1 (202) 555-0103',
+    company: 'Atlas Works',
     title: 'Director of Sales Strategy',
     stage: 'Contacted',
     source: 'Executive Referral',
@@ -68,9 +68,9 @@ export const INITIAL_LEADS = [
   {
     id: 104,
     name: 'Elena Rostova',
-    email: 'elena@ramp.com',
-    phone: '+1 (415) 441-8921',
-    company: 'Ramp',
+    email: 'elena@harbor.example',
+    phone: '+1 (202) 555-0104',
+    company: 'Harbor Finance',
     title: 'VP of Commercial Sales',
     stage: 'Closed Won',
     source: 'Outbound Sequence',
@@ -90,9 +90,9 @@ export const INITIAL_LEADS = [
   {
     id: 105,
     name: 'Kavita Patel',
-    email: 'k.patel@vercel.com',
-    phone: '+1 (415) 677-3320',
-    company: 'Vercel',
+    email: 'kavita@summit.example',
+    phone: '+1 (202) 555-0105',
+    company: 'Summit Cloud',
     title: 'Director of Inside Sales',
     stage: 'New Inbound',
     source: 'Product Tour Sign-up',
@@ -110,9 +110,9 @@ export const INITIAL_LEADS = [
   {
     id: 106,
     name: 'Lucas Meyer',
-    email: 'lucas@datadog.com',
-    phone: '+1 (415) 912-4411',
-    company: 'Datadog',
+    email: 'lucas@beacon.example',
+    phone: '+1 (202) 555-0106',
+    company: 'Beacon Systems',
     title: 'Sales Operations Lead',
     stage: 'Meeting Booked',
     source: 'Webinar Attendee',
@@ -143,14 +143,17 @@ export const PERSONAS = [
   { id: 'david', name: 'David Kim', role: 'CSM & Retention Lead', avatar: 'DK', leadsCount: 18, dealsValue: '$620k' }
 ];
 
-const LEADS_STORAGE_KEY = 'crm_sandbox_leads';
+const LEADS_STORAGE_KEY = 'crm_sandbox_leads_v2';
 const PERSONA_STORAGE_KEY = 'crm_sandbox_persona';
 
 export class SandboxStore {
   static getLeads() {
     try {
       const stored = sessionStorage.getItem(LEADS_STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const leads = JSON.parse(stored);
+        if (Array.isArray(leads)) return leads;
+      }
     } catch (e) {
       console.warn('Sandbox store read error:', e);
     }
@@ -175,6 +178,7 @@ export class SandboxStore {
   }
 
   static moveLeadStage(id, newStage) {
+    if (!PIPELINE_STAGES.includes(newStage)) return null;
     return this.updateLead(id, {
       stage: newStage,
       last_activity: `Moved to ${newStage} · Just now`
@@ -227,3 +231,30 @@ export class SandboxStore {
     window.dispatchEvent(new CustomEvent('crm:persona-changed', { detail: personaId }));
   }
 }
+
+// All demo screens use the same totals, including unfamiliar imported stages.
+export function summarizePipeline(leads = []) {
+  const rows = Array.isArray(leads) ? leads.filter(lead => lead && typeof lead === 'object') : [];
+  const stageNames = [...PIPELINE_STAGES];
+  for (const lead of rows) {
+    const stage = lead.stage || 'Unassigned';
+    if (!stageNames.includes(stage)) stageNames.push(stage);
+  }
+  const amount = lead => {
+    const value = Number(String(lead.arr ?? 0).replace(/[$,\s]/g, ''));
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+  const stages = stageNames.map(label => {
+    const records = rows.filter(lead => (lead.stage || 'Unassigned') === label);
+    return { label, count: records.length, value: records.reduce((sum, lead) => sum + amount(lead), 0), percent: rows.length ? records.length / rows.length * 100 : 0 };
+  });
+  const total = stages.reduce((sum, stage) => sum + stage.value, 0);
+  return {
+    total, count: rows.length, average: rows.length ? total / rows.length : 0, stages,
+    meetings: rows.filter(lead => lead.stage === 'Meeting Booked').length,
+    calls: rows.reduce((sum, lead) => sum + (Array.isArray(lead.call_logs) ? lead.call_logs.length : 0), 0),
+    won: rows.filter(lead => lead.stage === 'Closed Won').length,
+  };
+}
+
+export const formatCurrency = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);

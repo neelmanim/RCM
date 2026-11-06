@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Alternate CRM | The Autonomous Sales Conversation OS";
+export const alt = "Alternate CRM | Customers, notes, and pipeline";
 export const size = {
   width: 1200,
   height: 630,
@@ -67,7 +67,7 @@ export default async function Image() {
               textTransform: "uppercase",
             }}
           >
-            CONVERSATION OS
+            MODULAR CRM
           </span>
         </div>
 
@@ -89,7 +89,7 @@ export default async function Image() {
               color: "#ffffff",
             }}
           >
-            Kill the static CRM.
+            Keep your customers close.
             <br />
             <span
               style={{
@@ -98,7 +98,7 @@ export default async function Image() {
                 color: "transparent",
               }}
             >
-              Accelerate your pipeline.
+              Move the next deal forward.
             </span>
           </h1>
           <p
@@ -109,8 +109,8 @@ export default async function Image() {
               margin: 0,
             }}
           >
-            Sub-200ms WebRTC power dialer, live speech-to-intent intelligence, and
-            autonomous multi-touch cadences.
+            Customer records, notes, and pipeline in one workspace.
+            Explore the sample CRM and planned modules.
           </p>
         </div>
 
@@ -126,9 +126,9 @@ export default async function Image() {
         >
           <span>🔒 Zero sign-in required</span>
           <span>•</span>
-          <span>⚡ Pre-seeded enterprise pipeline</span>
+          <span>Fictional sample data</span>
           <span>•</span>
-          <span>🛡️ SOC2 Type II compliance ready</span>
+          <span>Calls are simulated</span>
         </div>
       </div>
     ),

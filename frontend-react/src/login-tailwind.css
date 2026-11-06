@@ -11,22 +11,32 @@
 @tailwind components;
 @tailwind utilities;
 
-@keyframes login-float-spark {
-  0%   { opacity: 0; transform: translateY(16px) scale(0.5); }
-  20%  { opacity: 0.8; }
-  50%  { opacity: 0.45; transform: translateY(-32px) scale(1); }
-  80%  { opacity: 0.6; }
-  100% { opacity: 0; transform: translateY(-64px) scale(0.3); }
+.login-page a:focus-visible,
+.login-page [tabindex="-1"]:focus-visible {
+  outline: 3px solid #d3fa76;
+  outline-offset: 4px;
 }
 
-@keyframes login-orbit-spin {
-  to { transform: rotate(360deg); }
+.login-skip-link {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: #d3fa76;
+  color: #06080c;
+  transform: translateY(-200%);
+}
+
+.login-skip-link:focus {
+  transform: translateY(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .login-spark,
-  .login-loader-ring,
-  .login-loader-spark {
+  .login-page * {
     animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

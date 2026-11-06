@@ -7,6 +7,7 @@ import LeadsPage from './pages/LeadsPage';
 import LeadDetailPage from './pages/LeadDetailPage';
 import PipelinePage from './pages/PipelinePage';
 import PipelineAnalyticsPage from './pages/PipelineAnalyticsPage';
+import ModulePreviewPage from './pages/ModulePreviewPage';
 import AppStoreView from './features/app-store/AppStoreView';
 
 // HashRouter is preferred for static CDN / preview compatibility so deep links work without server rewrite rules
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="/lead/:id" element={<LeadDetailPage />} />
             <Route path="/pipeline" element={<PipelinePage />} />
             <Route path="/app-store" element={<AppStoreView />} />
+            <Route path="/modules/:moduleId" element={<ModulePreviewPage />} />
             <Route path="/analytics" element={<PipelineAnalyticsPage />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>

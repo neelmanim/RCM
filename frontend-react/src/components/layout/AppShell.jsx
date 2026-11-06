@@ -20,11 +20,13 @@ export default function AppShell() {
   }, [darkMode]);
 
   return (
-    <div className={`crm-workspace min-h-screen flex flex-col font-sans ${darkMode ? 'dark bg-[#080b11] text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`crm-workspace min-h-screen flex flex-col font-sans ${darkMode ? 'dark bg-[#06080c] text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+      <a href="#workspace-content" onClick={event => { event.preventDefault(); document.getElementById('workspace-content')?.focus(); }} className="crm-skip-link">Skip to workspace</a>
       {/* 1. Persistent 1-Click Interactive Sandbox Ribbon */}
       <SandboxTopRibbon
         darkMode={darkMode}
         setDarkMode={setDarkMode}
+        isMobileMenuOpen={isMobileMenuOpen}
         onToggleMenu={() => setIsMobileMenuOpen(prev => !prev)}
       />
 
@@ -34,7 +36,7 @@ export default function AppShell() {
           isMobileMenuOpen={isMobileMenuOpen}
           onClose={() => setIsMobileMenuOpen(false)}
         />
-        <main id="workspace-content" className="crm-canvas min-w-0 flex-1 overflow-y-auto">
+        <main tabIndex={-1} id="workspace-content" className="crm-canvas min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>

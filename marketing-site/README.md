@@ -1,36 +1,22 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Alternate CRM public site
 
-## Getting Started
+Next.js App Router site for the CRM overview, product guides, service check, and early-access request flow.
 
-First, run the development server:
+## Local verification
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- `npm run lint`
+- `npm run build` (default Turbopack)
+- `npm run build -- --webpack` when the local Windows sandbox cannot start Turbopack CSS workers
+- `npm run dev -- --port 4176`
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+- `ALTERNATE_CRM_API_URL`: server-only API base URL; defaults to `https://api.alternatecrm.com`. Early-access requests forward once to `/api/public/leads/inbound`; service checks use `/api/public/health`. Point this at a controlled local mock for form verification. Do not test submissions against production.
+- `NEXT_PUBLIC_SANDBOX_URL`: public demo destination; defaults to `https://app.alternatecrm.com/sandbox`.
+- `NEXT_PUBLIC_SIGNIN_URL`: private workspace gate; defaults to `https://app.alternatecrm.com/login`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The form uses same-origin `/api/early-access` and shows success only for a successful upstream response containing `success: true`. It does not cache contact details in localStorage. A timeout cannot establish whether the upstream saved a request, and the UI says so. Reopening a successfully submitted form retains the acknowledgement in that browser view to avoid accidental resubmission; reloading begins a new request.
 
-## Learn More
+`?request-access=1` opens the native request dialog on any public page. The close action removes this query without changing unrelated query parameters or anchors. Product guides use real `/blog/[slug]` routes with page titles and canonical URLs.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Service checks describe one scoped HTTP request. A failed probe becomes unknown or degraded; no historical uptime, audio-latency, provider-health, customer endorsement, or compliance claim is inferred from it. Communication and integration modules remain simulated or planned in public copy.

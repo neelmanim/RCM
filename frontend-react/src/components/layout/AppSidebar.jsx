@@ -1,4 +1,5 @@
-import React from 'react';
+import { containDialogFocus } from '../containDialogFocus';
+import React, { useEffect, useRef } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useModules } from '../../core/modules/useModules';
 import {
@@ -8,6 +9,20 @@ import {
 
 export default function AppSidebar({ isMobileMenuOpen, onClose }) {
   const { availableModules, installedModules } = useModules();
+  const mobileDialog = useRef(null);
+  useEffect(() => {
+    const dialog = mobileDialog.current;
+    if (isMobileMenuOpen && !dialog.open) dialog.showModal();
+    if (!isMobileMenuOpen && dialog.open) dialog.close();
+  }, [isMobileMenuOpen]);
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const closeOnDesktop = () => {
+      if (desktop.matches && mobileDialog.current?.open) mobileDialog.current.close();
+    };
+    desktop.addEventListener('change', closeOnDesktop);
+    return () => desktop.removeEventListener('change', closeOnDesktop);
+  }, []);
 
   const getSidebarModuleIcon = (id) => {
     switch (id) {
@@ -16,7 +31,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
       case 'sync-engine':
         return <RefreshCw className="w-4 h-4 flex-shrink-0 text-emerald-400" />;
       default:
-        return <BarChart3 className="w-4 h-4 flex-shrink-0 text-indigo-400" />;
+        return <BarChart3 className="w-4 h-4 flex-shrink-0 text-lime-400" />;
     }
   };
 
@@ -31,19 +46,19 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
   };
 
   const sidebarContent = (
-    <div className="flex flex-col justify-between h-full select-none">
+    <nav aria-label="Workspace" className="flex flex-col justify-between h-full">
       {/* Top Section */}
       <div className="p-4 space-y-6">
         {/* Brand Header */}
         <div className="flex items-center justify-between px-2 py-1">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-black text-sm">
+            <div className="w-8 h-8 rounded-lg bg-lime-300 flex items-center justify-center text-slate-950 font-black text-sm">
               A
             </div>
             <div>
               <div className="text-sm font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-1.5">
                 <span>Alternate CRM</span>
-                <span className="px-1.5 py-0.2 text-[10px] font-extrabold uppercase bg-indigo-500/10 text-indigo-500 rounded">OS</span>
+                <span className="px-1.5 text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">Demo</span>
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                 Sales workspace
@@ -53,7 +68,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
           {onClose && (
             <button
               onClick={onClose}
-              className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="lg:hidden p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               aria-label="Close sidebar"
             >
               <X className="w-4 h-4" />
@@ -63,7 +78,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
 
         {/* 1. Core Platform Section */}
         <div className="space-y-1">
-          <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+          <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
             Core CRM
           </div>
           {coreNav.map((item) => {
@@ -76,7 +91,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
                 className={({ isActive }) =>
                   `flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                     isActive
-                      ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                      ? 'bg-lime-300 text-slate-950 shadow-sm shadow-lime-600/20'
                       : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white'
                   }`
                 }
@@ -95,19 +110,19 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
           })}
         </div>
 
-        {/* 2. Dynamic Enabled modules Section */}
+        {/* 2. Dynamic Available modules Section */}
         <div className="space-y-1">
           <div className="px-3 flex items-center justify-between mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              Enabled modules
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+              Available modules
             </span>
-            <span className="text-[10px] font-bold text-indigo-500">
-              {installedModules.length} Active
+            <span className="text-[10px] font-bold text-lime-800">
+              {installedModules.length} enabled
             </span>
           </div>
 
           {installedModules.length === 0 ? (
-            <div className="px-3 py-3 text-[11px] text-slate-400 dark:text-slate-600 italic border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center">
+            <div className="px-3 py-3 text-[11px] text-slate-600 dark:text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center">
               Enable features from the module catalog.
             </div>
           ) : (
@@ -119,7 +134,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
                   className={({ isActive }) =>
                     `flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
                       isActive
-                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                        ? 'bg-lime-300 text-slate-950 shadow-sm shadow-lime-600/20'
                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white'
                     }`
                   }
@@ -128,7 +143,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
                     {getSidebarModuleIcon(module.id)}
                     <span>{module.name}</span>
                   </div>
-                  <ChevronRight className="w-3 h-3 text-slate-400 opacity-60" />
+                  <ChevronRight className="w-3 h-3 text-slate-600 dark:text-slate-400 opacity-60" />
                 </NavLink>
             ))
           )}
@@ -137,9 +152,11 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
 
       {/* Bottom Section: Marketplace & System */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-800/80 space-y-1">
-        <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
+        <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
           Workspace
         </div>
+
+        {availableModules.filter(module => module.status === 'preview').map(module => <NavLink key={module.id} to={module.route} onClick={handleNavClick} className={({isActive}) => `flex items-center justify-between min-h-11 px-3 py-2 rounded-xl text-xs font-semibold ${isActive ? 'bg-lime-300 text-slate-950' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'}`}><span>{module.name}</span><span className="text-[10px] uppercase">Preview</span></NavLink>)}
 
         {/* App Store Navigation with Active Count Badge */}
         <NavLink
@@ -148,8 +165,8 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
           className={({ isActive }) =>
             `flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
               isActive
-                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
-                : 'bg-indigo-50/60 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/80'
+                ? 'bg-lime-300 text-slate-950 shadow-sm shadow-lime-600/20'
+                : 'bg-lime-50/60 dark:bg-lime-950/40 text-lime-800 dark:text-lime-300 hover:bg-lime-100 dark:hover:bg-lime-900/60 border border-lime-200 dark:border-lime-800/80'
             }`
           }
         >
@@ -157,36 +174,33 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
             <Store className="w-4 h-4 flex-shrink-0" />
             <span>Module catalog</span>
           </div>
-          <span className="px-1.5 py-0.5 text-[10px] font-extrabold rounded-md bg-indigo-200 dark:bg-indigo-800 text-indigo-900 dark:text-indigo-200">
+          <span className="px-1.5 py-0.5 text-[10px] font-extrabold rounded-md bg-lime-200 dark:bg-lime-800 text-lime-900 dark:text-lime-200">
             {installedModules.length}/{availableModules.length}
           </span>
         </NavLink>
 
       </div>
-    </div>
+    </nav>
   );
 
   return (
     <>
       {/* Desktop Persistent Sidebar */}
-      <aside className="hidden lg:flex w-60 bg-white dark:bg-[#0b0f17] border-r border-slate-200 dark:border-white/[0.08] flex-col justify-between flex-shrink-0 select-none">
+      <aside aria-label="Workspace sidebar" className="hidden lg:flex w-60 bg-white dark:bg-[#0b0f17] border-r border-slate-200 dark:border-white/[0.08] flex-col justify-between flex-shrink-0 select-none">
         {sidebarContent}
       </aside>
 
-      {/* Mobile Drawer Overlay */}
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
-            onClick={onClose}
-          />
-          {/* Slide-out Sidebar */}
-          <aside className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white dark:bg-[#0b0f17] border-r border-slate-200 dark:border-white/[0.08] flex flex-col justify-between z-10 shadow-2xl overflow-y-auto">
-            {sidebarContent}
-          </aside>
-        </div>
-      )}
+      <dialog
+        onKeyDown={containDialogFocus}
+        ref={mobileDialog}
+        id="workspace-navigation"
+        aria-label="Workspace navigation"
+        onCancel={onClose}
+        onClose={onClose}
+        className="crm-navigation-dialog fixed inset-y-0 left-0 m-0 h-full max-h-none w-72 max-w-[85vw] p-0 bg-white dark:bg-[#0b0f17] text-slate-900 dark:text-white border-r border-slate-200 dark:border-slate-700 overflow-y-auto"
+      >
+        {sidebarContent}
+      </dialog>
     </>
   );
 }

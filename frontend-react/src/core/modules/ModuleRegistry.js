@@ -4,23 +4,25 @@ export const AVAILABLE_MODULES = [
   {
     id: 'analytics',
     name: 'Pipeline analytics',
-    description: 'Real-time deal distribution, stage velocity, and conversion probability across active accounts.',
+    description: 'Account counts and deal values by stage, calculated from your sample pipeline.',
     defaultInstalled: true,
     route: '/analytics',
   },
   {
     id: 'speech-ai',
-    name: 'Live Speech-to-Intent AI',
-    description: 'Streaming Whisper speech intelligence and on-screen objection battlecards during active calls.',
-    defaultInstalled: true,
-    route: '/dashboard',
+    name: 'Conversation intelligence',
+    description: 'Planned transcription and coaching. No audio processing or provider is connected in this demo.',
+    defaultInstalled: false,
+    route: '/modules/speech-ai',
+    status: 'preview',
   },
   {
     id: 'sync-engine',
-    name: 'Universal 2-Way CRM Sync',
-    description: 'Bi-directional sync with Salesforce, HubSpot, and Nylas mailbox with zero manual admin.',
-    defaultInstalled: true,
-    route: '/leads',
+    name: 'CRM connections',
+    description: 'Planned provider connections. This demo does not read or sync external CRM or mailbox data.',
+    defaultInstalled: false,
+    route: '/modules/sync-engine',
+    status: 'preview',
   },
 ];
 
@@ -30,7 +32,10 @@ export class ModuleRegistry {
   static getInstalledIds() {
     try {
       const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const ids = JSON.parse(stored);
+        if (Array.isArray(ids)) return ids.filter(id => AVAILABLE_MODULES.some(module => module.id === id && module.status !== 'preview'));
+      }
     } catch (e) {
       console.warn('Failed to parse installed modules from storage:', e);
     }
@@ -54,6 +59,7 @@ export class ModuleRegistry {
   }
 
   static install(moduleId) {
+    if (!AVAILABLE_MODULES.some(module => module.id === moduleId && module.status !== 'preview')) return;
     const ids = this.getInstalledIds();
     if (!ids.includes(moduleId)) {
       const updated = [...ids, moduleId];
