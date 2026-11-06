@@ -27,7 +27,7 @@ function useStaggered(delayMs, fn) {
       if (!cancelled) setState({ data, loading: false });
     }, delayMs);
     return () => { cancelled = true; clearTimeout(t); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return state;
 }
@@ -94,12 +94,20 @@ export function MeetingsChartCard() {
     chartRef.current?.destroy();
     chartRef.current = new Chart(ctx, {
       type: 'line',
-      data: { labels, datasets: [{ data: values, borderColor: '#C9FF68', borderWidth: 2, backgroundColor: gradient, fill: true, tension: 0.4,
-        pointBackgroundColor: '#090D0E', pointBorderColor: '#C9FF68', pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6 }] },
+      data: {
+        labels, datasets: [{
+          data: values, borderColor: '#C9FF68', borderWidth: 2, backgroundColor: gradient, fill: true, tension: 0.4,
+          pointBackgroundColor: '#090D0E', pointBorderColor: '#C9FF68', pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6
+        }]
+      },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#12181A', titleColor: '#F4F6F2', bodyColor: '#C9FF68', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, cornerRadius: 8, padding: 10,
-          callbacks: { label: (item) => ` ${item.raw} meeting${item.raw !== 1 ? 's' : ''}` } } },
+        plugins: {
+          legend: { display: false }, tooltip: {
+            backgroundColor: '#12181A', titleColor: '#F4F6F2', bodyColor: '#C9FF68', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, cornerRadius: 8, padding: 10,
+            callbacks: { label: (item) => ` ${item.raw} meeting${item.raw !== 1 ? 's' : ''}` }
+          }
+        },
         scales: {
           x: { grid: { display: false }, ticks: { color: '#9BA9A5', font: { size: 10 }, maxRotation: 0 }, border: { display: false } },
           y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9BA9A5', font: { size: 10 }, stepSize: 3 }, border: { display: false } },
@@ -107,7 +115,7 @@ export function MeetingsChartCard() {
       },
     });
     return () => { chartRef.current?.destroy(); chartRef.current = null; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, range, data]);
 
   return (

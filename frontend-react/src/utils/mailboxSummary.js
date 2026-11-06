@@ -6,3 +6,4 @@ export function mailboxSummary(list) {
   const count = `${list.length} mailbox${list.length === 1 ? '' : 'es'} on ${domains} domain${domains === 1 ? '' : 's'}`;
   return perDay ? `${count} · up to ${perDay.toLocaleString()} emails/day` : count;
 }
+
