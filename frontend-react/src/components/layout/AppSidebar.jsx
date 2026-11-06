@@ -1,10 +1,24 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useModules } from '../../core/modules/useModules';
-import { LayoutDashboard, Users, KanbanSquare, Store, BarChart3, ChevronRight, X } from 'lucide-react';
+import {
+  LayoutDashboard, Users, KanbanSquare, Store, BarChart3,
+  ChevronRight, X, Sparkles, RefreshCw
+} from 'lucide-react';
 
 export default function AppSidebar({ isMobileMenuOpen, onClose }) {
   const { availableModules, installedModules } = useModules();
+
+  const getSidebarModuleIcon = (id) => {
+    switch (id) {
+      case 'speech-ai':
+        return <Sparkles className="w-4 h-4 flex-shrink-0 text-violet-400" />;
+      case 'sync-engine':
+        return <RefreshCw className="w-4 h-4 flex-shrink-0 text-emerald-400" />;
+      default:
+        return <BarChart3 className="w-4 h-4 flex-shrink-0 text-indigo-400" />;
+    }
+  };
 
   const coreNav = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -111,7 +125,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
                   }
                 >
                   <div className="flex items-center gap-2.5">
-                    <BarChart3 className="w-4 h-4 flex-shrink-0 text-indigo-500" />
+                    {getSidebarModuleIcon(module.id)}
                     <span>{module.name}</span>
                   </div>
                   <ChevronRight className="w-3 h-3 text-slate-400 opacity-60" />
