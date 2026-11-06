@@ -155,7 +155,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
   return (
     <>
       {/* Desktop Persistent Sidebar */}
-      <aside className="hidden lg:flex w-56 bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800/80 flex-col justify-between flex-shrink-0 select-none">
+      <aside className="hidden lg:flex w-60 bg-white dark:bg-[#0b0f17] border-r border-slate-200 dark:border-white/[0.08] flex-col justify-between flex-shrink-0 select-none">
         {sidebarContent}
       </aside>
 
@@ -168,7 +168,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
             onClick={onClose}
           />
           {/* Slide-out Sidebar */}
-          <aside className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between z-10 shadow-2xl overflow-y-auto">
+          <aside className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white dark:bg-[#0b0f17] border-r border-slate-200 dark:border-white/[0.08] flex flex-col justify-between z-10 shadow-2xl overflow-y-auto">
             {sidebarContent}
           </aside>
         </div>

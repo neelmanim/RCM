@@ -54,7 +54,7 @@ export default function Blog() {
 
           <div className="flex items-center gap-3">
             <a
-              href="/sandbox.html"
+              href="https://app.alternatecrm.com/sandbox"
               target="_blank"
               rel="noreferrer"
               className="px-4 py-2 rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-all flex items-center gap-1.5"
@@ -134,7 +134,7 @@ export default function Blog() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <a
-                href="/sandbox.html"
+                href="https://app.alternatecrm.com/sandbox"
                 target="_blank"
                 rel="noreferrer"
                 className="w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-semibold bg-white/5 border border-white/15 text-white hover:bg-white/10 transition-all text-center"

@@ -7,7 +7,7 @@ export default function AppShell() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = sessionStorage.getItem('crm_sandbox_dark_mode');
-    return saved !== null ? saved === 'true' : false;
+    return saved !== null ? saved === 'true' : true;
   });
 
   useEffect(() => {
@@ -20,7 +20,7 @@ export default function AppShell() {
   }, [darkMode]);
 
   return (
-    <div className={`crm-workspace min-h-screen flex flex-col font-sans ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`crm-workspace min-h-screen flex flex-col font-sans ${darkMode ? 'dark bg-[#080b11] text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       {/* 1. Persistent 1-Click Interactive Sandbox Ribbon */}
       <SandboxTopRibbon
         darkMode={darkMode}

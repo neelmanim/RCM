@@ -24,17 +24,17 @@
 
 @layer components {
   .crm-workspace {
-    --crm-canvas: #f5f7fb;
-    --crm-surface: #fff;
-    --crm-border: #dbe2ec;
+    --crm-canvas: #f8fafc;
+    --crm-surface: #ffffff;
+    --crm-border: #e2e8f0;
     --crm-focus: #4f46e5;
   }
 
   .crm-workspace.dark {
-    --crm-canvas: #111827;
-    --crm-surface: #172033;
-    --crm-border: #334155;
-    --crm-focus: #a5b4fc;
+    --crm-canvas: #080b11;
+    --crm-surface: rgba(15, 23, 42, 0.75);
+    --crm-border: rgba(255, 255, 255, 0.08);
+    --crm-focus: #818cf8;
   }
 
   .crm-canvas {
@@ -48,7 +48,17 @@
   .crm-panel {
     background: var(--crm-surface);
     border: 1px solid var(--crm-border);
-    border-radius: 0.75rem;
+    border-radius: 1rem;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .crm-panel-glass {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 1rem;
   }
 
   .crm-workspace :focus-visible {

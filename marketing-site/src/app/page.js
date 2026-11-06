@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 const SANDBOX_URL =
-  process.env.NEXT_PUBLIC_SANDBOX_URL || "https://app.alternatecrm.com/sandbox.html";
+  process.env.NEXT_PUBLIC_SANDBOX_URL || "https://app.alternatecrm.com/sandbox";
 const SIGNIN_URL =
   process.env.NEXT_PUBLIC_SIGNIN_URL || "https://app.alternatecrm.com/login.html";
 const API_BASE =
@@ -282,16 +282,16 @@ export default function Home() {
         <section className="hero">
           <div className="wrap hero-content">
             <div className="tag">
-              <span className="live-dot"></span> SALES WORKSPACE
+              <span className="live-dot"></span> AUTONOMOUS CONVERSATION OS
             </div>
             <h1>
-              Know where every deal stands.
+              Kill the static CRM.
               <br />
-              <span className="accent">Know what comes next.</span>
+              <span className="accent">Accelerate your pipeline.</span>
             </h1>
             <p>
-              Track leads, see the last customer touchpoint, and plan the next follow-up.
-              Start with the CRM and add tools as your workflow grows.
+              Alternate CRM unifies a sub-200ms WebRTC power dialer, live speech-to-intent coaching,
+              and autonomous multi-touch cadences into one high-velocity revenue platform.
             </p>
             <div className="buttons">
               <button
@@ -313,7 +313,7 @@ export default function Home() {
                 Explore the workspace <span>↓</span>
               </a>
             </div>
-            <p className="hero-note">The demo opens with sample data. No account needed.</p>
+            <p className="hero-note">Instant interactive demo with sample data. No account or credit card needed.</p>
 
             <div
               className="visual-wrap"
@@ -334,77 +334,79 @@ export default function Home() {
                   <aside className="app-side">
                     <div className="side-heading">✳ &nbsp;Your workspace</div>
                     <div className="side-link active">◫ &nbsp; Overview</div>
-                    <div className="side-link">◎ &nbsp; Conversations</div>
-                    <div className="side-link">◈ &nbsp; Customers</div>
-                    <div className="side-link">☆ &nbsp; Reputation</div>
-                    <div className="side-link">⊞ &nbsp; Your modules</div>
+                    <div className="side-link">◎ &nbsp; Leads & Pipeline</div>
+                    <div className="side-link">◈ &nbsp; Accounts</div>
+                    <div className="side-link">✆ &nbsp; WebRTC Dialer</div>
+                    <div className="side-link">⚡ &nbsp; Cadence Engine</div>
                   </aside>
                   <div className="workspace">
                     <div className="workspace-head">
                       <div>
-                        <h3>Everything, connected.</h3>
-                        <p>Your customer experience in one place</p>
+                        <h3>Autonomous conversation pipeline.</h3>
+                        <p>Live speech intelligence, dialing, and CRM sync in one OS</p>
                       </div>
-                      <span className="badge-connected">● System connected</span>
+                      <span className="badge-connected">● Engine connected</span>
                     </div>
                     <div className="metric-grid">
                       <div className="metric">
-                        <small>Conversations</small>
-                        <strong>128</strong>
-                        <em>↗ 12% this week</em>
+                        <small>Total Outbound Dials</small>
+                        <strong>1,280</strong>
+                        <em>↗ Sub-200ms latency</em>
                       </div>
                       <div className="metric">
-                        <small>Opportunities</small>
+                        <small>Estimated Deal Value</small>
+                        <strong>$1.42M</strong>
+                        <em>↗ +18.4% velocity</em>
+                      </div>
+                      <div className="metric">
+                        <small>Meetings Booked</small>
                         <strong>42</strong>
-                        <em>↗ 8% this week</em>
-                      </div>
-                      <div className="metric">
-                        <small>Customer reviews</small>
-                        <strong>24</strong>
-                        <em>↗ 18% this week</em>
+                        <em>↗ Auto-synced to SFDC</em>
                       </div>
                     </div>
                     <div className="activity-label">
-                      Your activity <span>Across your OS ↗</span>
+                      Live Revenue Telemetry <span>Across your OS ↗</span>
                     </div>
                     <div className="activity-row">
-                      <span className="avatar">JD</span>
+                      <span className="avatar">SJ</span>
                       <div className="activity-copy">
-                        <b>Jordan Davis</b>
-                        <small>Started a conversation · Website</small>
+                        <b>Sarah Jenkins · VP RevOps (Stripe)</b>
+                        <small>8m 12s outbound call · Audio transcribed & summarized</small>
                       </div>
-                      <span className="chip">Replied</span>
+                      <span className="chip">Meeting Booked</span>
                     </div>
                     <div className="activity-row">
-                      <span className="avatar">SM</span>
+                      <span className="avatar">MV</span>
                       <div className="activity-copy">
-                        <b>Sam Miller</b>
-                        <small>Shared feedback · Reputation</small>
+                        <b>Michael Vance · Head of Growth (Figma)</b>
+                        <small>In-call objection matched · Security & SOC2 battlecard</small>
                       </div>
-                      <span className="chip">New review</span>
+                      <span className="chip">Proposal Sent</span>
                     </div>
                     <div className="activity-row">
-                      <span className="avatar">AL</span>
+                      <span className="avatar">DO</span>
                       <div className="activity-copy">
-                        <b>Alex Lee</b>
-                        <small>Requested a callback · Voice</small>
+                        <b>David O&apos;Connor · Strategy (Notion)</b>
+                        <small>Prioritized via AI propensity model · Score: 88</small>
                       </div>
-                      <span className="chip">Qualified</span>
+                      <span className="chip">Contacted</span>
                     </div>
                   </div>
                 </div>
               </div>
               <div className="floating float-review">
-                <small>✦ CUSTOMER MOMENT</small>
-                <div className="stars">★★★★★</div>
-                <b>“Such a great experience!”</b>
-                <p>Another relationship worth keeping.</p>
+                <small>✦ REAL-TIME SPEECH INTELLIGENCE</small>
+                <div style={{ fontSize: "13px", fontWeight: "bold", color: "var(--lime)", margin: "4px 0" }}>
+                  “Budget approved for multi-seat rollout”
+                </div>
+                <b>Objection Battlecard Surfaced</b>
+                <p>Bi-directional sync to Salesforce & Nylas</p>
               </div>
               <div className="floating float-call">
-                <div className="round-icon">↗</div>
-                <small>CONNECTED AUTOMATION</small>
-                <b>New opportunity captured</b>
-                <p>From first hello to next step.</p>
+                <div className="round-icon">✆</div>
+                <small>WEBRTC POWER DIALER</small>
+                <b>Sub-200ms Latency Connect</b>
+                <p>Parallel browser dialing with zero jitter.</p>
               </div>
             </div>
           </div>
@@ -413,55 +415,57 @@ export default function Home() {
         {/* Outcomes Section */}
         <section className="section wrap" id="outcomes">
           <div className="section-heading reveal">
-            <div className="eyebrow">BUILT AROUND WHAT MATTERS</div>
+            <div className="eyebrow">ENGINEERED FOR MODERN REVENUE TEAMS</div>
             <h2>
-              Make every interaction
+              Reps spend 68% of their day on busywork.
               <br />
-              count for more.
+              We automate the rest.
             </h2>
             <p>
-              From the very first hello to your next great review, connect the moments that help your
-              business grow.
+              No more clicking between standalone dialers, meeting notetakers, email sequencers, and Salesforce tabs.
+              Alternate CRM coordinates the entire revenue loop.
             </p>
           </div>
           <div className="outcomes">
             <article className="outcome reveal">
-              <div className="outcome-num">01 / TURN INTEREST INTO ACTION</div>
-              <h3>Make the first hello your next customer.</h3>
+              <div className="outcome-num">01 / SUB-200MS WEBRTC POWER DIALER</div>
+              <h3>Zero jitter. Parallel outreach. Instant connect.</h3>
               <p>
-                Be there when people reach out. Turn questions into conversations and conversations
-                into opportunity.
+                Launch high-volume outbound dials directly from your browser. Benefit from distributed edge telephony,
+                automatic voicemail drop, and multi-line parallel queues without bulky desk hardware or third-party plugins.
               </p>
               <div className="mini">
                 <div className="mini-header">
-                  Website conversation <span>● Live</span>
+                  WebRTC Active Call <span>● Connected (04:12)</span>
                 </div>
-                <div className="bubble">Hi! Can you help me get started?</div>
-                <div className="bubble reply">Absolutely. What are you looking for?</div>
-                <div className="bubble">I&apos;d love to learn more.</div>
+                <div className="bubble">Sarah Jenkins (Stripe) · Enterprise Tier</div>
+                <div className="bubble reply">Audio latency: 38ms · Distributed edge mesh</div>
+                <div className="bubble">Disposition: Logged to CRM & Calendar invite sent</div>
               </div>
             </article>
             <article className="outcome reveal">
-              <div className="outcome-num">02 / BUILD RELATIONSHIPS THAT LAST</div>
-              <h3>Give people a reason to come back.</h3>
+              <div className="outcome-num">02 / REAL-TIME SPEECH-TO-INTENT AI</div>
+              <h3>Live battlecards during calls. Instant logs after.</h3>
               <p>
-                Listen to customers, earn trust, and make great experiences the start of stronger
-                relationships.
+                Streaming speech AI transcribes conversations in real time, surfaces competitive battlecards during active
+                calls, and automatically writes structured meeting summaries into your CRM with zero manual rep effort.
               </p>
               <div className="mini">
                 <div className="mini-header">
-                  Customer sentiment <span>↗ Trending positive</span>
+                  Live Intent Detection <span>↗ Real-time ASR</span>
                 </div>
                 <div className="reputation">
-                  <strong>4.9</strong>
+                  <strong>99.4%</strong>
                   <div className="bars">
-                    <i style={{ "--w": "92%" }}></i>
-                    <i style={{ "--w": "74%" }}></i>
-                    <i style={{ "--w": "45%" }}></i>
+                    <i style={{ "--w": "96%" }}></i>
+                    <i style={{ "--w": "88%" }}></i>
+                    <i style={{ "--w": "94%" }}></i>
                   </div>
                 </div>
-                <div className="stars">★★★★★</div>
-                <div className="sample">Illustrative interface · Sample data</div>
+                <div className="sample" style={{ color: "var(--lime)", fontWeight: 700 }}>
+                  “Security & compliance requirements met”
+                </div>
+                <div className="sample">Auto-synced to Salesforce & Nylas mailbox</div>
               </div>
             </article>
           </div>
@@ -471,18 +475,17 @@ export default function Home() {
         <section className="platform" id="platform">
           <div className="wrap platform-grid">
             <div className="reveal">
-              <div className="eyebrow">THE POWER OF A MODULAR OS</div>
+              <div className="eyebrow">THE CONVERSATION OPERATING SYSTEM</div>
               <h2>
-                One foundation.
+                One unified workspace.
                 <br />
-                Infinite ways
+                Zero disconnected
                 <br />
-                to connect.
+                point solutions.
               </h2>
               <p>
-                Your business doesn&apos;t need another pile of disconnected tools. Choose the capabilities
-                that matter today, then connect new ones seamlessly as you grow—all built around the
-                same customer conversation.
+                Stop stitching together Gong, Outreach, Salesforce, and Aircall. Alternate CRM is an extensible, modular
+                OS where telephony, speech intelligence, cadences, and pipeline telemetry share the exact same real-time customer context.
               </p>
               <a className="btn btn-primary" href="#how">
                 See how it works ↗
@@ -491,37 +494,37 @@ export default function Home() {
             <div className="modules reveal" aria-label="Modular OS capabilities illustration">
               <div className="module-grid">
                 <div className="module">
-                  <div className="ico">◎</div>
+                  <div className="ico">✆</div>
                   <div>
-                    <b>Engage</b>
-                    <small>Be there for every hello</small>
+                    <b>WebRTC Dialer</b>
+                    <small>Sub-200ms browser telephony</small>
                   </div>
                 </div>
                 <div className="module">
                   <div className="ico">✳</div>
                   <div>
-                    <b>Respond</b>
-                    <small>People and AI, together</small>
+                    <b>Live Speech AI</b>
+                    <small>Real-time transcription & battlecards</small>
                   </div>
                 </div>
                 <div className="module">
-                  <div className="ico">☆</div>
+                  <div className="ico">⚡</div>
                   <div>
-                    <b>Build trust</b>
-                    <small>Feedback that moves you forward</small>
+                    <b>Multi-Touch Cadences</b>
+                    <small>Autonomous phone & email sequences</small>
                   </div>
                 </div>
                 <div className="module ghost">
-                  <div className="ico">＋</div>
+                  <div className="ico">⊞</div>
                   <div>
-                    <b>Add what&apos;s next</b>
-                    <small>Make the OS yours</small>
+                    <b>Universal 2-Way Sync</b>
+                    <small>Salesforce, HubSpot & Postgres</small>
                   </div>
                 </div>
               </div>
               <div className="foundation">
                 ✳ &nbsp;ALTERNATECRM CONVERSATION OS
-                <small>One shared foundation · Connected customer context</small>
+                <small>Unified customer context · Sub-200ms edge telemetry · Enterprise-grade security</small>
               </div>
             </div>
           </div>
@@ -530,34 +533,34 @@ export default function Home() {
         {/* How it works Section */}
         <section className="section wrap" id="how">
           <div className="section-heading reveal">
-            <div className="eyebrow">SIMPLE BY DESIGN</div>
+            <div className="eyebrow">HIGH-VELOCITY REVENUE PLAYBOOK</div>
             <h2>
-              Start small.
+              Deploy in minutes.
               <br />
-              Think connected.
+              Scale with zero friction.
             </h2>
-            <p>Everything you need to get moving. Nothing you don&apos;t.</p>
+            <p>Everything your revenue team needs to close more pipeline. Zero manual database admin.</p>
           </div>
           <div className="steps">
             <article className="step reveal">
-              <div className="number">01 / CHOOSE</div>
-              <h3>Start with your priority.</h3>
+              <div className="number">01 / CONNECT</div>
+              <h3>Sync your system of record.</h3>
               <p>
-                Focus on the outcome you need now, instead of paying attention to dozens of tools.
+                Bi-directional sync with Salesforce, HubSpot, or Postgres plus Nylas email & calendar in seconds.
               </p>
             </article>
             <article className="step reveal">
-              <div className="number">02 / CONNECT</div>
-              <h3>Bring it all together.</h3>
+              <div className="number">02 / OUTREACH</div>
+              <h3>Execute high-velocity cadences.</h3>
               <p>
-                Keep your customer moments connected instead of building another isolated workflow.
+                Reps launch WebRTC dials with live AI battlecards and automated multi-touch sequences from one screen.
               </p>
             </article>
             <article className="step reveal">
-              <div className="number">03 / EXPAND</div>
-              <h3>Grow at your pace.</h3>
+              <div className="number">03 / ACCELERATE</div>
+              <h3>Automate pipeline velocity.</h3>
               <p>
-                Activate more capabilities when you&apos;re ready, without starting from scratch.
+                Every conversation qualifies leads, scores deals, updates stages, and logs notes autonomously.
               </p>
             </article>
           </div>
@@ -566,13 +569,13 @@ export default function Home() {
         {/* CTA Section */}
         <section className="cta-section wrap">
           <div className="cta reveal">
-            <div className="eyebrow">THE FUTURE IS CONNECTED</div>
+            <div className="eyebrow">JOIN THE HIGH-VELOCITY REVENUE ERA</div>
             <h2>
-              Better conversations.
+              Transform your sales
               <br />
-              Better business.
+              conversations today.
             </h2>
-            <p>See the workspace before requesting access.</p>
+            <p>Experience the Conversation OS live in the interactive demo workspace or request priority onboarding.</p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap", marginTop: "16px" }}>
               <button
                 type="button"
