@@ -111,7 +111,7 @@ export default function Status() {
           <Link href="/blog" onClick={closeMenu}>Insights</Link>
           <Link href="/status" onClick={closeMenu}>System Status</Link>
           <a href={SIGNIN_URL} target="_blank" rel="noreferrer" onClick={closeMenu}>
-            Sign In to App ↗
+            Private Beta Gate ↗
           </a>
           <a
             href={SANDBOX_URL}
@@ -187,8 +187,9 @@ export default function Status() {
             {systems.map((sys, i) => (
               <div
                 key={i}
+                className="status-row"
                 style={{
-                  padding: "18px 24px",
+                  padding: "16px 24px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
@@ -198,7 +199,7 @@ export default function Status() {
                 <span style={{ fontSize: "14px", fontWeight: 600, color: "#fff" }}>
                   {sys.name}
                 </span>
-                <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+                <div className="status-meta" style={{ display: "flex", alignItems: "center", gap: "24px" }}>
                   <span style={{ fontSize: "12px", fontFamily: "monospace", color: "var(--text-muted)" }}>
                     {sys.uptime}
                   </span>
@@ -292,7 +293,7 @@ export default function Status() {
               <ul>
                 <li>
                   <a href={SIGNIN_URL} target="_blank" rel="noreferrer" style={{ color: "var(--lime)", fontWeight: 700 }}>
-                    Sign In to App ↗
+                    Private Beta Gate ↗
                   </a>
                 </li>
                 <li><Link href="/#top">Request VIP Access</Link></li>

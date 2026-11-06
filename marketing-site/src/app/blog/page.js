@@ -99,7 +99,7 @@ export default function Blog() {
           <Link href="/blog" onClick={closeMenu}>Insights</Link>
           <Link href="/status" onClick={closeMenu}>System Status</Link>
           <a href={SIGNIN_URL} target="_blank" rel="noreferrer" onClick={closeMenu}>
-            Sign In to App ↗
+            Private Beta Gate ↗
           </a>
           <a
             href={SANDBOX_URL}
@@ -265,7 +265,7 @@ export default function Blog() {
               <ul>
                 <li>
                   <a href={SIGNIN_URL} target="_blank" rel="noreferrer" style={{ color: "var(--lime)", fontWeight: 700 }}>
-                    Sign In to App ↗
+                    Private Beta Gate ↗
                   </a>
                 </li>
                 <li><Link href="/#top">Request VIP Access</Link></li>

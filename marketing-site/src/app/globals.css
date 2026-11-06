@@ -58,6 +58,12 @@ button {
   margin: 0 auto;
 }
 
+@media (max-width: 640px) {
+  .wrap {
+    width: min(1200px, calc(100% - 32px));
+  }
+}
+
 /* ── Frosted Navbar ────────────────────────────────────────── */
 .nav-shell {
   position: sticky;
@@ -210,6 +216,30 @@ button {
     font-weight: 600;
     color: var(--text-secondary);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+}
+
+@media (max-width: 768px) {
+  .nav .right .btn-secondary {
+    display: none;
+  }
+}
+
+@media (max-width: 540px) {
+  .nav {
+    height: 64px;
+  }
+  .nav .right .btn-primary {
+    display: none;
+  }
+  .brand {
+    font-size: 17px;
+    gap: 8px;
+  }
+  .brand .mark {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
   }
 }
 
@@ -722,12 +752,14 @@ button {
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 20px;
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   backdrop-filter: blur(20px);
 }
 
 .comparison-table {
   width: 100%;
+  min-width: 620px;
   border-collapse: collapse;
   text-align: left;
 }
@@ -1007,4 +1039,190 @@ button {
   line-height: 1.5;
   color: var(--text-secondary);
   margin: 0 0 14px;
+}
+
+/* ── Mobile Fluid Responsiveness (Screen <= 640px) ────────── */
+@media (max-width: 640px) {
+  .hero {
+    padding: 48px 0 32px;
+  }
+  .hero-pill {
+    font-size: 11px;
+    padding: 6px 14px;
+    margin-bottom: 18px;
+    max-width: 100%;
+    white-space: normal;
+  }
+  .hero h1 {
+    font-size: clamp(28px, 8vw, 44px);
+    margin-bottom: 16px;
+    line-height: 1.15;
+  }
+  .hero p {
+    font-size: 15px;
+    margin-bottom: 24px;
+    line-height: 1.55;
+  }
+  .hero-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+  }
+  .hero-actions .btn {
+    width: 100%;
+    padding: 14px 20px;
+  }
+  .hero-trust {
+    flex-direction: column;
+    gap: 6px;
+    font-size: 11px;
+  }
+  .hero-trust span:nth-child(2),
+  .hero-trust span:nth-child(4) {
+    display: none;
+  }
+  .showcase-container {
+    margin-top: 36px;
+  }
+  .showcase-topbar {
+    padding: 0 12px;
+    height: 42px;
+  }
+  .window-status {
+    display: none;
+  }
+  .window-url {
+    font-size: 10px;
+    padding: 2px 8px;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .showcase-body {
+    padding: 14px;
+    gap: 14px;
+  }
+  .active-call-strip {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+  .call-lead-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 11px;
+  }
+  .call-lead-details b {
+    font-size: 12px;
+  }
+  .call-lead-details span {
+    font-size: 11px;
+  }
+  .audio-waveform {
+    display: none;
+  }
+  .call-telemetry {
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+  .speech-intent-box {
+    padding: 12px;
+  }
+  .intent-quote {
+    font-size: 13px;
+  }
+  .battlecard-pill {
+    font-size: 10px;
+  }
+  .kpi-row {
+    gap: 8px;
+  }
+  .kpi-box {
+    padding: 10px;
+  }
+  .kpi-box strong {
+    font-size: 20px;
+  }
+  .logos-section {
+    padding: 40px 0;
+  }
+  .logos-grid {
+    gap: 20px;
+  }
+  .logo-item {
+    font-size: 14px;
+  }
+  .section {
+    padding: 50px 0;
+  }
+  .section-head {
+    margin-bottom: 32px;
+  }
+  .section-head h2 {
+    font-size: clamp(26px, 7vw, 36px);
+  }
+  .bento-card {
+    padding: 20px;
+    border-radius: 16px;
+  }
+  .bento-card h3 {
+    font-size: 19px;
+  }
+  .cta-banner {
+    padding: 32px 18px;
+    border-radius: 18px;
+  }
+  .cta-banner h2 {
+    font-size: clamp(24px, 6.5vw, 32px);
+  }
+  .cta-banner p {
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+  .cta-banner .btn {
+    width: 100%;
+  }
+  .site-footer {
+    padding: 50px 0 30px;
+  }
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .footer-brand p {
+    max-width: 100%;
+  }
+  .footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .lead-modal-card {
+    border-radius: 16px;
+    margin: 8px;
+  }
+  .lead-modal-body {
+    padding: 16px;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .form-group.full {
+    grid-column: span 1;
+  }
+  .lead-modal-title {
+    font-size: 18px;
+  }
+  .status-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    padding: 14px 18px !important;
+  }
+  .status-meta {
+    width: 100% !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+  }
 }

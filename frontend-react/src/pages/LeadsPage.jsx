@@ -77,7 +77,7 @@ export default function LeadsPage() {
 
       {/* Leads Table */}
       <div className="crm-panel overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
           <table className="w-full min-w-[44rem] text-left text-sm">
             <caption className="sr-only">CRM leads</caption>
             <thead className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-400 tracking-wider">

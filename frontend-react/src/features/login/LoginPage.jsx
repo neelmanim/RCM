@@ -17,7 +17,7 @@ export function LoginPage() {
       <div className="absolute bottom-[-100px] right-[-100px] w-[500px] h-[500px] bg-[#d3fa76]/5 rounded-full blur-[140px] pointer-events-none" />
 
       {/* ── Left Hero Side (Behance Dark Glassmorphic Presentation) ─────────── */}
-      <div className="relative flex-1 flex flex-col justify-between p-8 sm:p-12 lg:p-16 xl:p-20 z-10 border-b lg:border-b-0 lg:border-r border-white/[0.08]">
+      <div className="relative flex-1 flex flex-col justify-between p-6 sm:p-12 lg:p-16 xl:p-20 z-10 border-b lg:border-b-0 lg:border-r border-white/[0.08]">
         {/* Top Brand Logo */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-[#d3fa76] flex items-center justify-center p-2 shadow-[0_0_20px_rgba(211,250,118,0.3)]">
@@ -30,13 +30,13 @@ export function LoginPage() {
         </div>
 
         {/* Center Main Value Proposition (Validated Market Standards) */}
-        <div className="my-auto py-12 max-w-2xl">
+        <div className="my-auto py-8 sm:py-12 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 mb-6">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>THE AUTONOMOUS SALES CONVERSATION OS</span>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl xl:text-6xl font-black tracking-tight leading-[1.08] text-white">
+          <h1 className="text-3xl sm:text-5xl xl:text-6xl font-black tracking-tight leading-[1.08] text-white">
             Kill the static CRM.
             <br />
             <span className="bg-gradient-to-r from-white via-slate-200 to-[#d3fa76] bg-clip-text text-transparent">
@@ -119,7 +119,7 @@ export function LoginPage() {
       </div>
 
       {/* ── Right Workspace Access Gate (Login Disabled) ───────────────── */}
-      <div className="relative w-full lg:w-[480px] xl:w-[540px] bg-[#0b0f17] flex flex-col justify-center px-8 py-12 sm:px-12 lg:px-14 xl:px-16 z-20">
+      <div className="relative w-full lg:w-[480px] xl:w-[540px] bg-[#0b0f17] flex flex-col justify-center px-5 py-10 sm:px-12 lg:px-14 xl:px-16 z-20">
         <div className="max-w-md mx-auto w-full space-y-7">
           {/* Header */}
           <div>

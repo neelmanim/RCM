@@ -42,7 +42,7 @@ export default function PipelinePage() {
       </div>
 
       {/* Kanban Board Columns */}
-      <section aria-label="Pipeline stages" tabIndex={0} className="flex gap-3 overflow-x-auto pb-4 items-start">
+      <section aria-label="Pipeline stages" tabIndex={0} className="flex gap-3 overflow-x-auto pb-4 items-start [-webkit-overflow-scrolling:touch]">
         {PIPELINE_STAGES.map((stage) => {
           const stageLeads = leads.filter(l => l.stage === stage);
           const stageArr = stageLeads.reduce((acc, l) => {

@@ -190,7 +190,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 self-end sm:self-auto">
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap self-end sm:self-auto justify-end">
                   <span className="text-xs font-extrabold text-slate-900 dark:text-white font-mono">
                     {lead.arr}
                   </span>

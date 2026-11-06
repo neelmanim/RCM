@@ -196,7 +196,7 @@ export default function Home() {
           <Link href="/blog" onClick={closeMenu}>Insights</Link>
           <Link href="/status" onClick={closeMenu}>System Status</Link>
           <a href={SIGNIN_URL} target="_blank" rel="noreferrer" onClick={closeMenu}>
-            Sign In to App ↗
+            Private Beta Gate ↗
           </a>
           <a
             href={SANDBOX_URL}
@@ -671,7 +671,7 @@ export default function Home() {
               <ul>
                 <li>
                   <a href={SIGNIN_URL} target="_blank" rel="noreferrer" style={{ color: "var(--lime)", fontWeight: 700 }}>
-                    Sign In to App ↗
+                    Private Beta Gate ↗
                   </a>
                 </li>
                 <li><a href="#top" onClick={openLeadModal}>Request VIP Access</a></li>
