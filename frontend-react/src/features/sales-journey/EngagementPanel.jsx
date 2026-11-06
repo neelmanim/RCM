@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Mail, MessageSquare, UserX, BarChart3 } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { SalesJourneyService } from '../../services/api';
-import { labelForNode } from './NodeConfigPanel';
+import { labelForNode } from './nodeDefaults';
 import { toast } from './toast';
 import { ReportingSection } from './ReportingSection';
 
@@ -24,7 +24,7 @@ function KpiCard({ icon: Icon, tone, title, stats }) {
   return (
     <div className={`flex-1 min-w-[220px] rounded-xl ring-1 p-3 ${TONE}`}>
       <div className="flex items-center gap-1.5 text-xs font-bold mb-2">
-        <Icon size={14} /> {title}
+        {React.createElement(Icon, { size: 14 })} {title}
       </div>
       <div className="flex items-center gap-4">
         {stats.map(({ label, value, rate }) => (

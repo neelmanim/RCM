@@ -2,7 +2,6 @@
 import os
 import logging
 import json
-import threading
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -371,13 +370,6 @@ def update_sync_settings(body: dict, db: Session = Depends(get_db), admin: dict 
         settings.messenger_account_id = None
         settings.messenger_sender_id = None
         settings.messenger_access_token = None
-        # Also reset the singleton so it re-auths with new creds
-        try:
-            import conversations_service as _ccs
-            _ccs._instance = None
-            _ccs._instance_key = ()
-        except Exception:
-            pass
         try:
             from messaging_auth import AlternateMessengerAuthManager
             AlternateMessengerAuthManager.clear_cache()
@@ -542,29 +534,6 @@ def _am_status_row(db: Session):
     ).first()
 
 
-def _write_am_status(db: Session, state: dict, *, running: bool,
-                     started_at=None, finished_at=None):
-    """Upsert the single AM-sync progress row. Called at start, on every
-    batch boundary (as the heartbeat), and once at the end — not per lead,
-    which would add a DB write to every single rate-limited AM call.
-
-    `finished_at` is written unconditionally (None included) so starting a
-    new run clears the previous run's completion time; `started_at` is only
-    written when given, so the heartbeat and the final write don't wipe it.
-    """
-    row = _am_status_row(db)
-    if row is None:
-        row = models.BackgroundJobState(job_name=AM_SYNC_JOB)
-        db.add(row)
-    row.running = running
-    row.state = dict(state)
-    row.heartbeat_at = datetime.now(timezone.utc)
-    row.finished_at = finished_at
-    if started_at is not None:
-        row.started_at = started_at
-    db.commit()
-
-
 def _read_am_status(db: Session) -> dict:
     """Progress as the admin UI sees it. A row still flagged running whose
     heartbeat has gone cold means the process that owned the worker died
@@ -604,131 +573,10 @@ def _read_am_status(db: Session) -> dict:
     }
 
 
-def _am_bulk_sync_worker(delay_s, batch_size):
-    """Background worker: push leads to AM one by one with rate limiting."""
-    import time as _time
-    from database import SessionLocal
-    from audience_manager import ensure_contact, lead_extra_fields
-
-    db = SessionLocal()
-    progress = dict(_EMPTY_AM_STATE)
-    progress["message"] = "Sync in progress..."
-    try:
-        settings = db.query(models.SyncSettings).first()
-        base_url = (settings.messenger_base_url or "https://app.messaging_provider.com").rstrip("/")
-        api_key = settings.messenger_api_key
-        user_id = settings.messenger_user_id
-
-        leads = db.query(models.Lead).filter(
-            models.Lead.am_record_id.is_(None),
-            (models.Lead.phone.isnot(None) & (models.Lead.phone != "")) |
-            (models.Lead.phone_secondary.isnot(None) & (models.Lead.phone_secondary != ""))
-        ).all()
-
-        progress["total"] = len(leads)
-
-        for lead in leads:
-            phone = (lead.phone or "").strip() or (lead.phone_secondary or "").strip()
-            if not phone:
-                progress["skipped"] += 1
-                continue
-            try:
-                record_id = ensure_contact(
-                    base_url=base_url, api_key=api_key, user_id=user_id,
-                    first_name=lead.first_name or "", last_name=lead.last_name or "",
-                    phone=phone, email=lead.email or "",
-                    extra_fields=lead_extra_fields(lead, db=db),
-                )
-                if record_id:
-                    lead.am_record_id = record_id
-                    progress["synced"] += 1
-                    if progress["synced"] % batch_size == 0:
-                        db.commit()
-                        # Same batch boundary already used for the lead commit —
-                        # doubles as the heartbeat, so progress survives a
-                        # mid-run deploy instead of dying with the process.
-                        _write_am_status(db, progress, running=True)
-                else:
-                    progress["failed"] += 1
-                    if len(progress["errors"]) < 10:
-                        progress["errors"].append(f"{lead.first_name} {lead.last_name} ({phone}): no record_id")
-            except Exception as e:
-                progress["failed"] += 1
-                if len(progress["errors"]) < 10:
-                    progress["errors"].append(f"{lead.first_name} {lead.last_name} ({phone}): {str(e)[:80]}")
-            if delay_s > 0:
-                _time.sleep(delay_s)
-
-        db.commit()
-        progress["message"] = f"Complete: {progress['synced']} synced, {progress['failed']} failed, {progress['skipped']} skipped"
-    except Exception as e:
-        progress["message"] = f"Error: {str(e)[:200]}"
-    finally:
-        try:
-            _write_am_status(db, progress, running=False, finished_at=datetime.now(timezone.utc))
-        except Exception as e:
-            logger.warning(f"[AM bulk sync] could not persist final status: {e}")
-        db.close()
-
-
 @router.post("/sync-am-bulk")
-def bulk_sync_leads_to_am(
-    request_body: dict = {},
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_super_admin),
-):
-    """Push all existing leads with phone numbers to Audience Manager (background).
-    Dry run returns counts. Actual run spawns background thread and returns immediately.
-    Poll GET /api/admin/sync-am-status for progress."""
-    dry_run = request_body.get("dry_run", False)
-    batch_size = min(request_body.get("batch_size", 50), 200)
-    delay_s = request_body.get("delay_ms", 200) / 1000.0
-
-    current = _read_am_status(db)
-    if current["running"]:
-        return {"error": True, "message": "Sync already running. GET /api/admin/sync-am-status for progress.", "status": current}
-
-    settings = db.query(models.SyncSettings).first()
-    if not settings or not settings.messenger_enabled:
-        return {"error": True, "message": "Conversations not enabled. Enable in Settings -> Sync Settings."}
-    if not settings.messenger_api_key:
-        return {"error": True, "message": "API key not configured in Sync Settings."}
-    if not settings.messenger_user_id:
-        return {"error": True, "message": "User ID not configured in Sync Settings."}
-
-    to_sync = db.query(models.Lead).filter(
-        models.Lead.am_record_id.is_(None),
-        (models.Lead.phone.isnot(None) & (models.Lead.phone != "")) |
-        (models.Lead.phone_secondary.isnot(None) & (models.Lead.phone_secondary != ""))
-    ).count()
-    already_synced = db.query(models.Lead).filter(models.Lead.am_record_id.isnot(None)).count()
-    no_phone = db.query(models.Lead).filter(
-        (models.Lead.phone.is_(None) | (models.Lead.phone == "")),
-        (models.Lead.phone_secondary.is_(None) | (models.Lead.phone_secondary == ""))
-    ).count()
-
-    if dry_run:
-        return {
-            "dry_run": True, "to_sync": to_sync, "already_synced": already_synced,
-            "no_phone_skipped": no_phone,
-            "estimated_time_seconds": round(to_sync * delay_s + to_sync * 1.5, 1),
-            "message": f"{to_sync} leads to push. {already_synced} already synced, {no_phone} no phone."
-        }
-
-    _write_am_status(
-        db,
-        {**_EMPTY_AM_STATE, "total": to_sync, "message": "Sync in progress..."},
-        running=True,
-        started_at=datetime.now(timezone.utc),
-        finished_at=None,
-    )
-    thread = threading.Thread(target=_am_bulk_sync_worker, args=(delay_s, batch_size), daemon=True, name="am-bulk-sync")
-    thread.start()
-
-    return {
-        "message": f"Bulk sync started for {to_sync} leads. Poll GET /api/admin/sync-am-status for progress.",
-        "to_sync": to_sync, "already_synced": already_synced, "no_phone_skipped": no_phone
-    }
+def bulk_sync_leads_to_am(user: dict = Depends(require_super_admin)):
+    """Keep the route available to clients while contact sync is unavailable."""
+    return {"error": True, "message": "Connect a messaging provider to sync contacts."}
 
 
 @router.get("/sync-am-status")

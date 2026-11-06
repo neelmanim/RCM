@@ -277,7 +277,6 @@ function LeadsModal({ target, range, podId, onClose }) {
   useEffect(() => {
     if (!target) return undefined;
     let off = false;
-    setRes(null);
     DigestDrillService.leads({ from, to, pod_id: podId, ...target.params }).then((r) => { if (!off) setRes(r); });
     return () => { off = true; };
   }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -430,7 +429,7 @@ export function DrillDownSection({ podId, range }) {
         <div className={`min-h-[240px] transition-opacity duration-150 ${!data && stale ? 'opacity-50' : 'opacity-100'}`} aria-busy={!data}>{body}</div>
       </CardContent>
       <IcpDialog open={icpOpen} onClose={() => setIcpOpen(false)} onSaved={() => setVersion((v) => v + 1)} />
-      <LeadsModal target={target} range={range} podId={podId} onClose={() => setTarget(null)} />
+      {target && <LeadsModal key={JSON.stringify([target, range, podId])} target={target} range={range} podId={podId} onClose={() => setTarget(null)} />}
     </Card>
   );
 }

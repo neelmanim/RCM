@@ -1,6 +1,6 @@
 import { JourneyNode } from './JourneyNode';
 
-export { NODE_ACCENT } from './JourneyNode';
+export { NODE_ACCENT } from '../nodeDefaults';
 
 // Same component for every type — React Flow keys nodeTypes by the node's
 // own `type` string, and JourneyNode already branches on `type` internally.

@@ -3,21 +3,7 @@ import { Info } from 'lucide-react';
 import { TableRow, TableCell } from '../../../components/ui/Table';
 import { Checkbox } from '../../../components/ui/Checkbox';
 import { PriorityDot } from './PriorityDot';
-import { resolveLeadPhone } from '../columns';
-
-// Auto-created leads (Klenty sync with no caller name, manual-dial anonymous
-// leads) get a hardcoded "Unknown"/"Unknown Caller" name so the DB's
-// NOT NULL last_name constraint is satisfied — showing that placeholder to
-// the user reads as a bug. The phone number is the one real identifier these
-// rows always have, so surface that instead of the word "Unknown".
-export function displayName(lead) {
-  const raw = `${lead.first_name || ''} ${lead.last_name || ''}`.trim();
-  const isPlaceholder = !raw || /^unknown(\s+caller)?$/i.test(raw);
-  // `|| raw` here would silently reintroduce the literal "Unknown"/"Unknown
-  // Caller" placeholder on a lead with no phone at all — the exact case
-  // this function exists to hide.
-  return isPlaceholder ? (resolveLeadPhone(lead) || '—') : raw;
-}
+import { displayName } from '../leadUtils';
 
 export function LeadRow({ lead, columns, sdrs, isAdmin, assignMode, selected, onToggleSelect, onSetStatus, onSetAssignee, onSetPriority, onQuickCall, onOpenLead }) {
   const name = displayName(lead);

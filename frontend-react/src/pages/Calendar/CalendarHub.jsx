@@ -240,26 +240,28 @@ function MeetingList({ meetings, onSelect, emptyLabel }) {
 // endpoint the lead detail page's Calls tab already calls, just capped to a
 // handful of rows. No new backend endpoint needed.
 function useLeadCalls(leadId) {
-  const [calls, setCalls] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [result, setResult] = useState({ leadId: null, calls: [], error: false });
 
   useEffect(() => {
     if (!leadId) return;
     let cancelled = false;
-    setLoading(true);
-    setError(false);
     api.get(`/leads/${leadId}/calls`, { params: { page: 1, limit: 5 } })
-      .then(res => { if (!cancelled) setCalls(res.data?.calls || []); })
+      .then(res => {
+        if (!cancelled) setResult({ leadId, calls: res.data?.calls || [], error: false });
+      })
       .catch(err => {
         console.error('[CalendarHub] failed to fetch call history', err);
-        if (!cancelled) setError(true);
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
+        if (!cancelled) setResult({ leadId, calls: [], error: true });
+      });
     return () => { cancelled = true; };
   }, [leadId]);
 
-  return { calls, loading, error };
+  const current = result.leadId === leadId;
+  return {
+    calls: current ? result.calls : [],
+    loading: Boolean(leadId) && !current,
+    error: current && result.error,
+  };
 }
 
 function CallHistorySkeleton() {

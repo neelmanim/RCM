@@ -5,7 +5,7 @@ export const DIGEST_TOUR_KEY = 'alternate:daily-digest-tour-seen-v2';
 
 // Plain-language walk through Team Digest, top to bottom. A step whose target is not on the page for this person (no export access,
 // nothing needing attention today) is skipped by the shared tour.
-export const DIGEST_STEPS = [
+const DIGEST_STEPS = [
   {
     target: '[data-tour="digest-date-picker"]',
     title: 'Choose the period',

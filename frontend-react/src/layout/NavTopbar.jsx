@@ -35,11 +35,6 @@ const SyncIcon = ({ spinning }) => (
   </svg>
 );
 
-const PhoneIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-  </svg>
-);
 
 const PlusIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -164,10 +159,10 @@ function NotificationBell() {
   }, []);
 
   useEffect(() => {
-    fetchTasks();
+    const initial = setTimeout(fetchTasks, 0);
     const id = setInterval(fetchTasks, TASK_POLL_MS);
     window.addEventListener('alternate:tasks-changed', fetchTasks);
-    return () => { clearInterval(id); window.removeEventListener('alternate:tasks-changed', fetchTasks); };
+    return () => { clearTimeout(initial); clearInterval(id); window.removeEventListener('alternate:tasks-changed', fetchTasks); };
   }, [fetchTasks]);
 
   const go = (view, extra) => { setOpen(false); window._loadView?.(view, extra); };
@@ -258,7 +253,6 @@ function NotificationBell() {
 // ── NavTopbar ─────────────────────────────────────────────────────────────────
 export function NavTopbar({
   userRole = '',
-  userName = '',
   onNavigate,
   onAction,
   onFocusSearchRef,
@@ -296,7 +290,6 @@ export function NavTopbar({
   // ever one Aircall SDK instance. Also used below to hide the legacy
   // Manual Dial button once the drawer itself covers that need.
   const { status: aircallStatus, callActive: aircallCallActive } = useAircallEverywhere();
-  const aircallEverywhereActive = ['loading', 'ready', 'notready'].includes(aircallStatus);
 
   const isAdmin      = isAdminRole(userRole);
   const isSuperAdmin = ['super admin', 'admin'].includes((userRole || '').toLowerCase());
@@ -453,7 +446,7 @@ export function NavTopbar({
         setAiError('AI query engine not ready. Please wait a moment and try again.');
         setAiHasResult(false);
       }
-    } catch (err) {
+    } catch {
       setAiError('Query failed. Please try again.');
       setAiHasResult(false);
     } finally {
@@ -701,24 +694,6 @@ export function NavTopbar({
           >
             <SyncIcon spinning={syncing} />
             <span>{syncing ? 'Syncing…' : 'Sync Salesforce'}</span>
-          </button>
-        )}
-
-        {/* Hidden once Aircall Everywhere is actually usable (loading/ready/
-            notready) — its drawer covers ad-hoc dialing better (Aircall's own
-            dial pad, not a bespoke one). Still shown if ineligible, opted
-            out, or the SDK errored, since those SDRs have no other way to
-            dial a number that isn't tied to a lead. */}
-        {!aircallEverywhereActive && (
-          <button
-            className="nh-btn nh-btn--primary"
-            onClick={() => onAction?.('dial')}
-            title="Dial any number"
-            aria-label="Dial"
-            id="nh-manual-dial-btn"
-          >
-            <PhoneIcon />
-            <span>Dial</span>
           </button>
         )}
 

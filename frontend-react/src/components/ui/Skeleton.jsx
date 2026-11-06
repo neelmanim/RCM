@@ -9,6 +9,9 @@ export const Skeleton = ({ className = '', style, ...props }) => (
   />
 );
 
+const SKELETON_LINE_WIDTHS = ['92%', '87%', '95%', '89%', '94%'];
+const SKELETON_BAR_HEIGHTS = [24, 48, 32, 56, 18, 50, 36, 42];
+
 /* ── Text Line ──────────────────────────────────────────────────────────── */
 export const SkeletonText = ({ lines = 3, className = '' }) => (
   <div className={`space-y-2.5 ${className}`}>
@@ -16,7 +19,7 @@ export const SkeletonText = ({ lines = 3, className = '' }) => (
       <Skeleton
         key={i}
         className="h-3.5"
-        style={{ width: i === lines - 1 ? '60%' : `${85 + Math.random() * 15}%` }}
+        style={{ width: i === lines - 1 ? '60%' : SKELETON_LINE_WIDTHS[i % SKELETON_LINE_WIDTHS.length] }}
       />
     ))}
   </div>
@@ -107,7 +110,7 @@ export const SkeletonFunnel = ({ bars = 8, className = '' }) => (
         <Skeleton className="h-2.5 w-6" />
         <Skeleton
           className="w-full rounded-t-lg"
-          style={{ height: `${15 + Math.random() * 45}px` }}
+          style={{ height: `${SKELETON_BAR_HEIGHTS[i % SKELETON_BAR_HEIGHTS.length]}px` }}
         />
         <Skeleton className="h-2 w-full" />
       </div>

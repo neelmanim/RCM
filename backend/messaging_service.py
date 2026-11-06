@@ -24,10 +24,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 import models
-from aircall_messaging_provider import AircallMessagingProvider
-from dialer_messaging_provider import AlternateDialerProvider
 from messaging_provider import MessagingProvider
-from routes._admin_helpers import _get_or_create_sync_settings
 
 # Also the allowlist for user_can_message's attribute lookup — a channel not
 # named here can never resolve to a User column.
@@ -45,65 +42,8 @@ def resolve_provider_name(settings, db_user) -> str:
     return (override or getattr(settings, "messaging_provider", None) or "messenger").lower()
 
 
-def _build_provider(provider_name: str, settings) -> Optional[MessagingProvider]:
-    """Instantiate one vendor from org credentials, or None if incomplete.
-    Returning None (rather than raising) keeps "not configured" and "misbehaving
-    vendor" as distinct outcomes for callers."""
-    if provider_name == "aircall":
-        api_id = getattr(settings, "dialer_api_id", None) or ""
-        api_token = getattr(settings, "dialer_api_token", None) or ""
-        # Aircall needs nothing but the org credentials: it already knows which
-        # numbers each user owns, so the send-from number is discovered per SDR
-        # by email (resolve_sender_for_user), exactly as calling has always done.
-        # aircall_messaging_number_id survives only as an org-wide fallback.
-        if not all([api_id, api_token]):
-            return None
-        from crypto import decrypt_token
-        return AircallMessagingProvider(
-            api_id=api_id, api_token=decrypt_token(api_token),
-            number_id=getattr(settings, "aircall_messaging_number_id", None) or "",
-        )
-
-    if not getattr(settings, "messenger_enabled", False):
-        return None
-    api_key = getattr(settings, "messenger_api_key", None) or ""
-    user_id = getattr(settings, "messenger_user_id", None) or ""
-    account_id = getattr(settings, "messenger_account_id", None) or ""
-    if not all([api_key, user_id, account_id]):
-        return None
-    return AlternateMessenger(api_key=api_key, user_id=user_id, account_id=account_id)
-
-
-def missing_org_config(provider_name: str, settings) -> list[str]:
-    """Human-readable names of the org-level fields still blank for this
-    vendor. Powers the admin UI's readiness hints, so an admin sees *what* to
-    fill in rather than only that sending failed."""
-    if provider_name == "aircall":
-        missing = []
-        if not (getattr(settings, "dialer_api_id", None) or ""):
-            missing.append("Aircall API ID")
-        if not (getattr(settings, "dialer_api_token", None) or ""):
-            missing.append("Aircall API Token")
-        # Deliberately no Number ID here — it is auto-discovered per SDR.
-        return missing
-
-    missing = []
-    if not getattr(settings, "messenger_enabled", False):
-        missing.append("Alternate Messenger messaging is switched off")
-    if not (getattr(settings, "messenger_api_key", None) or ""):
-        missing.append("API Key")
-    if not (getattr(settings, "messenger_user_id", None) or ""):
-        missing.append("User ID")
-    if not (getattr(settings, "messenger_account_id", None) or ""):
-        missing.append("Account ID")
-    return missing
-
-
 def get_messaging_provider_for_org(db: Session) -> Optional[MessagingProvider]:
-    """Resolve the org's active messaging provider from SyncSettings.
-    Returns None if messaging isn't enabled or isn't fully configured."""
-    settings = _get_or_create_sync_settings(db)
-    return _build_provider(resolve_provider_name(settings, None), settings)
+    return None
 
 
 def user_can_message(db_user, channel: str) -> bool:
@@ -113,46 +53,6 @@ def user_can_message(db_user, channel: str) -> bool:
     send path will accept."""
     return bool(db_user and channel in CHANNELS
                 and getattr(db_user, f"{channel}_enabled", False))
-
-
-def resolve_sender_for_user(settings, db_user, provider_name: str,
-                            provider=None, allow_remote_lookup: bool = True) -> str:
-    """The number this SDR's messages go out from — the same one for SMS and
-    WhatsApp, which is why this takes no channel.
-
-    The two vendors are asymmetric by nature, and the UI mirrors it:
-
-    * **Aircall** needs no per-user setup at all. Give it the org API ID and
-      token once and every user who exists in Aircall works, matched on their
-      email — numbers included, since Aircall already knows which numbers each
-      user owns. Discovered here, with the org-wide Number ID as a fallback.
-    * **Alternate Messenger** needs per-user identity: the SDR's own assigned sender,
-      falling back to the org-wide one — the same fallback shape
-      messenger_from_number already uses for calling.
-
-    Both channels share one sender: that is what the Widget has always done (it
-    sends whatever /api/dialer/status handed it for SMS and WhatsApp alike), and
-    cadence SMS reading a *different* field (messenger_from_number, the voice
-    caller ID) is exactly why WhatsApp could work while SMS cadences failed.
-    messenger_from_number stays as a last resort so an org that only ever
-    filled that field keeps sending.
-
-    `allow_remote_lookup=False` skips the Aircall API call — used on the
-    page-load capabilities path, where a paginated /users scan per request
-    would be the wrong trade even cached.
-    """
-    if provider_name == "aircall":
-        org_fallback = getattr(settings, "aircall_messaging_number_id", None) or ""
-        email = getattr(db_user, "email", None) if db_user else None
-        if allow_remote_lookup and provider is not None and email:
-            return provider.resolve_number_for_email(email) or org_fallback
-        return org_fallback
-    return (
-        (getattr(db_user, "messenger_whatsapp_sender_id", None) if db_user else None)
-        or getattr(settings, "messenger_sender_id", None)
-        or getattr(settings, "messenger_from_number", None)
-        or ""
-    )
 
 
 @dataclass
@@ -170,56 +70,10 @@ class ResolvedMessaging:
 
 def resolve_messaging_for_user(db: Session, db_user, channel: str,
                                allow_remote_lookup: bool = True) -> ResolvedMessaging:
-    """The single gate every SMS/WhatsApp send goes through.
-
-    Checks, in order: the channel is real, the SDR has been granted it, the
-    vendor's org credentials are complete, and a sender number exists.
-
-    `allow_remote_lookup=False` resolves without calling the vendor's API — see
-    resolve_sender_for_user.
-    """
-    if channel not in CHANNELS:
-        return ResolvedMessaging(error=f"Unknown channel '{channel}'", retryable=False)
-
-    if not db_user:
-        return ResolvedMessaging(error="Sending user no longer exists", retryable=False)
-
-    who = getattr(db_user, "name", None) or getattr(db_user, "email", None) or "This user"
-
-    if not user_can_message(db_user, channel):
-        label = "WhatsApp" if channel == "whatsapp" else "SMS"
-        return ResolvedMessaging(
-            error=f"{who} is not enabled for {label}. "
-                  f"Grant it in Settings → Alternate Messenger (or Dialer) → per-user access.",
-            retryable=False,
-        )
-
-    settings = _get_or_create_sync_settings(db)
-    provider_name = resolve_provider_name(settings, db_user)
-    if provider_name not in SUPPORTED_MESSAGING_PROVIDERS:
-        return ResolvedMessaging(error=f"Unsupported messaging provider '{provider_name}'", retryable=False)
-
-    provider = _build_provider(provider_name, settings)
-    if provider is None:
-        missing = missing_org_config(provider_name, settings)
-        return ResolvedMessaging(
-            error=f"{provider_name.title()} messaging is not fully configured"
-                  + (f" — missing: {', '.join(missing)}" if missing else ""),
-            retryable=True,
-        )
-
-    sender_id = resolve_sender_for_user(
-        settings, db_user, provider_name, provider=provider,
-        allow_remote_lookup=allow_remote_lookup,
+    return ResolvedMessaging(
+        error="Connect a messaging provider to use SMS or WhatsApp.",
+        retryable=False,
     )
-    if not sender_id:
-        return ResolvedMessaging(
-            error="No sender number is set — add one for this user, or an org-wide "
-                  "default in Settings → Alternate Messenger.",
-            retryable=True,
-        )
-
-    return ResolvedMessaging(provider=provider, sender_id=sender_id)
 
 
 def get_user_capabilities(db: Session, user: dict) -> dict:

@@ -62,7 +62,7 @@ function StatusBadge({ status }) {
   return <Badge variant={variant}>{su.replace('CALL_', '')}</Badge>;
 }
 
-export const COLUMNS = ['Time', 'SDR', 'Lead', 'Provider', 'Direction', 'Duration', 'Outcome', 'Status', 'Recording'];
+import { CALLS_COLUMNS as COLUMNS } from '../constants';
 
 /** Calls tab — column-for-column parity with the legacy call_monitor.js table
  * (recording play/download, failed-call error banner, expandable transcript

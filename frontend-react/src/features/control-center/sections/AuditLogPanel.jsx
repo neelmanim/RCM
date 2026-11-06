@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -12,13 +12,13 @@ import { SkeletonTable } from '../../../components/ui/Skeleton';
 import { AuditService } from '../../../services/api';
 import { errorText } from '../notify';
 import { Banner } from './Banner';
+import { formatWhen } from './auditFormat';
 
 const ACTION_BADGE = {
   DOWNLOAD: ['Downloaded', 'info'], BULK_READ: ['Bulk read', 'info'], BROWSER_CSV: ['CSV in browser', 'info'],
   ALLOWED: ['Allowed', 'success'], BLOCKED: ['Switched off', 'danger'],
   ADDED: ['Added', 'success'], CHANGED: ['Changed', 'primary'], REMOVED: ['Removed', 'danger'],
 };
-export const formatWhen = (iso) => (iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const today = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
 
 /** The permanent who / what / when trail (Super Admin). `category` is what to list ("export,export_access", "sf_mapping"); `kinds`
@@ -35,14 +35,20 @@ export function AuditLogPanel({ category, kinds, searchLabel = 'Search by person
 
   useEffect(() => { const t = setTimeout(() => { setQuery(q.trim()); setPage(1); }, 250); return () => clearTimeout(t); }, [q]);
 
-  const load = useCallback(async () => {
-    try {
-      setData(await AuditService.list({ category: kind || category, q: query || undefined, date_from: range.from || undefined,
-        date_to: range.to || undefined, page, per_page: pageSize }));
-      setError('');
-    } catch (e) { setError(errorText(e)); setData((d) => d || { items: [], total: 0, pages: 1 }); }
-  }, [category, kind, query, range.from, range.to, page, pageSize, tick]);   // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const result = await AuditService.list({ category: kind || category, q: query || undefined, date_from: range.from || undefined,
+        date_to: range.to || undefined, page, per_page: pageSize });
+        if (!cancelled) { setData(result); setError(''); }
+      } catch (e) {
+        if (!cancelled) { setError(errorText(e)); setData((d) => d || { items: [], total: 0, pages: 1 }); }
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [category, kind, query, range.from, range.to, page, pageSize, tick]);
 
   const filtered = !!(query || range.from || kind);
   return (

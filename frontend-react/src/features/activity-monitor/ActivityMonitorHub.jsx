@@ -9,11 +9,12 @@ import { useActivityMonitorData } from './useActivityMonitorData';
 import { useSort } from '../../utils/useSort';
 import { ChannelTabs } from './components/ChannelTabs';
 import { FilterBar } from './components/FilterBar';
+import { CALLS_COLUMNS, EMAIL_COLUMNS, MESSAGES_COLUMNS } from './constants';
 import { StatStrip } from './components/StatStrip';
 import { Pagination } from '../../components/ui/Pagination';
-import { CallsTable, COLUMNS as CALLS_COLUMNS } from './components/CallsTable';
-import { EmailTable, COLUMNS as EMAIL_COLUMNS } from './components/EmailTable';
-import { MessagesTable, COLUMNS as MESSAGES_COLUMNS } from './components/MessagesTable';
+import { CallsTable } from './components/CallsTable';
+import { EmailTable } from './components/EmailTable';
+import { MessagesTable } from './components/MessagesTable';
 import { exportCsv } from './lib/exportCsv';
 import { cleanParams } from './lib/queryParams';
 import { EMPTY_FILTERS, PER_PAGE, CSV_EXPORT_CAP } from './constants';
@@ -216,7 +217,7 @@ export function ActivityMonitorHub({ userRole, onOpenLead }) {
       )}
 
       <ChannelTabs active={channel} onChange={changeChannel} />
-      <FilterBar channel={channel} sdrs={sdrs} onApply={applyFilters} />
+      <FilterBar key={channel} channel={channel} sdrs={sdrs} onApply={applyFilters} />
 
       {loading && !items.length ? (
         <div className="grid grid-cols-4 gap-4 mb-5">

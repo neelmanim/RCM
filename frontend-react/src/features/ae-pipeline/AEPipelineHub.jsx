@@ -478,7 +478,6 @@ export function AEPipelineHub() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [search, stageFilter, ownerFilter, sort]);
 
   const loading = opportunities === null;
 
@@ -541,16 +540,16 @@ export function AEPipelineHub() {
           <SearchInput
             placeholder="Search by account…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="w-56"
             aria-label="Search opportunities"
           />
-          <Select ariaLabel="Filter by stage" value={stageFilter} onChange={setStageFilter} options={STAGE_FILTER_OPTIONS} />
+          <Select ariaLabel="Filter by stage" value={stageFilter} onChange={(value) => { setStageFilter(value); setPage(1); }} options={STAGE_FILTER_OPTIONS} />
           {ownerOptions.length > 1 && (
             <Select
               ariaLabel="Filter by AE"
               value={ownerFilter}
-              onChange={setOwnerFilter}
+              onChange={(value) => { setOwnerFilter(value); setPage(1); }}
               options={[{ value: 'all', label: 'All AEs' }, ...ownerOptions]}
             />
           )}
@@ -564,11 +563,11 @@ export function AEPipelineHub() {
           <Table>
             <TableHead>
               <TableRow>
-                <SortableTableHeader label="Account" sortKey="account" sort={sort} onSort={toggleSort} />
-                <SortableTableHeader label="AE" sortKey="ae" sort={sort} onSort={toggleSort} />
-                <SortableTableHeader label="Amount" sortKey="amount" sort={sort} onSort={toggleSort} className="text-right" />
+                <SortableTableHeader label="Account" sortKey="account" sort={sort} onSort={(key) => { toggleSort(key); setPage(1); }} />
+                <SortableTableHeader label="AE" sortKey="ae" sort={sort} onSort={(key) => { toggleSort(key); setPage(1); }} />
+                <SortableTableHeader label="Amount" sortKey="amount" sort={sort} onSort={(key) => { toggleSort(key); setPage(1); }} className="text-right" />
                 <TableHeader>Stage</TableHeader>
-                <SortableTableHeader label="Close date" sortKey="close_date" sort={sort} onSort={toggleSort} />
+                <SortableTableHeader label="Close date" sortKey="close_date" sort={sort} onSort={(key) => { toggleSort(key); setPage(1); }} />
               </TableRow>
             </TableHead>
             <TableBody>

@@ -942,7 +942,7 @@ class SmsLog(Base):
     # v10.9.13: Widget persistence + provider-agnostic groundwork.
     channel         = Column(String, default="sms", nullable=False)       # "sms" | "whatsapp"
     provider        = Column(String, default="messenger", nullable=False)  # "messenger" | "aircall" (future)
-    conversation_id = Column(String, nullable=True)  # Alternate Messenger Converse Desk thread id (Widget sends only)
+    conversation_id = Column(String, nullable=True)  # Alternate Messenger thread ID (Widget sends only)
     template_name   = Column(String, nullable=True)  # WhatsApp MTM template used, if any
     # RCA 2026-08-25: status="failed" alone gives no way to tell a session-
     # expired rejection from a bad template or an invalid number apart — every
@@ -1027,7 +1027,7 @@ class SyncSettings(Base):
     # property because nothing filters on this column in SQL (checked).
     messenger_api_key_encrypted = Column("messenger_api_key", String, nullable=True)
     messenger_user_id     = Column(String, nullable=True)                   # Messaging Provider user ID
-    messenger_account_id  = Column(String, nullable=True)                   # Alternate Messenger account ID (for Converse Desk API)
+    messenger_account_id  = Column(String, nullable=True)                   # Alternate Messenger account ID (for the conversations API)
     messenger_sender_id   = Column(String, nullable=True)                   # WhatsApp/SMS sender number e.g. "918956778474"
     messenger_access_token = Column(Text, nullable=True)                    # JWT access token (encrypted)
 

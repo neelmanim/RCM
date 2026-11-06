@@ -14,7 +14,7 @@ export const Section = ({ title, Icon, open, onToggle, children }) => (
       className="w-full flex items-center gap-3 px-4 sm:px-5 py-4 text-left hover:bg-slate-50 transition-colors"
     >
       <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-        <Icon size={16} className="text-blue-600" />
+        {React.createElement(Icon, { size: 16, className: "text-blue-600" })}
       </div>
       <span className="flex-1 text-sm font-semibold text-slate-800">{title}</span>
       {open ? <ChevronDown size={16} className="text-slate-400 shrink-0" /> : <ChevronRight size={16} className="text-slate-400 shrink-0" />}

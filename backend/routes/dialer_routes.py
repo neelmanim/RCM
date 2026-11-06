@@ -105,158 +105,7 @@ def _should_try_phone_match(call_id: str, age_seconds: float) -> bool:
 
 @router.post("/calls/start")
 def start_call(request: Request, body: dict, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """
-    Initiate an outbound call through the active dialer provider.
-    Body: { "lead_id": "...", "phone_number": "+91..." }
-    BUG-04: lead_id is now optional — if omitted, the system tries to find an
-    existing lead by phone; if none found, creates a minimal anonymous lead.
-    """
-    lead_id = body.get("lead_id")
-    phone_number = body.get("phone_number", "").strip()
-    call_mode = body.get("call_mode", "browser")
-
-    if not phone_number:
-        raise HTTPException(status_code=400, detail="phone_number is required")
-
-    # Validate call_mode
-    if call_mode not in ("bridge", "browser"):
-        raise HTTPException(status_code=400, detail="call_mode must be 'bridge' or 'browser'")
-
-    if lead_id:
-        load_lead(db, user, lead_id, edit=True)  # calling a lead is a change to it
-
-    # BUG-04: Auto-resolve lead when no lead_id is provided
-    if not lead_id:
-        import models as _m, uuid
-        # Normalise: strip spaces/dashes for lookup
-        def _norm(n): return (n or "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-        _phone_norm = _norm(phone_number)
-
-        # Search all phone fields
-        candidate = None
-        for lead in db.query(_m.Lead).all():
-            if any(_norm(getattr(lead, f, "") or "") == _phone_norm
-                   for f in ("phone", "phone_secondary", "company_phone")):
-                candidate = lead
-                break
-
-        if candidate:
-            lead_id = candidate.id
-            logger.info(f"[ManualDial] Found existing lead {lead_id} for phone {phone_number}")
-        else:
-            # Create anonymous lead — only use real Column fields (notes is a relationship)
-            # sf_lead_id: Use a MANUAL- sentinel so the anonymous lead row can
-            # be created without a real Salesforce ID while still satisfying uniqueness.
-            anon = _m.Lead(
-                id=str(uuid.uuid4()),
-                sf_lead_id=f"MANUAL-{uuid.uuid4().hex[:16]}",   # unique sentinel, not a real SF ID
-                first_name="Unknown",
-                last_name="Caller",
-                email=f"unknown.{uuid.uuid4().hex[:12]}@alternatecrm.auto",
-                phone=phone_number,
-                status="Calling",
-                lead_source="Manual Dial",
-                # RCA 2026-08-06: left unset here (unlike the equivalent Klenty
-                # auto-lead-creation path, which sets pod_id=sdr.pod_id) — the
-                # call still counted toward the SDR's pod in analytics (scoped
-                # by caller, not lead), but the lead itself was an orphan not
-                # in any pod's own lead list, a real but confusing mismatch.
-                pod_id=user.get("pod_id"),
-            )
-            db.add(anon)
-            db.commit()
-            db.refresh(anon)
-            lead_id = anon.id
-            logger.info(f"[ManualDial] Created anonymous lead {lead_id} for phone {phone_number}")
-
-    result = dialer_service.initiate_call(
-        db, user, lead_id, phone_number,
-        call_mode=call_mode,
-        request_base_url=str(request.base_url),
-    )
-
-    if not result.get("success"):
-        error_msg = result.get("error", "Call initiation failed")
-        # RCA-2026-05-29: 405-type failures (SDR's Aircall Desktop offline/unavailable)
-        # are operational events — downgrade to "warning". True failures (credential
-        # errors, unexpected API errors) stay "critical".
-        _user_unavailable = any(phrase in error_msg for phrase in (
-            "could not receive the call",
-            "not assigned to any phone number",
-            # RCA 2026-09-07: same category as the two phrases above (SDR-side
-            # operational condition, not a system fault) — omitted originally
-            # only because the outcome-log self-heal RCA that made this a
-            # common, expected message postdates this list.
-            "You already have an active call in progress",
-        ))
-        _log_severity = "warning" if _user_unavailable else "critical"
-        # A DNC/unsubscribed skip is policy working as designed, not an
-        # operational failure — logging it to Error Logs on every skip during
-        # a Power Dialer session would be pure noise. Skip the log entirely
-        # (not just downgrade severity) when the gate itself blocked the call.
-        if not result.get("suppressed"):
-            # Log to the Error Logs table so admins see it in System Logs → Error Logs
-            log_error(
-                db=db,
-                severity=_log_severity,
-                category="dialer",
-                feature=f"{result.get('provider', 'Unknown')} Dialer",
-                title=f"Outbound call failed for {phone_number}",
-                description=error_msg,
-                action_hint="Check dialer credentials in Settings → Dialer. Review Call Logs for full history.",
-                endpoint="/api/calls/start",
-                raw_error=error_msg,
-                context_json=json.dumps({
-                    "lead_id": lead_id,
-                    "phone": phone_number,
-                    "call_mode": call_mode,
-                    "provider": result.get("provider"),
-                }),
-                user_id=user.get("sub"),
-                user_email=user.get("email"),
-                user_name=user.get("name"),
-                user_role=user.get("role"),
-            )
-        raise HTTPException(status_code=422, detail=error_msg)
-
-    # Activity log
-    try:
-        from activity_logger import log_activity
-        log_activity(user["sub"], "DIALER_CALL",
-                     user_email=user.get("email"), user_name=user.get("name"),
-                     object_type="dialer_call", object_id=result.get("call_id"),
-                     metadata={"lead_id": lead_id, "provider": result.get("provider"), "phone": phone_number})
-    except Exception:
-        pass
-
-    # EC-8: include lead_name so frontend outcome modal shows the correct name
-    # for both ad-hoc (anonymous) and lead-page-initiated calls.
-    lead_name = None
-    try:
-        import models as _m2
-        _lead = db.query(_m2.Lead).filter(_m2.Lead.id == lead_id).first()
-        if _lead:
-            lead_name = f"{_lead.first_name or ''} {_lead.last_name or ''}".strip() or None
-    except Exception:
-        pass
-    return_val = {**result, "lead_id": lead_id, "lead_name": lead_name}
-
-    # Phase 3: Publish CALL_STARTED event to SSE broker so the browser
-    # receives the call_id immediately without waiting for the first poll.
-    try:
-        import asyncio
-        asyncio.get_event_loop().create_task(
-            sse_broker.publish(user["sub"], {
-                "type":    "CALL_STARTED",
-                "call_id": result.get("call_id"),
-                "status":  "CALL_STARTED",
-                "ts":      __import__("time").time(),
-            })
-        )
-    except Exception:
-        pass  # SSE fan-out is best-effort — never block the response
-
-    return return_val
+    raise HTTPException(status_code=503, detail="Connect a voice provider to place calls.")
 
 
 # ── Call status polling ──────────────────────────────────────────────────────
@@ -586,49 +435,14 @@ async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/dialer/status")
 def dialer_status(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Check if a dialer provider is active for the current user. Returns minimal info, no secrets.
-
-    Uses a live DB check (not JWT) so admin toggles take effect immediately without
-    requiring SDRs to re-login.  get_provider_for_user() returns None when the user's
-    dialer_enabled flag is False in the users table.
-    """
-    # Per-SDR provider resolution — gates on live DB dialer_enabled (not JWT claim)
-    provider = dialer_service.get_provider_for_user(db, user)
-    # Read settings once for sender_id and per-SDR from_number
-    settings = dialer_service._get_settings(db)
-    # Per-SDR from_number (set by the SDR in Settings → Dialer)
-    import models as _m
-    db_user = db.query(_m.User).filter(_m.User.id == user["sub"]).first()
-    from_number = (getattr(db_user, 'messenger_from_number', None) or '') if db_user else ''
-    dialer_enabled = bool(getattr(db_user, 'dialer_enabled', False)) if db_user else False
-    # RCA 2026-08-25: the Message tab used one org-wide WhatsApp sender for
-    # every SDR — prefer the SDR's own assigned sender, same fallback shape
-    # as from_number above, falling back to the org-wide default.
-    sender_id = (
-        (getattr(db_user, 'messenger_whatsapp_sender_id', None) if db_user else None)
-        or getattr(settings, 'messenger_sender_id', '') or ''
-    )
-    # V48: Aircall Everywhere org-wide kill switch — the React embed gates itself on this.
-    aircall_everywhere_enabled = bool(getattr(settings, 'aircall_everywhere_enabled', False))
-    if provider:
-        return {
-            "active": True,
-            "provider": provider.provider_name,
-            "has_credentials": True,
-            "sender_id": sender_id,
-            "from_number": from_number,
-            "dialer_enabled": dialer_enabled,
-            "aircall_everywhere_enabled": aircall_everywhere_enabled,
-        }
-    # No provider resolved (disabled, no credentials, or dialer_enabled=False)
-    config = dialer_service.get_dialer_config(db)
     return {
         "active": False,
-        "provider": config.get("provider", "none"),
-        "has_credentials": config.get("has_credentials", False),
+        "provider": "none",
+        "has_credentials": False,
         "sender_id": "",
-        "dialer_enabled": dialer_enabled,
-        "aircall_everywhere_enabled": aircall_everywhere_enabled,
+        "from_number": "",
+        "dialer_enabled": False,
+        "aircall_everywhere_enabled": False,
     }
 
 
@@ -1277,7 +1091,7 @@ def get_my_numbers(user: dict = Depends(get_current_user), db: Session = Depends
     from call history. These are the only numbers valid for call initiation.
     """
     import models
-    from messaging_provider import AlternateDialerProvider
+    from dialer_messaging_provider import AlternateDialerProvider
     from dialer_service import get_dialer_settings
 
     db_user = db.query(models.User).filter(models.User.id == user["sub"]).first()

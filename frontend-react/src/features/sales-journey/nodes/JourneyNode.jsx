@@ -1,24 +1,13 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Zap, Mail, Clock, GitBranch, Phone, MessageSquareText, MessageCircle, ClipboardCheck, Send } from 'lucide-react';
-import { NODE_LABELS, TASK_KINDS, FIELD_RULE_FIELDS, FIELD_RULE_OPS } from '../nodeDefaults';
+import { NODE_LABELS, NODE_ACCENT, TASK_KINDS, FIELD_RULE_FIELDS, FIELD_RULE_OPS } from '../nodeDefaults';
 
 const ICONS = { trigger: Zap, email: Mail, wait: Clock, condition: GitBranch, call: Phone, task: ClipboardCheck, sms: MessageSquareText, whatsapp: MessageCircle, instantly_sequence: Send };
 // A pale full-card background tint (bg-amber-50 vs bg-blue-50, etc.) reads as
 // nearly the same card at a glance — a colored header band is a much more
 // visible way to tell 5 node types apart on a canvas full of small cards.
 // Also used for the MiniMap's nodeColor so the overview matches the canvas.
-export const NODE_ACCENT = {
-  trigger:   { border: 'border-amber-400',   header: 'bg-amber-100 text-amber-800',   hex: '#fbbf24' },
-  email:     { border: 'border-blue-400',    header: 'bg-blue-100 text-blue-800',     hex: '#60a5fa' },
-  wait:      { border: 'border-slate-400',   header: 'bg-slate-200 text-slate-700',   hex: '#94a3b8' },
-  condition: { border: 'border-purple-400',  header: 'bg-purple-100 text-purple-800', hex: '#c084fc' },
-  call:      { border: 'border-emerald-400', header: 'bg-emerald-100 text-emerald-800', hex: '#34d399' },
-  task:      { border: 'border-orange-400',  header: 'bg-orange-100 text-orange-800',  hex: '#fb923c' },
-  sms:       { border: 'border-teal-400',    header: 'bg-teal-100 text-teal-800',      hex: '#2dd4bf' },
-  whatsapp:  { border: 'border-green-400',   header: 'bg-green-100 text-green-800',    hex: '#4ade80' },
-  instantly_sequence: { border: 'border-indigo-400', header: 'bg-indigo-100 text-indigo-800', hex: '#818cf8' },
-};
 // Shape follows standard flowchart notation, not an arbitrary look: trigger
 // is the terminator (pill/oval — whole card), condition is the decision
 // (diamond icon badge — the card itself stays rectangular so its summary
@@ -37,7 +26,7 @@ const NODE_SHAPE = {
 };
 
 // 72 → "3d", 30 → "1d 6h", 0.5 → "30m" — waits are authored in days now.
-export function formatDuration(hours) {
+function formatDuration(hours) {
   const mins = Math.round((hours || 0) * 60);
   const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
   return [d && `${d}d`, h && `${h}h`, m && `${m}m`].filter(Boolean).join(' ') || '0h';

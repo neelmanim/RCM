@@ -28,30 +28,31 @@ export default function LeadsPage() {
   });
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 animate-fadeIn">
+    <div className="crm-page space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Leads & Target Accounts
+            Leads and accounts
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Core CRM records enriched with revenue intelligence and touchpoint history.
+            Find a contact, check their stage, or open their activity history.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-            {filteredLeads.length} Accounts Displayed
+            {filteredLeads.length} shown
           </span>
         </div>
       </div>
 
       {/* Filter / Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center gap-3 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 p-3 rounded-2xl shadow-sm">
+      <div className="flex flex-col sm:flex-row items-center gap-3 crm-panel p-3">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
+            aria-label="Search leads"
             placeholder="Search leads by name, company, or email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -61,7 +62,7 @@ export default function LeadsPage() {
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <Filter className="w-4 h-4 text-slate-400" />
-          <select
+          <select aria-label="Filter by stage"
             value={stageFilter}
             onChange={(e) => setStageFilter(e.target.value)}
             className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
@@ -75,14 +76,15 @@ export default function LeadsPage() {
       </div>
 
       {/* Leads Table */}
-      <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+      <div className="crm-panel overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full min-w-[44rem] text-left text-sm">
+            <caption className="sr-only">CRM leads</caption>
             <thead className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 text-[10px] uppercase font-bold text-slate-400 tracking-wider">
               <tr>
                 <th className="py-3.5 px-4">Contact & Company</th>
                 <th className="py-3.5 px-4">Stage</th>
-                <th className="py-3.5 px-4">ARR & Reps</th>
+                <th className="py-3.5 px-4">Value and team size</th>
                 <th className="py-3.5 px-4">Priority Score</th>
                 <th className="py-3.5 px-4">Assigned To</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>

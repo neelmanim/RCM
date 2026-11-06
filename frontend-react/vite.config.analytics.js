@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Vite config for building the Analytics Hub as a self-contained IIFE bundle.
@@ -26,8 +26,8 @@ export default defineConfig({
       name: 'append-scoped-css',
       closeBundle() {
         const MARKER = '/* ─── appended from frontend/css/analytics-hub.css ─── */';
-        const tailwindOut = resolve(__dirname, '../frontend/js/analytics-hub.css');
-        const scopedCss   = resolve(__dirname, '../frontend/css/analytics-hub.css');
+        const tailwindOut = fileURLToPath(new URL('../frontend/js/analytics-hub.css', import.meta.url));
+        const scopedCss   = fileURLToPath(new URL('../frontend/css/analytics-hub.css', import.meta.url));
         try {
           const extra = readFileSync(scopedCss, 'utf8');
           let base = existsSync(tailwindOut) ? readFileSync(tailwindOut, 'utf8') : '';

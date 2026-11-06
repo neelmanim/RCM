@@ -1,25 +1,10 @@
-import { DM_Sans, Manrope } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-dm-sans",
-  display: "swap",
-});
-
-const manrope = Manrope({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-manrope",
-  display: "swap",
-});
-
 export const metadata = {
-  title: "AlternateCRM — One OS. Every conversation.",
+  title: "Alternate CRM | Leads, follow-ups, and pipeline",
   description:
-    "AlternateCRM is the modular Conversation OS. Turn every conversation into momentum, with one connected foundation for people, AI and customer relationships.",
+    "Alternate CRM gives sales teams a shared workspace for tracking leads, managing follow-ups, and seeing where deals stand.",
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
@@ -37,7 +22,7 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${dmSans.variable} ${manrope.variable}`}>
+    <html lang="en">
       <body>
         {children}
         <Script id="microsoft-clarity" strategy="afterInteractive">

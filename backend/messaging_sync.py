@@ -1,6 +1,6 @@
 # ── messaging_sync.py — inbound message reconciliation ──────────────────────
 """
-Alternate Messenger/Messaging Provider's Converse Desk API has no push webhook for inbound
+The Alternate Messenger conversations API has no push webhook for inbound
 messages (unlike calls, unlike email/Nylas) — the only way to learn about a
 lead's reply is to poll. This mirrors the existing nightly-sync pattern
 (dialer_service.sync_historical_calls) one layer over: periodically list

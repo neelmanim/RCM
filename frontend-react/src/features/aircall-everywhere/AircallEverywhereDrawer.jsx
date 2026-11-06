@@ -72,13 +72,12 @@ export function AircallEverywhereDrawer({ status, callActive }) {
   // SDR dismissed a previous prompt) — otherwise dismissing once during
   // setup would silently suppress the drawer forever, including the next
   // time login is actually needed again.
-  const prevStatusRef = useRef(status);
-  useEffect(() => {
-    const prev = prevStatusRef.current;
-    if (prev !== 'ready' && status === 'ready') setDrawerOpen(false);
-    else if (prev === 'ready' && status !== 'ready') setDrawerOpen(true);
-    prevStatusRef.current = status;
-  }, [status]);
+  const [previousStatus, setPreviousStatus] = useState(status);
+  if (previousStatus !== status) {
+    setPreviousStatus(status);
+    if (previousStatus !== 'ready' && status === 'ready') setDrawerOpen(false);
+    else if (previousStatus === 'ready' && status !== 'ready') setDrawerOpen(true);
+  }
 
   // Forced open during an active call (mute/hold/hangup only exist inside
   // Aircall's own UI, no CRM-side hangup button exists) — otherwise a manual

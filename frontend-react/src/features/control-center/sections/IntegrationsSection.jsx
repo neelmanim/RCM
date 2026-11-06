@@ -12,7 +12,8 @@ import { Tabs } from '../../../components/ui/Tabs';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { SkeletonCard, SkeletonText } from '../../../components/ui/Skeleton';
 import { ConfirmDialog } from '../../../components/ui/Modal';
-import { MailboxPicker, mailboxSummary } from '../../../components/MailboxPicker';
+import { MailboxPicker } from '../../../components/MailboxPicker';
+import { mailboxSummary } from '../../../utils/mailboxSummary';
 import { SalesforceTab } from './salesforce/SalesforceTab';
 import { RulesCard } from './RulesCard';
 import { Banner } from './Banner';
@@ -63,10 +64,8 @@ export function IntegrationsSection({ userRole }) {
   const [syncSettings, setSyncSettings] = useState(null);
   const [publicApiStatus, setPublicApiStatus] = useState({ configured: false });
 
-  const loadAll = useCallback(async (silent = false) => {
-    if (!isAdmin) { setLoading(false); return; }
-    if (!silent) setLoading(true);
-    setLoadError('');
+  const loadAll = useCallback(async () => {
+    if (!isAdmin) return Promise.resolve();
     const fetchAll = () => Promise.allSettled([
       isSuperAdmin ? SettingsService.getSfOverview() : Promise.resolve(null),
       isAdmin ? SettingsService.getSfStatus() : Promise.resolve({ connected: false, source: null }),
@@ -75,31 +74,33 @@ export function IntegrationsSection({ userRole }) {
       isSuperAdmin ? SettingsService.getSyncSettings() : Promise.resolve(null),
       isSuperAdmin ? SettingsService.getPublicApiKeyStatus() : Promise.resolve({ configured: false }),
     ]);
-    let [overviewR, sfR, nylasR, dialerR, syncR, apiR] = await fetchAll();
-    if (overviewR.status === 'rejected' && sfR.status === 'rejected') {
-      // Both core calls failed together: almost always a momentary blip (busy server, brief disconnect). Try once more.
-      await new Promise((r) => setTimeout(r, 1500));
-      [overviewR, sfR, nylasR, dialerR, syncR, apiR] = await fetchAll();
-    }
-    setOverview(overviewR.status === 'fulfilled' ? overviewR.value : null);
-    setSfInfo(sfR.status === 'fulfilled' ? sfR.value : { connected: false, source: null });
-    setNylasConf(nylasR.status === 'fulfilled' ? nylasR.value : null);
-    setDialerConf(dialerR.status === 'fulfilled' ? dialerR.value : null);
-    setSyncSettings(syncR.status === 'fulfilled' ? syncR.value : null);
-    setPublicApiStatus(apiR.status === 'fulfilled' ? apiR.value : { configured: false });
-    if (overviewR.status === 'rejected' && sfR.status === 'rejected') {
-      const e = sfR.reason || overviewR.reason;
-      const why = e?.response?.status ? `the server answered ${e.response.status}${e.response.data?.detail ? ` (${e.response.data.detail})` : ''}`
-        : e?.code === 'ECONNABORTED' ? 'the server took too long to answer'
-        : 'the server could not be reached';
-      setLoadError(`Couldn't load integrations — ${why}. Retry, and if it keeps happening tell us this message.`);
-    }
-    setLoading(false);
+    return fetchAll().then(async ([overviewR, sfR, nylasR, dialerR, syncR, apiR]) => {
+      if (overviewR.status === 'rejected' && sfR.status === 'rejected') {
+        // Both core calls failed together: almost always a momentary blip (busy server, brief disconnect). Try once more.
+        await new Promise((r) => setTimeout(r, 1500));
+        [overviewR, sfR, nylasR, dialerR, syncR, apiR] = await fetchAll();
+      }
+      setLoadError('');
+      setOverview(overviewR.status === 'fulfilled' ? overviewR.value : null);
+      setSfInfo(sfR.status === 'fulfilled' ? sfR.value : { connected: false, source: null });
+      setNylasConf(nylasR.status === 'fulfilled' ? nylasR.value : null);
+      setDialerConf(dialerR.status === 'fulfilled' ? dialerR.value : null);
+      setSyncSettings(syncR.status === 'fulfilled' ? syncR.value : null);
+      setPublicApiStatus(apiR.status === 'fulfilled' ? apiR.value : { configured: false });
+      if (overviewR.status === 'rejected' && sfR.status === 'rejected') {
+        const e = sfR.reason || overviewR.reason;
+        const why = e?.response?.status ? `the server answered ${e.response.status}${e.response.data?.detail ? ` (${e.response.data.detail})` : ''}`
+          : e?.code === 'ECONNABORTED' ? 'the server took too long to answer'
+          : 'the server could not be reached';
+        setLoadError(`Couldn't load integrations — ${why}. Retry, and if it keeps happening tell us this message.`);
+      }
+      setLoading(false);
+    });
   }, [isAdmin, isSuperAdmin]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
   // After a save: re-read the settings without blanking the page behind a skeleton.
-  const refresh = useCallback(() => loadAll(true), [loadAll]);
+  const refresh = useCallback(() => loadAll(), [loadAll]);
 
   if (!isAdmin) {
     return (
@@ -160,7 +161,7 @@ export function IntegrationsSection({ userRole }) {
         <div className="space-y-5">
           {isSuperAdmin ? (
             <>
-              <AircallCard dialerConf={dialerConf} syncSettings={syncSettings} onChanged={loadAll} />
+              <AircallCard dialerConf={dialerConf} onChanged={loadAll} />
               <KlentyCard dialerConf={dialerConf} onChanged={loadAll} />
             </>
           ) : <AdminOnlyNotice text="Aircall and Klenty settings are Super Admin only." />}
@@ -269,17 +270,15 @@ function NylasCard({ nylasConf, onChanged }) {
 // Ported from settings.js:566-650 (fields) + settings_ai_dialer.js:392-684
 // (bindAiDialerTab's dialer save/test handlers, DialerService.getConfig/
 // saveConfig/testConnection → GET/PATCH /dialer/config, POST /dialer/test).
-function AircallCard({ dialerConf, syncSettings, onChanged }) {
+function AircallCard({ dialerConf, onChanged }) {
   const [form, setForm] = useState({
     provider: dialerConf?.provider || 'none',
     api_id: dialerConf?.api_id || '',
     api_token: '',
     webhook_token: '',
     webhook_url_override: dialerConf?.webhook_url_override || '',
-    aircall_everywhere_enabled: !!dialerConf?.aircall_everywhere_enabled,
     aircall_sync_enabled: dialerConf?.aircall_sync_enabled !== false,
   });
-  const [numberId, setNumberId] = useState(syncSettings?.aircall_messaging_number_id || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -299,16 +298,14 @@ function AircallCard({ dialerConf, syncSettings, onChanged }) {
     setSaving(true);
     try {
       const payload = {
-        provider: form.provider, aircall_everywhere_enabled: form.aircall_everywhere_enabled, aircall_sync_enabled: form.aircall_sync_enabled,
+        provider: form.provider, aircall_sync_enabled: form.aircall_sync_enabled,
         webhook_url_override: form.webhook_url_override.trim(),
       };
       if (form.api_id.trim()) payload.api_id = form.api_id.trim();
       if (form.api_token.trim()) payload.api_token = form.api_token.trim();
       if (form.webhook_token.trim()) payload.webhook_token = form.webhook_token.trim();
       await DialerService.saveConfig(payload);
-      // Aircall Number ID visually sits in this card but is a messaging-fallback field on sync settings.
-      await SettingsService.patchSyncSettings({ aircall_messaging_number_id: numberId.trim() });
-      setSuccess('Dialer configuration saved successfully.');
+      setSuccess('Call history configuration saved.');
       await onChanged();
     } catch (e) {
       setError(e.response?.data?.detail || e.message || 'Failed to save configuration.');
@@ -331,14 +328,14 @@ function AircallCard({ dialerConf, syncSettings, onChanged }) {
 
   return (
     <Card>
-      <CardHeader title="Aircall Configuration" subtitle="Configure Aircall as the outbound calling provider"
+      <CardHeader title="Call history configuration" subtitle="Manage provider credentials and incoming call activity"
         actions={<Badge variant={statusBadge.v}>{statusBadge.t}</Badge>} />
       <CardContent className="space-y-3">
         <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Calling Provider</label>
-          <Select ariaLabel="Calling Provider" value={form.provider} onChange={(v) => setForm((f) => ({ ...f, provider: v }))}
+          <label className="block text-xs font-semibold text-slate-600 mb-1">Call history provider</label>
+          <Select ariaLabel="Call history provider" value={form.provider} onChange={(v) => setForm((f) => ({ ...f, provider: v }))}
             options={[{ value: 'none', label: 'None (Manual call logging only)' }, { value: 'aircall', label: 'Aircall' }, { value: 'messenger', label: 'Alternate Messenger' }]} />
-          <p className="text-[11px] text-slate-400 mt-1">Which vendor places outbound calls — independent from the Messaging Provider setting on the Alternate Messenger card below.</p>
+          <p className="text-[11px] text-slate-600 mt-1">Outbound calls, SMS, and WhatsApp are unavailable. You can still sync provider call activity and log calls manually.</p>
         </div>
 
         {isAircall && (
@@ -356,17 +353,11 @@ function AircallCard({ dialerConf, syncSettings, onChanged }) {
             <Input label="Webhook Token" type="password" value={form.webhook_token} onChange={(e) => setForm((f) => ({ ...f, webhook_token: e.target.value }))}
               placeholder={dialerConf?.webhook_token ? '•••••••• (saved — leave blank to keep)' : 'Paste the token Aircall shows for this webhook'}
               hint="Aircall → Integrations → Webhooks. Events without it are refused once webhook checks are enforced." />
-            <Switch checked={form.aircall_everywhere_enabled} onChange={(e) => setForm((f) => ({ ...f, aircall_everywhere_enabled: e.target.checked }))}
-              label="Enable Aircall Everywhere (embedded browser dialer)"
-              hint="Lets SDRs dial directly from the browser inside Power Dialer. Off by default." />
             <Switch checked={form.aircall_sync_enabled} onChange={(e) => setForm((f) => ({ ...f, aircall_sync_enabled: e.target.checked }))}
               label="Aircall nightly catch-up sync"
               hint={dialerConf?.aircall_last_sync_at ? `Last run: ${new Date(dialerConf.aircall_last_sync_at).toLocaleString()}` : 'Never run yet'} />
           </>
         )}
-
-        <Input label="Aircall Number ID (optional fallback)" value={numberId} onChange={(e) => setNumberId(e.target.value)}
-          placeholder="Leave blank — resolved per user" hint="Each user's send-from number is normally discovered by email. Set this only as an override." />
 
         <Banner text={error} tone="error" />
         <Banner text={success} tone="ok" />

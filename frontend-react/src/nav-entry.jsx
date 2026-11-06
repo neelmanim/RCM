@@ -24,12 +24,12 @@
  *   onLogout     {fn}       () => void — calls existing logout logic
  *   onAction     {fn}       (action, data?) => void — bridges topbar buttons
  */
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { NavSidebar } from './layout/NavSidebar';
 import { NavTopbar }  from './layout/NavTopbar';
-import { FeedbackModal } from './layout/FeedbackModal';
+import { FeedbackPortal } from './layout/FeedbackPortal';
 import { ViewAsBanner } from './layout/ViewAsBanner';
 import { ToastHost } from './components/ui/Toast';
 import './layout/NavHub.css';
@@ -40,7 +40,6 @@ let _topbarRoot  = null;
 let _modalRoot   = null;
 let _toastRoot   = null;
 let _viewAsRoot  = null;
-let _setModalOpen = null;  // setter exposed by the modal root component
 let _focusSearch  = null;  // ref to NavTopbar's search input focus fn
 let _mounted     = false;
 let _currentProps = {};
@@ -49,15 +48,6 @@ let _mobileNavOpen = false; // off-canvas drawer state below the NavHub.css mobi
 function _setMobileNavOpen(open) {
   _mobileNavOpen = open;
   _render({});
-}
-
-// ── FeedbackPortal — thin wrapper so we can imperatively open the modal ──────
-function FeedbackPortal() {
-  const [open, setOpen] = useState(false);
-  // Expose setter so window.NavHub.openFeedback() can call it
-  _setModalOpen = setOpen;
-  const close = useCallback(() => setOpen(false), []);
-  return <FeedbackModal open={open} onClose={close} />;
 }
 
 // Internal render helper — re-renders both roots with merged props
@@ -137,7 +127,7 @@ window.NavHub = {
    * Called by app.js onAction handler when action === 'feedback'.
    */
   openFeedback() {
-    if (_setModalOpen) _setModalOpen(true);
+    window.dispatchEvent(new CustomEvent('alternate:open-feedback'));
   },
 
   /**
@@ -176,7 +166,6 @@ window.NavHub = {
     if (toastPortal) toastPortal.remove();
     _mounted = false;
     _currentProps = {};
-    _setModalOpen = null;
   },
 
   get isMounted() { return _mounted; },

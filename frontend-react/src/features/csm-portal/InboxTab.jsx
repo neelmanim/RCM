@@ -46,7 +46,6 @@ export function InboxTab({ isAdmin, onOpenAccount }) {
       .catch(() => setCsmOptions([]));
   }, [isAdmin]);
 
-  useEffect(() => { setPage(1); }, [csmFilter]);
 
   if (accounts === null) return <SkeletonTable rows={5} cols={4} />;
   if (error) return <p className="text-sm text-red-600">{error}</p>;
@@ -64,7 +63,7 @@ export function InboxTab({ isAdmin, onOpenAccount }) {
         <Select
           ariaLabel="Filter by CSM"
           value={csmFilter}
-          onChange={setCsmFilter}
+          onChange={(value) => { setCsmFilter(value); setPage(1); }}
           options={[{ value: 'all', label: 'All CSMs' }, ...csmOptions]}
         />
       )}

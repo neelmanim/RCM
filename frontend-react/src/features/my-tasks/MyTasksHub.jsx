@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ListTodo, Inbox, CheckCircle2 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Tabs } from '../../components/ui/Tabs';
@@ -53,25 +53,22 @@ export function MyTasksHub({ onLeadClick, initialTab, navAt }) {
   const [loadError, setLoadError] = useState(null);
 
   const loadOpen = useCallback(() => {
-    setLoadError(null);
-    return TasksService.getMine('open').then(setOpen).catch(() => setLoadError('Check your connection, then refresh the page.'));
+    return TasksService.getMine('open').then((tasks) => { setOpen(tasks); setLoadError(null); }).catch(() => setLoadError('Check your connection, then refresh the page.'));
   }, []);
   const loadDone = useCallback(() => {
-    setLoadError(null);
-    return TasksService.getMine('done').then(setDone).catch(() => setLoadError('Check your connection, then refresh the page.'));
+    return TasksService.getMine('done').then((tasks) => { setDone(tasks); setLoadError(null); }).catch(() => setLoadError('Check your connection, then refresh the page.'));
   }, []);
 
   // Every navigation here (the bell, the nav) stamps navAt, so a repeat click
   // while mounted still switches tab and refreshes — initialTab alone may not
   // change. The first render already has the tab and loads once.
-  const firstNav = useRef(true);
-  useEffect(() => {
-    if (!firstNav.current && initialTab) setTab(initialTab);
-    firstNav.current = false;
-    loadOpen();
-  }, [navAt, initialTab, loadOpen]);
+  const [previousNavigation, setPreviousNavigation] = useState({ navAt, initialTab });
+  if (previousNavigation.navAt !== navAt || previousNavigation.initialTab !== initialTab) {
+    setPreviousNavigation({ navAt, initialTab });
+    if (initialTab) { setTab(initialTab); setPage(1); }
+  }
+  useEffect(() => { loadOpen(); }, [navAt, initialTab, loadOpen]);
   useEffect(() => { if (tab === 'done' && done === null) loadDone(); }, [tab, done, loadDone]);
-  useEffect(() => { setPage(1); }, [tab, search]);
 
   const q = search.trim().toLowerCase();
   const matches = useCallback((t) => !q || [t.title, t.lead_name, t.lead_company].some((v) => v?.toLowerCase().includes(q)), [q]);
@@ -187,11 +184,11 @@ export function MyTasksHub({ onLeadClick, initialTab, navAt }) {
           <h1 className="text-xl font-bold text-slate-900 m-0">My Tasks</h1>
           <p className="text-sm text-slate-500 mt-1 mb-0">Everything waiting on you, across every lead.</p>
         </div>
-        <SearchInput placeholder="Search tasks or leads…" value={search} onChange={(e) => setSearch(e.target.value)}
+        <SearchInput placeholder="Search tasks or leads…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           className="w-64" aria-label="Search tasks" />
       </div>
       <div data-tour="task-status-filter">
-        <Tabs tabs={tabs} active={activeTab} onChange={setTab} className="mb-5" />
+        <Tabs tabs={tabs} active={activeTab} onChange={(value) => { setTab(value); setPage(1); }} className="mb-5" />
       </div>
       <div data-tour="task-list">{body}</div>
     </div>

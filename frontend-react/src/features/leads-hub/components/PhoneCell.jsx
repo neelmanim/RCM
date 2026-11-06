@@ -7,7 +7,7 @@ import { resolveLeadPhone } from '../columns';
 // else next, not re-dialing from the list). Exported so the Power Dialer
 // queue (usePowerDialerQueue.js) filters on the exact same set — single
 // source of truth, not a second copy that can drift.
-export const CALLABLE_STATUSES = ['Lead Assigned', 'Research', 'Calling'];
+const CALLABLE_STATUSES = ['Lead Assigned', 'Research', 'Calling'];
 
 /** Phone column — resolves phone/phone_secondary/company_phone and offers a
  * quick-call button to non-admins on a lead in a callable status. */

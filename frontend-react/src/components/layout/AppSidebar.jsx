@@ -1,28 +1,15 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { useModules } from '../../core/modules/ModuleContext';
-import { 
-  LayoutDashboard, Users, KanbanSquare, CheckSquare, 
-  Store, Settings, PhoneCall, Zap, Mail, BarChart3, ShieldCheck,
-  ChevronRight, Sparkles, X
-} from 'lucide-react';
-
-const ICON_MAP = {
-  PhoneCall,
-  Zap,
-  Mail,
-  BarChart3,
-  ShieldCheck,
-};
+import { useModules } from '../../core/modules/useModules';
+import { LayoutDashboard, Users, KanbanSquare, Store, BarChart3, ChevronRight, X } from 'lucide-react';
 
 export default function AppSidebar({ isMobileMenuOpen, onClose }) {
   const { availableModules, installedModules } = useModules();
 
   const coreNav = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { label: 'Leads & Accounts', path: '/leads', icon: Users, badge: '24' },
-    { label: 'Pipeline Kanban', path: '/pipeline', icon: KanbanSquare },
-    { label: 'Tasks & Activity', path: '/tasks', icon: CheckSquare },
+    { label: 'Leads and accounts', path: '/leads', icon: Users },
+    { label: 'Pipeline', path: '/pipeline', icon: KanbanSquare },
   ];
 
   const handleNavClick = () => {
@@ -36,7 +23,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
         {/* Brand Header */}
         <div className="flex items-center justify-between px-2 py-1">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-600/30">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-black text-sm">
               A
             </div>
             <div>
@@ -45,7 +32,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
                 <span className="px-1.5 py-0.2 text-[10px] font-extrabold uppercase bg-indigo-500/10 text-indigo-500 rounded">OS</span>
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                Conversation Intelligence
+                Sales workspace
               </div>
             </div>
           </div>
@@ -94,11 +81,11 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
           })}
         </div>
 
-        {/* 2. Dynamic Installed Modules Section */}
+        {/* 2. Dynamic Enabled modules Section */}
         <div className="space-y-1">
           <div className="px-3 flex items-center justify-between mb-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              Installed Modules
+              Enabled modules
             </span>
             <span className="text-[10px] font-bold text-indigo-500">
               {installedModules.length} Active
@@ -107,12 +94,10 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
 
           {installedModules.length === 0 ? (
             <div className="px-3 py-3 text-[11px] text-slate-400 dark:text-slate-600 italic border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center">
-              No modules installed. Visit App Store to enable features.
+              Enable features from the module catalog.
             </div>
           ) : (
-            installedModules.map((module) => {
-              const Icon = ICON_MAP[module.icon] || Sparkles;
-              return (
+            installedModules.map((module) => (
                 <NavLink
                   key={module.id}
                   to={module.route}
@@ -126,13 +111,12 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
                   }
                 >
                   <div className="flex items-center gap-2.5">
-                    <Icon className="w-4 h-4 flex-shrink-0 text-indigo-500" />
+                    <BarChart3 className="w-4 h-4 flex-shrink-0 text-indigo-500" />
                     <span>{module.name}</span>
                   </div>
                   <ChevronRight className="w-3 h-3 text-slate-400 opacity-60" />
                 </NavLink>
-              );
-            })
+            ))
           )}
         </div>
       </div>
@@ -140,7 +124,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
       {/* Bottom Section: Marketplace & System */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-800/80 space-y-1">
         <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
-          Ecosystem
+          Workspace
         </div>
 
         {/* App Store Navigation with Active Count Badge */}
@@ -157,27 +141,13 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
         >
           <div className="flex items-center gap-2.5">
             <Store className="w-4 h-4 flex-shrink-0" />
-            <span>App Store</span>
+            <span>Module catalog</span>
           </div>
           <span className="px-1.5 py-0.5 text-[10px] font-extrabold rounded-md bg-indigo-200 dark:bg-indigo-800 text-indigo-900 dark:text-indigo-200">
             {installedModules.length}/{availableModules.length}
           </span>
         </NavLink>
 
-        <NavLink
-          to="/settings"
-          onClick={handleNavClick}
-          className={({ isActive }) =>
-            `flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all ${
-              isActive
-                ? 'bg-slate-200 dark:bg-slate-900 text-slate-900 dark:text-white'
-                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-900 hover:text-slate-900 dark:hover:text-white'
-            }`
-          }
-        >
-          <Settings className="w-4 h-4 flex-shrink-0" />
-          <span>Workspace Settings</span>
-        </NavLink>
       </div>
     </div>
   );
@@ -185,7 +155,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
   return (
     <>
       {/* Desktop Persistent Sidebar */}
-      <aside className="hidden lg:flex w-64 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800/80 flex-col justify-between flex-shrink-0 select-none">
+      <aside className="hidden lg:flex w-56 bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800/80 flex-col justify-between flex-shrink-0 select-none">
         {sidebarContent}
       </aside>
 
@@ -198,7 +168,7 @@ export default function AppSidebar({ isMobileMenuOpen, onClose }) {
             onClick={onClose}
           />
           {/* Slide-out Sidebar */}
-          <aside className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between z-10 shadow-2xl overflow-y-auto">
+          <aside className="fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between z-10 shadow-2xl overflow-y-auto">
             {sidebarContent}
           </aside>
         </div>

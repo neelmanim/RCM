@@ -27,6 +27,8 @@
     "build:leaderboard": "vite build --config vite.config.leaderboard.js",
     "build:sdr-performance": "vite build --config vite.config.sdr-performance.js",
     "build:login": "vite build --config vite.config.login.js",
+    "build:production-shell": "vite build --config vite.config.production-shell.js",
+    "build:public-pages": "vite build --config vite.config.public-pages.js",
     "build:ae-pipeline": "vite build --config vite.config.ae-pipeline.js",
     "build:csm-portal": "vite build --config vite.config.csm-portal.js",
     "build:pipeline-hub": "vite build --config vite.config.pipeline-hub.js",

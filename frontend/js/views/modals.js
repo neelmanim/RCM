@@ -1,6 +1,6 @@
 // ── views/modals.js — All modal wiring (call, new lead, add user, bulk import, no-show) ─
 import { currentUser } from '../auth.js';
-import { logCall, createUser, createLead, createReassignRequest, markNoShow, fetchCallOutcomes, fetchCallOutcomeStatus, createDisqualifyRequest, getEmailStatus, getCalendarAvailability, draftMeetingAgenda, updateLeadStatus, addDiscoveryMeeting } from '../api.js';
+import { logCall, markNoShow, fetchCallOutcomes, fetchCallOutcomeStatus, getEmailStatus, getCalendarAvailability, draftMeetingAgenda, updateLeadStatus, addDiscoveryMeeting } from '../api.js';
 import { showToast } from '../utils.js';
 import { mp } from '../mp.js';
 
@@ -30,11 +30,11 @@ async function _getOutcomeConfig() {
 
 export function initModals(loadView, getCurrentView, getLeads) {
     _initCallModal(loadView, getCurrentView, getLeads);
-    _initNewLeadModal(loadView, getCurrentView);
-    _initAddUserModal(loadView, getCurrentView);
-    _initBulkImportModal(loadView, getCurrentView);
+
+
+
     _initNoShowModal(loadView, getCurrentView);
-    _initDisqualifyModal();
+
 }
 
 // ── Call modal — state machine ────────────────────────────────────────────────
@@ -791,206 +791,6 @@ function _initCallModal(loadView, getCurrentView, getLeads) {
 }
 
 // ── New Lead modal ────────────────────────────────────────────────────────────
-function _initNewLeadModal(loadView, getCurrentView) {
-    const newLeadModal = document.getElementById('new-lead-modal');
-    const newLeadBtn   = document.getElementById('new-lead-btn');
-    const newLeadForm  = document.getElementById('new-lead-form');
-    if (!newLeadModal) return;
-
-    if (newLeadBtn) newLeadBtn.addEventListener('click', () => newLeadModal.style.display = 'flex');
-
-    document.querySelectorAll('.close-modal, .close-modal-btn').forEach(btn => {
-        btn.addEventListener('click', () => newLeadModal.style.display = 'none');
-    });
-    window.addEventListener('click', e => { if (e.target === newLeadModal) newLeadModal.style.display = 'none'; });
-
-    if (newLeadForm) {
-        newLeadForm.addEventListener('submit', async e => {
-            e.preventDefault();
-            const payload = {
-                first_name:      (document.getElementById('lead-first-name')?.value || '').trim(),
-                last_name:       (document.getElementById('lead-last-name')?.value || '').trim() || 'Unknown',
-                company:         (document.getElementById('lead-company')?.value || '').trim(),
-                title:           (document.getElementById('lead-title')?.value || '').trim() || undefined,
-                phone:           (document.getElementById('lead-phone')?.value || '').trim() || undefined,
-                phone_secondary: (document.getElementById('lead-phone-secondary')?.value || '').trim() || undefined,
-                email:           (document.getElementById('lead-email')?.value || '').trim() || undefined,
-                linkedin_url:    (document.getElementById('lead-linkedin')?.value || '').trim() || undefined,
-                status:          document.getElementById('lead-status')?.value || 'Lead Assigned'
-            };
-
-            // Client-side validation
-            if (!payload.last_name || payload.last_name === 'Unknown') {
-                showToast('Last Name is required.', 'warning', 4000);
-                document.getElementById('lead-last-name')?.focus();
-                return;
-            }
-            if (!payload.company) {
-                showToast('Company is required.', 'warning', 4000);
-                document.getElementById('lead-company')?.focus();
-                return;
-            }
-
-            const submitBtn = newLeadForm.querySelector('button[type="submit"]');
-            const oldText   = submitBtn.textContent;
-            submitBtn.textContent = 'Saving...'; submitBtn.disabled = true;
-            document.getElementById('lead-dup-notice')?.remove();
-            try {
-                const res = await createLead(payload);
-                if (res.ok) {
-                    const data = await res.json();
-                    mp.track('Lead Created', {
-                        company: payload.company,
-                        status:  payload.status || 'Lead Assigned',
-                    });
-                    const leadName = `${payload.first_name} ${payload.last_name}`.trim();
-                    showToast(`Lead "${leadName}" created and assigned to you.`, 'success', 5000);
-                    newLeadModal.style.display = 'none';
-                    newLeadForm.reset();
-                    await loadView(getCurrentView());
-                } else {
-                    const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-                    if (res.status === 409 && err.existing_lead) _showDuplicateNotice(newLeadForm, err);
-                    else showToast(err.detail || 'Failed to create lead.', 'error', 5000);
-                }
-            } catch (err) {
-                console.error(err);
-                showToast('Error creating lead. Please try again.', 'error', 5000);
-            }
-            finally { submitBtn.textContent = oldText; submitBtn.disabled = false; }
-        });
-    }
-}
-
-// Duplicate lead: say who owns it and offer a reassignment request (approved by a Pod Admin) instead of a dead end.
-// textContent only — the server text includes names typed by users.
-function _showDuplicateNotice(form, err) {
-    document.getElementById('lead-dup-notice')?.remove();
-    const box = document.createElement('div');
-    box.id = 'lead-dup-notice';
-    box.setAttribute('role', 'alert');
-    box.style.cssText = 'margin:0 0 12px;padding:10px 12px;border:1px solid #fecaca;background:#fef2f2;color:#7f1d1d;border-radius:8px;font-size:13px;line-height:1.45';
-    const msg = document.createElement('div');
-    msg.textContent = err.detail;
-    box.appendChild(msg);
-    if (err.existing_lead.can_request_reassignment) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = 'Request reassignment';
-        btn.style.cssText = 'margin-top:8px;padding:6px 12px;border-radius:6px;border:0;background:#2563eb;color:#fff;font-weight:600;cursor:pointer';
-        btn.addEventListener('click', async () => {
-            btn.disabled = true; btn.textContent = 'Sending...';
-            try {
-                const r = await createReassignRequest(err.existing_lead.id);
-                const body = await r.json().catch(() => ({}));
-                if (r.ok) {
-                    msg.textContent = 'Request sent. A Pod Admin will review it and you will get a task when it is decided.';
-                    btn.remove();
-                } else {
-                    msg.textContent = body.detail || 'Could not send the request.';
-                    btn.disabled = false; btn.textContent = 'Request reassignment';
-                }
-            } catch (e) {
-                msg.textContent = 'Could not send the request. Please try again.';
-                btn.disabled = false; btn.textContent = 'Request reassignment';
-            }
-        });
-        box.appendChild(btn);
-    }
-    form.insertBefore(box, form.firstChild);
-}
-
-// ── Add User modal ────────────────────────────────────────────────────────────
-function _initAddUserModal(loadView, getCurrentView) {
-    const modal = document.getElementById('add-user-modal');
-    if (!modal) return;
-
-    document.querySelectorAll('.close-add-user-modal').forEach(el => {
-        el.addEventListener('click', () => modal.classList.remove('active'));
-    });
-
-    document.getElementById('add-user-form').addEventListener('submit', async e => {
-        e.preventDefault();
-        const email     = document.getElementById('new-user-email').value;
-        const name      = document.getElementById('new-user-name').value;
-        const role      = document.getElementById('new-user-role').value;
-        const submitBtn = e.target.querySelector('button[type="submit"]');
-        submitBtn.textContent = 'Inviting...'; submitBtn.disabled = true;
-        try {
-            const res = await createUser({ email, name, role });
-            if (res.ok) {
-                alert('User invited successfully!');
-                modal.classList.remove('active');
-                if (getCurrentView() === 'admin') loadView('admin');
-            } else {
-                const error = await res.json();
-                alert(`Failed: ${error.detail || error.message || res.statusText}`);
-            }
-        } catch (err) { alert('An error occurred.'); }
-        finally { submitBtn.textContent = 'Add User'; submitBtn.disabled = false; }
-    });
-}
-
-// ── Bulk Import (CSV leads) modal ─────────────────────────────────────────────
-function _initBulkImportModal(loadView, getCurrentView) {
-    const modal          = document.getElementById('bulk-import-modal');
-    const bulkBtn        = document.getElementById('bulk-btn');
-    const csvFileInput   = document.getElementById('csv-file-input');
-    const uploadCsvBtn   = document.getElementById('upload-csv-btn');
-    const csvPreview     = document.getElementById('csv-preview');
-    const csvPreviewTh   = document.getElementById('csv-preview-thead');
-    const csvPreviewTb   = document.getElementById('csv-preview-tbody');
-    const confirmImpBtn  = document.getElementById('confirm-import-btn');
-    if (!modal) return;
-
-    if (bulkBtn) bulkBtn.addEventListener('click', () => modal.classList.add('active'));
-    document.querySelectorAll('.close-bulk-modal').forEach(el => el.addEventListener('click', () => modal.classList.remove('active')));
-
-    let parsedLeads = [];
-    if (uploadCsvBtn) {
-        uploadCsvBtn.addEventListener('click', () => {
-            const file = csvFileInput.files[0];
-            if (!file) return alert('Select a file first.');
-            Papa.parse(file, {
-                header: true, skipEmptyLines: true,
-                complete: (results) => {
-                    parsedLeads = results.data.map(row => ({
-                        first_name: row.firstName || row.first_name || row.FirstName || '',
-                        last_name:  row.lastName  || row.last_name  || row.LastName  || 'Unknown',
-                        company:    row.company   || row.Company    || 'N/A',
-                        email:      row.email     || row.Email      || '',
-                        phone:      row.phone     || row.Phone      || ''
-                    }));
-                    csvPreviewTh.innerHTML = `<tr><th>First</th><th>Last</th><th>Company</th><th>Email</th></tr>`;
-                    csvPreviewTb.innerHTML = parsedLeads.slice(0, 5).map(r =>
-                        `<tr><td>${r.first_name}</td><td>${r.last_name}</td><td>${r.company}</td><td>${r.email}</td></tr>`
-                    ).join('');
-                    csvPreview.style.display = 'block';
-                    confirmImpBtn.style.display = 'block';
-                }
-            });
-        });
-    }
-
-    if (confirmImpBtn) {
-        confirmImpBtn.addEventListener('click', async () => {
-            confirmImpBtn.textContent = 'Importing...'; confirmImpBtn.disabled = true;
-            try {
-                // Create leads one by one via the createLead API
-                let created = 0;
-                for (const lead of parsedLeads) {
-                    const res = await createLead(lead);
-                    if (res.ok) created++;
-                }
-                alert(`Imported ${created} leads.`);
-                modal.classList.remove('active');
-                loadView(getCurrentView());
-            } finally { confirmImpBtn.textContent = 'Confirm Import'; confirmImpBtn.disabled = false; }
-        });
-    }
-}
-
-// ── No Show modal ─────────────────────────────────────────────────────────────
 let activeNoShowLeadId = null;
 
 export function openNoShowModal(leadId, leadName) {
@@ -1092,85 +892,6 @@ function _initNoShowModal(loadView, getCurrentView) {
 }
 
 // ── Disqualify Account modal (maker step) ─────────────────────────────────────
-export function openDisqualifyModal(company, leadIds) {
-    document.getElementById('disqualify-company').value = company;
-    document.getElementById('disqualify-lead-ids').value = leadIds.join(',');
-    document.getElementById('disqualify-company-name').textContent = company;
-    document.getElementById('disqualify-lead-count').textContent = `${leadIds.length} lead${leadIds.length === 1 ? '' : 's'}`;
-    document.getElementById('disqualify-reason').value = '';
-    document.getElementById('disqualify-char-count').textContent = '0 / 10 min';
-    const btn = document.getElementById('submit-disqualify-btn');
-    btn.disabled = true;
-    btn.style.opacity = '0.5';
-    btn.style.cursor = 'not-allowed';
-    btn.textContent = 'Submit Request';
-    document.getElementById('disqualify-modal').style.display = 'flex';
-}
-
-function _initDisqualifyModal() {
-    const modal = document.getElementById('disqualify-modal');
-    if (!modal) return;
-
-    const reasonEl = document.getElementById('disqualify-reason');
-    const charCount = document.getElementById('disqualify-char-count');
-    const submitBtn = document.getElementById('submit-disqualify-btn');
-
-    if (reasonEl) {
-        reasonEl.addEventListener('input', () => {
-            const len = reasonEl.value.trim().length;
-            charCount.textContent = `${len} / 10 min`;
-            if (len >= 10) {
-                charCount.style.color = 'var(--status-won)';
-                submitBtn.disabled = false;
-                submitBtn.style.opacity = '1';
-                submitBtn.style.cursor = 'pointer';
-            } else {
-                charCount.style.color = len > 0 ? '#f59e0b' : 'var(--text-muted)';
-                submitBtn.disabled = true;
-                submitBtn.style.opacity = '0.5';
-                submitBtn.style.cursor = 'not-allowed';
-            }
-        });
-    }
-
-    if (submitBtn) {
-        submitBtn.addEventListener('click', async () => {
-            const reason = reasonEl.value.trim();
-            const company = document.getElementById('disqualify-company').value;
-            const leadIds = document.getElementById('disqualify-lead-ids').value.split(',').filter(Boolean);
-            if (!company || !leadIds.length || reason.length < 10) return;
-
-            submitBtn.textContent = 'Submitting...';
-            submitBtn.disabled = true;
-
-            try {
-                await createDisqualifyRequest(company, leadIds, reason);
-                submitBtn.textContent = '✅ Submitted!';
-                showToast('Disqualify request submitted for Pod Admin approval.', 'success', 5000);
-                setTimeout(() => { modal.style.display = 'none'; }, 800);
-            } catch (err) {
-                showToast(err.message || 'Failed to submit request', 'error', 5000);
-                submitBtn.textContent = 'Submit Request';
-                submitBtn.disabled = false;
-                submitBtn.style.opacity = '1';
-                submitBtn.style.cursor = 'pointer';
-            }
-        });
-    }
-
-    modal.querySelectorAll('.close-disqualify-modal').forEach(el => {
-        el.addEventListener('click', () => { modal.style.display = 'none'; });
-    });
-    window.addEventListener('click', e => {
-        if (e.target === modal) { modal.style.display = 'none'; }
-    });
-}
-
-// ── Stage-progression actions (Demo Success, Meeting Complete, Add/Complete
-//    Discovery, Schedule Demo) — shared by both the classic Lead Detail page
-//    and the Lead Detail Hub (window._runLeadStageAction bridge, app.js).
-//    Each is a single API call + toast; centralised here instead of
-//    duplicated per button so both callers stay in sync.
 const _STAGE_ACTIONS = {
     demoSuccess:       { run: (leadId) => updateLeadStatus(leadId, 'Demo Done'),
                           fallbackError: 'Failed to mark demo as done',

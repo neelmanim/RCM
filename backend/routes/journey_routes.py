@@ -867,8 +867,7 @@ def enroll(journey_id: str, body: dict, db: Session = Depends(get_db), user: dic
 @router.post("/{journey_id}/sandbox/enroll-test-lead")
 def enroll_test_lead(journey_id: str, body: dict, db: Session = Depends(get_db),
                       user: dict = Depends(require_pod_admin_or_above)):
-    """Cadence/Messaging Sandbox — Playground's "Cadence Test" tab. Creates a
-    throwaway Lead tagged is_test=True and enrolls it in this journey.
+    """Create a throwaway lead tagged is_test=True and enroll it in this journey.
 
     The lead's phone is always settings.sandbox_test_phone_number, set
     server-side — anything the caller passes for a phone is ignored, so a
@@ -1914,11 +1913,9 @@ def retry_enrollment(enrollment_id: str, db: Session = Depends(get_db),
 def force_next_step_route(enrollment_id: str, db: Session = Depends(get_db),
                            user: dict = Depends(require_pod_admin_or_above)):
     """Cadence/Messaging Sandbox: advance one active enrollment's next
-    pending step right now instead of waiting out its real delay. Intended
-    for the Playground's "Cadence Test" tab (test leads only, in practice —
-    nothing here restricts it to is_test enrollments, the same way retry/
-    skip above aren't restricted either; the actual send-safety guarantee
-    lives in the whatsapp/sms channel providers, not here)."""
+    pending step right now instead of waiting out its real delay. Like retry
+    and skip, this applies to both live and test enrollments. Channel
+    providers enforce the destination rules for test sends."""
     enrollment = db.query(models.JourneyEnrollment).filter(models.JourneyEnrollment.id == enrollment_id).first()
     if not enrollment:
         raise HTTPException(status_code=404, detail="Enrollment not found")

@@ -5,7 +5,8 @@ import { useColumnLayout } from './useColumnLayout';
 import { resolveLeadPhone } from './columns';
 import { FilterBar } from './components/FilterBar';
 import { SavedViewsTabs } from './components/SavedViewsTabs';
-import { LeadRow, displayName } from './components/LeadRow';
+import { LeadRow } from './components/LeadRow';
+import { displayName } from './leadUtils';
 import { BulkActionBar } from './components/BulkActionBar';
 import { DisqualifyRequestsPanel } from './components/DisqualifyRequestsPanel';
 import { ReassignRequestsPanel } from './components/ReassignRequestsPanel';
@@ -122,7 +123,7 @@ function Toast({ message, onDismiss }) {
  * DisqualifyRequestsPanel). Mounted into the legacy page via leads-entry.jsx,
  * same pattern as CalendarHub.
  */
-export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
+export function LeadsHub({ userRole = '', onOpenLead }) {
   const normalizedRole = (userRole || '').toLowerCase();
   // Only Pod Admin actually belongs to a single pod — Super Admin/Admin see
   // everything by default and "My Pod" has no meaning for them.
@@ -136,6 +137,11 @@ export function LeadsHub({ userRole = '', onOpenLead, onSwitchToClassic }) {
   // non-admin treatment classic's own `!isAdmin` gates give it.
   const isAdminRole = isSuperAdmin || isPodAdmin;
   const list = useLeadsList(isAdminRole);
+  const { refetch } = list;
+  useEffect(() => {
+    window.addEventListener('alternate:lead-created', refetch);
+    return () => window.removeEventListener('alternate:lead-created', refetch);
+  }, [refetch]);
   const layout = useColumnLayout(isAdminRole);
   const [draggingColKey, setDraggingColKey] = useState(null);
   // Disqualify Requests is the approve/reject queue — matches the backend's

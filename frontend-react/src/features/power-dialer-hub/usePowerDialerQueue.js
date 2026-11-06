@@ -146,7 +146,7 @@ export function usePowerDialerQueue() {
       if (restoredState) return;
     }
     fetchQueue();
-  }, [fetchQueue]);
+  }, [fetchQueue, restoredState]);
 
   // Keep sessionStorage current so the next remount (e.g. returning from a
   // lead's detail page) restores exactly where this session left off.

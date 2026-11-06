@@ -13,7 +13,7 @@ import { AnalyticsService, LeadsService, LeaderboardService } from '../../servic
 
 Chart.register(...registerables);
 
-export const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString());
+import { formatNumber as fmt } from '../../utils/formatNumber';
 const go = (onNavigate, view) => (typeof onNavigate === 'function' ? onNavigate(view) : window._loadView?.(view));
 
 // Secondary cards load staggered after the main stats call (RCA 2026-06-17: fanning out ~7 requests at once caused an OOM).
@@ -33,7 +33,7 @@ function useStaggered(delayMs, fn) {
 }
 
 // ─── Insight badges (rule engine over the stats) ────────────────────────────────────────────────────────────────
-export function runRuleEngine(stats) {
+function runRuleEngine(stats) {
   if (!stats) return [];
   const leads = stats.total ?? 0;
   const sc = stats.status_counts ?? {};
@@ -255,7 +255,7 @@ export function PipelineCard({ statusCounts = {}, total = 0, loading: statsLoadi
           const trend = ins?.trend;
           return (
             <div key={cat}>
-              <div className={`flex items-center gap-1 text-[11px] font-semibold ${color}`}><Icon size={12} />{label}</div>
+              <div className={`flex items-center gap-1 text-[11px] font-semibold ${color}`}>{React.createElement(Icon, { size: 12 })}{label}</div>
               {giLoading ? <Skeleton className="h-5 w-12 mt-1" /> : (
                 <div className="text-base font-extrabold text-[#F4F6F2]">
                   {shortMetric(ins?.metric_value)}

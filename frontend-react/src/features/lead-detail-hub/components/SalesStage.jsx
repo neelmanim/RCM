@@ -11,10 +11,10 @@ const STATUS_TO_STAGE_INDEX = {
 
 const DISQUALIFIED_STATUSES = new Set(['Disqualified', 'Not Interested', 'Unreachable', 'Customer Declined']);
 
-/** Pure — exported for testing. Sales stage is a separate concept from
+/** Sales stage is a separate concept from
  * NextBestAction on purpose (spec: "these are different concepts and must
  * remain visually and technically separate"). */
-export function deriveStageIndex(status) {
+function deriveStageIndex(status) {
   if (status in STATUS_TO_STAGE_INDEX) return STATUS_TO_STAGE_INDEX[status];
   return 0;
 }

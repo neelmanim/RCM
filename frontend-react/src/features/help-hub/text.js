@@ -5,7 +5,7 @@
 // first — strip it so the lucide icon is the only one.
 // \p{Extended_Pictographic} covers the emoji itself; ‍/️ cover
 // ZWJ-joined and variation-selector sequences (e.g. the "🛡️" shield).
-const LEADING_EMOJI_RE = /^[\p{Extended_Pictographic}‍️\s]+/u;
+const LEADING_EMOJI_RE = /^(?:\p{Extended_Pictographic}|\u200d|\ufe0f|\s)+/u;
 
 export function stripLeadingEmoji(text) {
   return text.replace(LEADING_EMOJI_RE, '').trim();

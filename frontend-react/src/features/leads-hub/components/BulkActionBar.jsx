@@ -5,7 +5,8 @@ import { Select } from '../../../components/ui/Select';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/Popover';
 import { MenuSkeletonRows } from '../../../components/ui/Skeleton';
 import { CallListsService } from '../../../services/api';
-import { JourneyPicker, useEnrollInCadence } from '../../sales-journey/EnrollInCadence';
+import { JourneyPicker } from '../../sales-journey/EnrollInCadence';
+import { useEnrollInCadence } from '../../sales-journey/useEnrollInCadence';
 
 import { useCampaignComposeForm } from '../../sales-tools/campaignCompose';
 import { CampaignComposeFields } from '../../sales-tools/CampaignsSection';
@@ -166,7 +167,7 @@ export function BulkActionBar({ list, onToast, canDelete, canEnrollJourney, canB
       const result = await bulkAssign(assignee);
       onToast(result.message);
       setAssignee('');
-    } catch (err) {
+    } catch {
       onToast('Failed to assign leads — please try again.');
     } finally {
       setAssignBusy(false);
@@ -177,7 +178,7 @@ export function BulkActionBar({ list, onToast, canDelete, canEnrollJourney, canB
     try {
       const result = await bulkUnassign();
       onToast(result.message);
-    } catch (err) {
+    } catch {
       onToast('Failed to unassign leads — please try again.');
     } finally {
       setUnassignBusy(false);
@@ -188,7 +189,7 @@ export function BulkActionBar({ list, onToast, canDelete, canEnrollJourney, canB
       const result = await CallListsService.addLeads(callList.id, Array.from(selected));
       onToast(`Added ${result.added} lead(s) to "${callList.name}"` +
         (result.already_present ? ` — ${result.already_present} already in the list` : ''));
-    } catch (err) {
+    } catch {
       onToast('Failed to add leads to the Call List — please try again.');
     }
   };
@@ -198,7 +199,7 @@ export function BulkActionBar({ list, onToast, canDelete, canEnrollJourney, canB
       const result = await bulkDelete();
       onToast(result.message);
       setDeleteConfirmOpen(false);
-    } catch (err) {
+    } catch {
       onToast('Failed to delete leads — please try again.');
     } finally {
       setDeleteBusy(false);

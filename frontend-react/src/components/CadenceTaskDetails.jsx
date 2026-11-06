@@ -10,7 +10,7 @@ import { isDone } from './tasks/taskMeta';
 
 /** A cadence manual step's options, whichever shape they arrive in: the
  *  lead-tasks endpoint returns the raw JSON column, /my/tasks a parsed list. */
-export function taskOutcomeOptions(task) {
+function taskOutcomeOptions(task) {
   const raw = task?.outcome_options;
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;

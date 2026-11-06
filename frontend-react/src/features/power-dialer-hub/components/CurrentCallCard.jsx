@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Phone, SkipForward, ChevronDown, ExternalLink, NotebookPen, MessageSquareText } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
@@ -7,7 +7,7 @@ import { Select } from '../../../components/ui/Select';
 import { Avatar } from '../../../components/ui/Avatar';
 import { DialerService, LeadsService } from '../../../services/api';
 import { resolveLeadPhone } from '../../leads-hub/columns';
-import { displayName } from '../../leads-hub/components/LeadRow';
+import { displayName } from '../../leads-hub/leadUtils';
 import { LocalTimeBadge } from './LocalTimeBadge';
 
 // Optional — a plain click on Skip stays a single, reason-less action (must
@@ -107,10 +107,10 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
     if (showNote) noteInputRef.current?.focus();
   }, [showNote]);
 
-  const handleCall = () => {
+  const handleCall = useCallback(() => {
     if (!phone) return;
     window._openCallModal?.(lead.id, name, phone, lead);
-  };
+  }, [lead, name, phone]);
 
   const handleSaveNote = async () => {
     if (!noteText.trim()) return;
@@ -207,7 +207,7 @@ export function CurrentCallCard({ lead, callNextEnabled, onCallNext, onSkip, onL
     }
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [lead, callNextEnabled, onCallNext, onSkip, onLeadClick, phone, name]);
+  }, [lead, callNextEnabled, onCallNext, onSkip, onLeadClick, phone, name, handleCall]);
 
   if (!lead) return null;
 

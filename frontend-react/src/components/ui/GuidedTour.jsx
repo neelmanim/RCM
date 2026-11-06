@@ -161,7 +161,7 @@ export function GuidedTour({ steps, seenKey, ariaLabel }) {
     return () => { clearInterval(id); window.removeEventListener('resize', measure); window.removeEventListener('scroll', measure, true); };
   }, [active, stepIndex, !!rect]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useLayoutEffect(() => { const h = card.current?.offsetHeight; if (h && Math.abs(h - cardH) > 1) setCardH(h); });
+  useLayoutEffect(() => { const h = card.current?.offsetHeight; if (h && Math.abs(h - cardH) > 1) setCardH(h); }, [cardH]);
 
   useEffect(() => { if (active && rect) card.current?.querySelector('[data-tour-next]')?.focus?.({ preventScroll: true }); }, [active, stepIndex, !!rect]); // eslint-disable-line react-hooks/exhaustive-deps
 

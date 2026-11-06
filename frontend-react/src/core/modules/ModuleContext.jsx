@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ModuleRegistry, AVAILABLE_MODULES } from './ModuleRegistry';
 
-const ModuleContext = createContext(null);
+import { ModuleContext } from './useModules';
 
 export function ModuleProvider({ children }) {
   const [installedIds, setInstalledIds] = useState(() => ModuleRegistry.getInstalledIds());
@@ -43,12 +43,4 @@ export function ModuleProvider({ children }) {
       {children}
     </ModuleContext.Provider>
   );
-}
-
-export function useModules() {
-  const context = useContext(ModuleContext);
-  if (!context) {
-    throw new Error('useModules must be used within a ModuleProvider');
-  }
-  return context;
 }

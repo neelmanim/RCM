@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RefreshCw, PhoneOff } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
@@ -54,7 +54,7 @@ export function PowerDialerHub({ onLeadClick, userRole }) {
   const {
     queue, currentIndex, currentLead, isDone, totalAvailable,
     sessionStatus, skipReasons, callNextEnabled,
-    hideCalled, setHideCalled, statusFilter, setStatusFilter, search, setSearch,
+    hideCalled, setHideCalled, statusFilter, setStatusFilter, setSearch,
     sequenceMode, setSequenceMode, journeyId, setJourneyId,
     callListId, setCallListId,
     loading, error,
@@ -86,13 +86,14 @@ export function PowerDialerHub({ onLeadClick, userRole }) {
   // actually has fresh data to catch a mid-session deletion against, not
   // just the one snapshot from mount. `callLists === null` (not yet loaded)
   // must NOT count as "deleted" — only a loaded-but-missing list does.
-  useEffect(() => {
-    if (!callListId || callLists === null) return;
-    if (!callLists.some(cl => cl.id === callListId)) {
+  const [missingListChecked, setMissingListChecked] = useState(null);
+  if (callListId && callLists !== null && !callLists.some(cl => cl.id === callListId)) {
+    if (missingListChecked !== callListId) {
+      setMissingListChecked(callListId);
       setCallListId('');
       setCallListsNotice('That Call List no longer exists — showing all leads.');
     }
-  }, [callListId, callLists, setCallListId]);
+  }
   const refresh = () => { refreshQueue(); refreshCallLists(); };
   useEffect(() => {
     if (!callListsNotice) return;
@@ -131,9 +132,14 @@ export function PowerDialerHub({ onLeadClick, userRole }) {
   // opened, projected against the leads left in the fetched page. Resets
   // whenever the hub itself remounts — "since I opened this today," not a
   // company-wide metric.
-  const sessionStartRef = useRef(Date.now());
+  const [sessionStart] = useState(() => Date.now());
+  const [sessionNow, setSessionNow] = useState(sessionStart);
+  useEffect(() => {
+    const interval = setInterval(() => setSessionNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
   const calledThisSession = Array.from(sessionStatus.values()).filter(s => s === 'called').length;
-  const minutesElapsed = (Date.now() - sessionStartRef.current) / 60000;
+  const minutesElapsed = (sessionNow - sessionStart) / 60000;
   const callsPerHour = calledThisSession >= 2 && minutesElapsed >= 2 ? calledThisSession / (minutesElapsed / 60) : null;
   const etaMinutes = callsPerHour && remaining > 0 ? Math.round((remaining / callsPerHour) * 60) : null;
 

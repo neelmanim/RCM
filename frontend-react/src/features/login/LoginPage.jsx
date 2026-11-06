@@ -119,7 +119,7 @@ export function LoginPage() {
               className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-[#0F172A] hover:bg-[#1E293B] text-white text-sm font-bold shadow-xl shadow-slate-900/15 transition-all hover:-translate-y-0.5"
             >
               <span className="text-base">⚡</span>
-              <span>Open Interactive Sandbox Demo</span>
+              <span>Open the demo</span>
               <span className="text-slate-400">&rarr;</span>
             </a>
             <span className="text-xs text-[#64748B] font-medium">No sign up or credit card needed</span>
@@ -228,7 +228,7 @@ export function LoginPage() {
           Welcome back
         </h2>
         <p className="mt-2 text-sm text-[#94A3B8] font-normal leading-relaxed">
-          Sign in to your AlternateCRM account to continue where you left off.
+          Sign in to your workspace.
         </p>
 
         {/* Conversation OS 1-Click Sandbox Banner */}
@@ -240,21 +240,21 @@ export function LoginPage() {
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
               <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400">
-                Conversation OS Demo
+                Demo workspace
               </span>
             </div>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Live & Stateful
+              Sample data
             </span>
           </div>
           <p className="text-xs text-slate-300 leading-snug mb-3">
-            Test drive our modular app architecture, in-app App Store, Power Dialer, and pipeline telemetry with pre-seeded enterprise data.
+            Open a sample lead, move a deal through the pipeline, or try Analytics. No account needed.
           </p>
           <a
             href="sandbox.html"
             className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 transition-all hover:scale-[1.01]"
           >
-            <span>⚡ Launch Interactive Sandbox (No Login Required)</span>
+            <span>Open the demo</span>
             <span>&rarr;</span>
           </a>
         </div>
@@ -367,12 +367,11 @@ export function LoginPage() {
         <button
           type="button"
           onClick={() => {
-            localStorage.setItem('crm_is_sandbox', 'true');
-            window.location.href = 'index.html#/dashboard';
+            window.location.href = 'sandbox.html';
           }}
           className="w-full mt-3 bg-gradient-to-r from-indigo-900/40 to-violet-900/40 hover:from-indigo-900/60 hover:to-violet-900/60 border border-indigo-500/40 text-indigo-300 font-bold py-3 px-6 rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-indigo-950/50"
         >
-          <span>⚡ Try 1-Click Interactive Demo (No Signup)</span>
+          <span>Try with sample data</span>
         </button>
 
         {/* Footer info note */}

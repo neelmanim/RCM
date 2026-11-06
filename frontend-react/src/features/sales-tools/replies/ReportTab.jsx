@@ -38,21 +38,25 @@ export function ReportTab() {
   const [groupBy, setGroupBy] = useState('cadence');
   const [range, setRange] = useState({ from: '', to: '' });
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [requestState, setRequestState] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const [sort, toggleSort] = useSort();
+  const loading = !requestState || requestState.groupBy !== groupBy || requestState.range !== range || requestState.attempt !== attempt;
+  const error = loading ? null : requestState.error;
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setError(null);
     const params = { group_by: groupBy };
     if (range.from) params.from = range.from;
     if (range.to) params.to = range.to;
     InstantlyInboxService.report(params)
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch((e) => { if (!cancelled) setError(errorMessage(e)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .then(d => {
+        if (!cancelled) {
+          setData(d);
+          setRequestState({ groupBy, range, attempt, error: null });
+        }
+      })
+      .catch(e => { if (!cancelled) setRequestState({ groupBy, range, attempt, error: errorMessage(e) }); });
     return () => { cancelled = true; };
   }, [groupBy, range, attempt]);
 

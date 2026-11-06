@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Inbox, Users, ListChecks, Newspaper } from 'lucide-react';
 import { Tabs } from '../../components/ui/Tabs';
 import { InboxTab } from './InboxTab';
@@ -58,21 +58,15 @@ export function CsmPortalHub({ userRole, initialAccountId, section, userName }) 
   // excludes Pod Admin), so the UI for it needs its own, narrower check.
   const canBulkAssign = ['super admin', 'admin'].includes((userRole || '').toLowerCase());
   const flat = !!section;
-  const [active, setActive] = useState(section || SECTION_TABS[0].key);
+  const [selectedSection, setActive] = useState(SECTION_TABS[0].key);
+  const active = section || selectedSection;
   const [selectedAccountId, setSelectedAccountId] = useState(initialAccountId || null);
 
-  // Re-fires only when a NEW account id comes in via a fresh search click —
-  // not on every navigate() re-render with the same value, so closing the
-  // drawer (onBack) doesn't immediately reopen it.
-  useEffect(() => {
+  const [previousAccountId, setPreviousAccountId] = useState(initialAccountId);
+  if (initialAccountId !== previousAccountId) {
+    setPreviousAccountId(initialAccountId);
     if (initialAccountId) setSelectedAccountId(initialAccountId);
-  }, [initialAccountId]);
-
-  // A CSM switching between their flat nav items (Inbox -> Portfolio, say)
-  // re-mounts this island with a new `section` prop — follow it.
-  useEffect(() => {
-    if (section) setActive(section);
-  }, [section]);
+  }
 
   const activeTab = SECTION_TABS.find((t) => t.key === active) || SECTION_TABS[0];
 

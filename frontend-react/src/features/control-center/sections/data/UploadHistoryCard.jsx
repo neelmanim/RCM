@@ -141,7 +141,7 @@ export function DataSectionUploadHistoryCard() {
                     </>
                 )}
 
-                <AssignmentDetailModal logId={detailLogId} onClose={() => setDetailLogId(null)} />
+                {detailLogId && <AssignmentDetailModal key={detailLogId} logId={detailLogId} onClose={() => setDetailLogId(null)} />}
 
                 <ConfirmDialog
                     open={!!rollbackTarget}
@@ -194,12 +194,10 @@ export function DataSectionUploadHistoryCard() {
 
 function AssignmentDetailModal({ logId, onClose }) {
     const [data, setData] = useState(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (!logId) { setData(null); return; }
         let cancelled = false;
-        setLoading(true);
         // Fetch ALL leads for accurate counts (upload.js:518's per_page:200,
         // removing the old per_page:15 cap).
         UploadService.getBatchDetail(logId, { per_page: 200 })

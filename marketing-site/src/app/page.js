@@ -16,7 +16,7 @@ export default function Home() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
   const [modalStep, setModalStep] = useState(1);
-  const [year, setYear] = useState("2026");
+  const [year] = useState(() => new Date().getFullYear().toString());
 
   // Lead Form State
   const [formData, setFormData] = useState({
@@ -35,8 +35,6 @@ export default function Home() {
   const [submittedLead, setSubmittedLead] = useState(null);
 
   useEffect(() => {
-    setYear(new Date().getFullYear().toString());
-
     if (typeof window !== "undefined") {
       if ("IntersectionObserver" in window) {
         const io = new IntersectionObserver(
@@ -193,7 +191,7 @@ export default function Home() {
 
           <nav className="links" aria-label="Main">
             <a href="#platform">The OS</a>
-            <a href="#outcomes">Why AlternateCRM</a>
+            <a href="#outcomes">Why Alternate CRM</a>
             <a href="#how">How it works</a>
             <a href="/blog">Blog</a>
             <a href="/status">Status</a>
@@ -207,7 +205,7 @@ export default function Home() {
               className="btn btn-secondary"
               style={{ padding: "8px 16px", fontSize: "13px" }}
             >
-              Try Sandbox <span>⚡</span>
+              Open the demo <span>⚡</span>
             </a>
             <button
               type="button"
@@ -236,7 +234,7 @@ export default function Home() {
             The OS
           </a>
           <a href="#outcomes" onClick={closeMenu}>
-            Why AlternateCRM
+            Why Alternate CRM
           </a>
           <a href="#how" onClick={closeMenu}>
             How it works
@@ -263,7 +261,7 @@ export default function Home() {
             style={{ width: "100%", marginTop: "12px", textAlign: "center" }}
             onClick={closeMenu}
           >
-            Try Live Sandbox ⚡
+            Open the demo ⚡
           </a>
           <button
             type="button"
@@ -284,16 +282,16 @@ export default function Home() {
         <section className="hero">
           <div className="wrap hero-content">
             <div className="tag">
-              <span className="live-dot"></span> INTRODUCING THE CONVERSATION OS
+              <span className="live-dot"></span> SALES WORKSPACE
             </div>
             <h1>
-              One OS.
+              Know where every deal stands.
               <br />
-              <span className="accent">Every conversation.</span>
+              <span className="accent">Know what comes next.</span>
             </h1>
             <p>
-              Turn every conversation into momentum. One connected foundation for your customers,
-              your team, and AI. Start with what you need. Grow without limits.
+              Track leads, see the last customer touchpoint, and plan the next follow-up.
+              Start with the CRM and add tools as your workflow grows.
             </p>
             <div className="buttons">
               <button
@@ -309,18 +307,18 @@ export default function Home() {
                 target="_blank"
                 rel="noreferrer"
               >
-                Try Live Sandbox <span>⚡</span>
+                Open the demo <span>⚡</span>
               </a>
               <a className="btn btn-ghost" href="#platform">
-                Explore the OS <span>↓</span>
+                Explore the workspace <span>↓</span>
               </a>
             </div>
-            <p className="hero-note">Built to work together. Designed to grow with you.</p>
+            <p className="hero-note">The demo opens with sample data. No account needed.</p>
 
             <div
               className="visual-wrap"
               role="img"
-              aria-label="Illustrative Conversation OS dashboard displaying connected customer engagement, example conversations and sample activity"
+              aria-label="Illustration of a CRM workspace with sample conversations and activity"
             >
               <div className="os-visual">
                 <div className="app-top">
@@ -574,7 +572,7 @@ export default function Home() {
               <br />
               Better business.
             </h2>
-            <p>Your Conversation OS starts here.</p>
+            <p>See the workspace before requesting access.</p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap", marginTop: "16px" }}>
               <button
                 type="button"
@@ -589,7 +587,7 @@ export default function Home() {
                 target="_blank"
                 rel="noreferrer"
               >
-                Try Live Sandbox ⚡
+                Open the demo ⚡
               </a>
             </div>
           </div>
@@ -620,7 +618,7 @@ export default function Home() {
                   className="btn btn-secondary"
                   style={{ padding: "8px 14px", fontSize: "12px" }}
                 >
-                  ⚡ Open Live Sandbox
+                  ⚡ Open the demo
                 </a>
               </div>
             </div>
@@ -630,8 +628,8 @@ export default function Home() {
               <h4>Platform</h4>
               <ul>
                 <li><a href="#platform">The OS Architecture</a></li>
-                <li><a href="#how">Modular App Store</a></li>
-                <li><a href={SANDBOX_URL} target="_blank" rel="noreferrer">Interactive Sandbox</a></li>
+                <li><a href="#how">Module catalog</a></li>
+                <li><a href={SANDBOX_URL} target="_blank" rel="noreferrer">CRM demo</a></li>
                 <li><a href="#outcomes">AI Power Dialer</a></li>
                 <li><a href="#outcomes">Pipeline Telemetry</a></li>
               </ul>
@@ -652,7 +650,7 @@ export default function Home() {
             <div className="footer-col">
               <h4>Company</h4>
               <ul>
-                <li><a href="#outcomes">Why AlternateCRM</a></li>
+                <li><a href="#outcomes">Why Alternate CRM</a></li>
                 <li><a href="#how">How it Works</a></li>
                 <li><a href="mailto:hello@alternatecrm.com">Contact Sales</a></li>
                 <li><a href="mailto:partners@alternatecrm.com">Partner Program</a></li>
@@ -668,8 +666,6 @@ export default function Home() {
                     Sign In to App ↗
                   </a>
                 </li>
-                <li><a href="https://app.alternatecrm.com/privacy.html" target="_blank" rel="noreferrer">Privacy Policy</a></li>
-                <li><a href="https://app.alternatecrm.com/terms.html" target="_blank" rel="noreferrer">Terms of Service</a></li>
                 <li><a href="#top" onClick={openLeadModal}>Request VIP Access</a></li>
               </ul>
             </div>
@@ -677,14 +673,12 @@ export default function Home() {
 
           <div className="footer-bottom">
             <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
-              <span>© {year} AlternateCRM Inc. All rights reserved. One OS. Every conversation.</span>
+              <span>© {year} Alternate CRM</span>
               <a href="/status" className="footer-version-badge" title="System Status & Release v14.4.0">
                 <span className="version-status-dot"></span> v14.4.0
               </a>
             </div>
             <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
-              <a href="https://app.alternatecrm.com/privacy.html" target="_blank" rel="noreferrer">Privacy</a>
-              <a href="https://app.alternatecrm.com/terms.html" target="_blank" rel="noreferrer">Terms</a>
               <a href="/status">Status</a>
               <a href="mailto:security@alternatecrm.com">Security</a>
             </div>
@@ -730,7 +724,7 @@ export default function Home() {
             <div className="lead-modal-body">
               {modalStep === 1 ? (
                 <div>
-                  <h3 className="lead-modal-title">Request Priority Access to Conversation OS</h3>
+                  <h3 className="lead-modal-title">Request early access to Alternate CRM</h3>
                   <p className="lead-modal-sub">
                     Join forward-thinking revenue teams unifying voice, cadences, and customer intelligence.
                     Complete this brief request to fast-track your team&apos;s dedicated workspace configuration.
@@ -908,7 +902,7 @@ export default function Home() {
                       </div>
                       <p>
                         Schedule a live 15-minute 1-on-1 walkthrough with our founding engineering team
-                        to tailor Conversation OS to your workflow.
+                        to see how Alternate CRM fits your workflow.
                       </p>
                       <a
                         href={`https://calendly.com/alternatecrm/30min?name=${encodeURIComponent(
@@ -928,14 +922,14 @@ export default function Home() {
                     {/* Option 2: Live Stateful Sandbox */}
                     <div className="step2-card">
                       <div className="step2-card-header">
-                        <span className="step2-card-title">Interactive Live Sandbox</span>
+                        <span className="step2-card-title">Try the CRM demo</span>
                         <span className="step2-badge" style={{ color: "#38bdf8", borderColor: "rgba(56, 189, 248, 0.3)", background: "rgba(56, 189, 248, 0.1)" }}>
                           Instant Demo
                         </span>
                       </div>
                       <p>
-                        No need to wait: Test drive our fully interactive client-side sandbox right now
-                        with pre-seeded enterprise pipeline telemetry and simulated live calls.
+                        Open the demo to browse sample leads, move a deal through the pipeline,
+                        or try Analytics and a simulated call.
                       </p>
                       <a
                         href={SANDBOX_URL}
@@ -944,7 +938,7 @@ export default function Home() {
                         className="btn btn-secondary"
                         style={{ width: "100%", textAlign: "center", justifyContent: "center" }}
                       >
-                        ⚡ Launch Interactive Sandbox (No Login Required)
+                        ⚡ Open the demo without signing in
                       </a>
                     </div>
                   </div>

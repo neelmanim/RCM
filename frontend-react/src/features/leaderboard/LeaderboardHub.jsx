@@ -125,10 +125,13 @@ export function LeaderboardHub({ userRole, userId, onOpenPerson }) {
 
   // An AE only ever has an AE board, an SDR only an SDR board — the tab strip
   // is admin-only, so a non-admin's tab must be pinned, not merely defaulted.
-  const [tab, setTab] = useState(() => (userRole === 'AE' ? 'ae' : 'sdr'));
+  const [selectedTab, setTab] = useState('sdr');
+  const tab = userRole === 'AE' ? 'ae' : isSdrViewer ? 'sdr' : selectedTab;
   const [range, setRange] = useState(0);
   const [globalView, setGlobalView] = useState(readGlobalView);
-  const [rows, setRows] = useState(null); // null = loading
+  const requestKey = JSON.stringify([tab, range, globalView]);
+  const [response, setResponse] = useState(null);
+  const rows = response?.key === requestKey ? response.rows : null;
   // Default (no sort clicked) keeps the API's own meetings-based rank order
   // and shows person.rank in the Rank column. Once a different column is
   // sorted, the Rank column switches to showing plain row position instead —
@@ -137,19 +140,13 @@ export function LeaderboardHub({ userRole, userId, onOpenPerson }) {
   const [sort, toggleSort] = useSort();
 
   useEffect(() => {
-    if (userRole === 'AE') setTab('ae');
-    else if (isSdrViewer) setTab('sdr');
-  }, [userRole, isSdrViewer]);
-
-  useEffect(() => {
     let cancelled = false;
-    setRows(null);
     const fetch = tab === 'ae' ? LeaderboardService.getAes : LeaderboardService.getSdrs;
     fetch(range, globalView)
-      .then((data) => { if (!cancelled) setRows(Array.isArray(data) ? data : []); })
-      .catch(() => { if (!cancelled) setRows([]); });
+      .then((data) => { if (!cancelled) setResponse({ key: requestKey, rows: Array.isArray(data) ? data : [] }); })
+      .catch(() => { if (!cancelled) setResponse({ key: requestKey, rows: [] }); });
     return () => { cancelled = true; };
-  }, [tab, range, globalView]);
+  }, [tab, range, globalView, requestKey]);
 
   const setScope = useCallback((next) => {
     writeGlobalView(next);

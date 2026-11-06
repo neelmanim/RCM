@@ -71,20 +71,22 @@ async function fetchEmailStatus(token, apiBase) {
 }
 
 export function EmailHub({ leadId, lead, token, apiBase, initialEmailId = null, initialMode = 'thread' }) {
-  const [status,      setStatus]      = useState(null);  // email account status
-  const [statusLoad,  setStatusLoad]  = useState(true);
+  const [statusResult, setStatusResult] = useState(null);
+  const statusLoad = !statusResult || statusResult.token !== token || statusResult.apiBase !== apiBase;
+  const status = statusLoad ? null : statusResult.status;
   const [activeIdx,   setActiveIdx]   = useState(0);
   const [mode,        setMode]        = useState(initialMode); // 'thread' | 'compose'
 
   const { emails, loading, error, refetch } = useEmails(leadId, token, apiBase);
 
-  // Fetch email status once on mount
   useEffect(() => {
-    setStatusLoad(true);
+    let cancelled = false;
     fetchEmailStatus(token, apiBase)
-      .then(s => setStatus(s))
-      .catch(() => setStatus(null))
-      .finally(() => setStatusLoad(false));
+      .catch(() => null)
+      .then(status => {
+        if (!cancelled) setStatusResult({ token, apiBase, status });
+      });
+    return () => { cancelled = true; };
   }, [token, apiBase]);
 
   // Group emails into threads (memoized)
@@ -92,12 +94,11 @@ export function EmailHub({ leadId, lead, token, apiBase, initialEmailId = null, 
 
   // Lead Detail opens the hub on the email that was clicked — select its thread once.
   const [focusedOnce, setFocusedOnce] = useState(false);
-  useEffect(() => {
-    if (focusedOnce || !initialEmailId || threads.length === 0) return;
-    const idx = threads.findIndex((t) => t.messages.some((m) => m.id === initialEmailId));
+  if (!focusedOnce && initialEmailId && threads.length > 0) {
+    const idx = threads.findIndex(t => t.messages.some(m => m.id === initialEmailId));
     if (idx >= 0) setActiveIdx(idx);
     setFocusedOnce(true);
-  }, [threads, initialEmailId, focusedOnce]);
+  }
 
   // Keep activeIdx in bounds
   const safeActiveIdx = Math.min(activeIdx, Math.max(0, threads.length - 1));

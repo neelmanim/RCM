@@ -40,7 +40,7 @@ function loadViewState() {
   }
 }
 
-function track(_event, _props) {
+function track() {
   /* mixpanel tracking removed */
 }
 

@@ -54,23 +54,24 @@ body {
     height: 100vh;
     overflow: hidden;
     position: relative;
+    background: #111827;
 }
 
 /* Pre-reserve NavHub sidebar space to prevent CLS on React bundle mount.
  * Without this, #nav-sidebar-root starts at width:0 and when NavHub's
- * React sidebar renders (~870ms) it inflates to 220px, shifting main-content
+ * React sidebar renders (~870ms) it inflates to 224px, shifting main-content
  * right → CLS ~0.18 per shift. Setting min-width here matches --nh-sidebar-width
  * so the layout is stable from first paint. */
 #nav-sidebar-root {
-    min-width: 220px;
-    width: 220px;
+    min-width: 224px;
+    width: 224px;
     flex-shrink: 0;
     transition: width 0.22s ease, min-width 0.22s ease;
 }
 
 /* When NavHub React sidebar collapses (adds .nh-sidebar--collapsed inside
  * #nav-sidebar-root), shrink the shell wrapper so the main content area
- * expands to fill the recovered 148px. Uses :has() — supported in all
+ * expands to fill the recovered 152px. Uses :has() — supported in all
  * modern browsers (Chrome 105+, Safari 15.4+, Firefox 121+). */
 #nav-sidebar-root:has(.nh-sidebar--collapsed) {
     width: 72px;

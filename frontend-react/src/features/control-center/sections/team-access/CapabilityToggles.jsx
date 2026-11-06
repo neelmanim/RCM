@@ -60,7 +60,7 @@ export function CapabilityToggles({ user, messagingUnverified, saveUserSettings 
                 ? { background: colour, borderColor: colour, color: '#fff', opacity: disabled ? 0.45 : 1, border: '1px solid' }
                 : { background: '#fff', color: '#6b7280', border: '1px solid #e5e7eb', opacity: disabled ? 0.45 : 1 }}
             >
-              <Icon size={12} /> {name}{isUnverified ? ' ⚠' : ''}
+              {React.createElement(Icon, { size: 12 })} {name}{isUnverified ? ' ⚠' : ''}
             </button>
           );
         })}

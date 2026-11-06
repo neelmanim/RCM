@@ -1,0 +1,136 @@
+#production-shell-root { display: contents; }
+
+                  /* GPU-composited shimmer — transform:translateX on ::after.
+                   * background-position is NOT compositor-accelerated → causes CLS.
+                   * translateX on a pseudo-element runs entirely on the GPU thread. */
+                  .sk-box {
+                    background: #12181A;
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                    position: relative;
+                    overflow: hidden;
+                    isolation: isolate;
+                  }
+                  .sk-box::after {
+                    content: '';
+                    position: absolute;
+                    inset: 0;
+                    background: linear-gradient(90deg,
+                      transparent 0%,
+                      rgba(201, 255, 104, 0.08) 50%,
+                      transparent 100%);
+                    transform: translateX(-100%);
+                    animation: sk-shimmer 1.5s ease-in-out infinite;
+                    will-change: transform;
+                  }
+                  @keyframes sk-shimmer {
+                    to { transform: translateX(100%); }
+                  }
+                
+
+        .upload-step { flex:1;text-align:center;padding:10px 0;font-size:0.82rem;font-weight:600;
+            color:var(--text-muted);border-bottom:3px solid var(--border-color);transition:all 0.2s; }
+        .upload-step.active { color:var(--primary-color);border-bottom-color:var(--primary-color); }
+        .upload-step.done { color:#10b981;border-bottom-color:#10b981; }
+        .upload-step .step-num { display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+            border-radius:50%;background:var(--border-color);color:#fff;font-size:0.7rem;margin-right:6px;transition:all 0.2s; }
+        .upload-step.active .step-num { background:var(--primary-color); }
+        .upload-step.done .step-num { background:#10b981; }
+
+        /* Dropzone */
+        .upload-dropzone {
+            border: 2px dashed var(--border-color); border-radius: 14px; padding: 48px 24px;
+            text-align: center; background: var(--bg-color); cursor: pointer;
+            transition: all 0.25s ease; position: relative;
+        }
+        .upload-dropzone:hover, .upload-dropzone.drag-over {
+            border-color: var(--primary-color); background: rgba(99, 102, 241, 0.04);
+        }
+        .upload-dropzone.drag-over { transform: scale(1.01); box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+        .upload-dropzone-icon { color: var(--text-muted); margin-bottom: 14px; }
+        .upload-dropzone:hover .upload-dropzone-icon,
+        .upload-dropzone.drag-over .upload-dropzone-icon { color: var(--primary-color); }
+        .upload-dropzone-title { font-size: 1rem; font-weight: 700; color: var(--text-color); margin-bottom: 4px; }
+        .upload-dropzone-subtitle { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+        .upload-browse-link { color: var(--primary-color); font-weight: 600; cursor: pointer; text-decoration: underline; }
+        .upload-dropzone-formats { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
+
+        /* File card */
+        .upload-file-card {
+            display: flex; align-items: center; gap: 14px;
+            padding: 14px 18px; margin-top: 14px;
+            background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px;
+            animation: slideIn 0.3s ease;
+        }
+        .upload-file-card-icon { font-size: 1.8rem; flex-shrink: 0; }
+        .upload-file-card-info { flex: 1; min-width: 0; }
+        .upload-file-card-name { font-weight: 700; font-size: 0.9rem; color: var(--text-color);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .upload-file-card-size { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+        .upload-file-card-remove { background: none; border: none; font-size: 1.4rem; cursor: pointer;
+            color: #94a3b8; padding: 2px 8px; border-radius: 6px; line-height: 1; transition: all 0.15s; }
+        .upload-file-card-remove:hover { color: #ef4444; background: #fef2f2; }
+
+        .upload-result-banner { padding:20px;border-radius:12px;font-size:0.9rem;animation:slideIn 0.4s ease; }
+        .upload-result-banner.success { background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0; }
+        .upload-result-banner.warning { background:#fffbeb;color:#92400e;border:1px solid #fcd34d; }
+        .upload-result-banner.error { background:#fef2f2;color:#991b1b;border:1px solid #fecaca; }
+        @keyframes slideIn { from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)} }
+
+        /* ── Upload Center Page Styles ─────────────────────── */
+        .upload-page { max-width: 1100px; margin: 0 auto; }
+        .upload-header { margin-bottom: 4px; }
+        .upload-stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;
+        }
+        .upload-stat-card {
+            background: var(--surface-color); border-radius: 12px; padding: 20px;
+            display: flex; flex-direction: column; gap: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid var(--border-color);
+        }
+        .upload-stat-label { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .upload-stat-value { font-size: 1.6rem; font-weight: 700; color: var(--text-color); }
+        .upload-card {
+            background: var(--surface-color); border-radius: 14px; padding: 28px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+        .upload-stepper { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 24px; }
+        .upload-step-item { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; font-weight: 500; color: var(--text-muted); }
+        .upload-step-item.active { color: var(--primary-color); font-weight: 600; }
+        .upload-step-item.done { color: #10b981; }
+        .step-circle {
+            width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; font-weight: 700; color: #fff; background: var(--border-color);
+        }
+        .upload-step-item.active .step-circle { background: var(--primary-color); }
+        .upload-step-item.done .step-circle { background: #10b981; }
+        .step-line { width: 60px; height: 2px; background: var(--border-color); margin: 0 12px; }
+        .upload-toggle-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 0; border-top: 1px solid var(--border-color); margin-top: 20px;
+        }
+        /* Toggle switch */
+        .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute; cursor: pointer; inset: 0; background: #d1d5db; border-radius: 12px; transition: 0.25s;
+        }
+        .toggle-slider::before {
+            content: ""; position: absolute; width: 20px; height: 20px; left: 2px; bottom: 2px;
+            background: #fff; border-radius: 50%; transition: 0.25s; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .toggle-switch input:checked + .toggle-slider { background: var(--primary-color); }
+        .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+        @media (max-width: 768px) {
+            .upload-stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .upload-toggle-row { flex-direction: column; gap: 14px; align-items: flex-start; }
+        }
+        /* Daily Digest print export (DailyDigestHub.jsx's Export button calls
+           window.print()) — hides the shell chrome so only the digest content
+           prints; the digest's own header controls hide themselves via
+           Tailwind's print: variant. */
+        @media print {
+            #app-sidebar, #nav-topbar-root { display: none !important; }
+            #view-container { margin: 0 !important; padding: 0 !important; }
+        }
+    

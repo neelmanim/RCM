@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Workflow, Send, MessagesSquare, MailCheck } from 'lucide-react';
 import { Tabs } from '../../components/ui/Tabs';
 import { SalesJourneyHub } from '../sales-journey/SalesJourneyHub';
@@ -42,7 +42,11 @@ export function SalesToolsHub({ userRole, journeyId: routeExtra = null }) {
   // regardless of whatever tab a previous visit left active.
   const [active, setActive] = useState(wantsReplies ? 'replies' : journeyId ? 'cadence' : SECTION_TABS[0].key);
   // The shell re-calls navigate() with new props while mounted (Dashboard link).
-  useEffect(() => { if (wantsReplies) setActive('replies'); }, [wantsReplies]);
+  const [previousReplies, setPreviousReplies] = useState(wantsReplies);
+  if (previousReplies !== wantsReplies) {
+    setPreviousReplies(wantsReplies);
+    if (wantsReplies) setActive('replies');
+  }
 
   return (
     <div className="salestools-hub min-h-full bg-slate-50">

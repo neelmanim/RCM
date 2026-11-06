@@ -23,19 +23,18 @@ function ThreadMessage({ m }) {
 /** Reading pane. `item` is the list row (shown instantly); the full body and
  * earlier thread load from GET /instantly/replies/{id}. Plain text only. */
 export function ReplyReader({ item, onToggleRead, onExport }) {
-  const [detail, setDetail] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState(null);
   const [attempt, setAttempt] = useState(0);
+  const loading = !result || result.id !== item.id || result.attempt !== attempt;
+  const detail = loading ? null : result.detail;
+  const error = loading ? null : result.error;
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setError(null); setDetail(null);
     InstantlyInboxService.reply(item.id)
-      .then((d) => { if (!cancelled) setDetail(d); })
-      .catch((e) => { if (!cancelled) setError(errorMessage(e)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .then(detail => { if (!cancelled) setResult({ id: item.id, attempt, detail, error: null }); })
+      .catch(e => { if (!cancelled) setResult({ id: item.id, attempt, detail: null, error: errorMessage(e) }); });
     return () => { cancelled = true; };
   }, [item.id, attempt]);
 

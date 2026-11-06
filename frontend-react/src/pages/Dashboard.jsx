@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   RefreshCw, Download, Lock, Globe, ClipboardList, Inbox, PhoneMissed, PhoneCall, CalendarCheck, Users,
-  Presentation, BadgeCheck, PhoneOff, CircleCheck, TriangleAlert, ChevronDown, Hand, PhoneOutgoing, Phone,
+  Presentation, BadgeCheck, PhoneOff, CircleCheck, TriangleAlert, ChevronDown, Hand, Phone,
 } from 'lucide-react';
 import { LeadsService, MyDayService } from '../services/api';
 import { Button } from '../components/ui/Button';
@@ -25,8 +25,9 @@ import { DashboardTour } from '../features/dashboard/DashboardTour';
 import { openLeads } from '../features/dashboard/openLeads';
 import { MyDayCard } from '../features/dashboard/MyDayCard';
 import {
-  InsightBadges, MeetingsChartCard, LeaderboardCard, NeedsAttentionCard, PipelineCard, fmt,
+  InsightBadges, MeetingsChartCard, LeaderboardCard, NeedsAttentionCard, PipelineCard,
 } from '../features/dashboard/cards';
+import { formatNumber as fmt } from '../utils/formatNumber';
 import { useCanExport } from '../lib/useCanExport';
 
 const SESSION_GREETED = 'ls_session_greeted';
@@ -94,8 +95,8 @@ export const Dashboard = ({ onLeadClick, onNavigate, userName = '', userRole = '
       onClick: toLeads({ smart: todaySmart }), hint: 'Open the leads given to you today' },
     { label: 'Not yet called', value: fmt(myDay?.now?.not_yet_called), icon: PhoneMissed, iconClass: 'bg-amber-500/15 text-amber-400 border border-amber-500/30', valueClass: 'text-amber-300', caption: 'Never called — start here',
       onClick: toLeads({ smart: { key: 'not_yet_called', label: 'Leads nobody has called yet' } }), hint: 'Open the leads nobody has called yet' },
-    { label: 'Calls today', value: fmt(myDay?.did?.calls), icon: Phone, iconClass: 'bg-sky-500/15 text-sky-400 border border-sky-500/30', valueClass: 'text-sky-300', caption: 'Open the Power Dialer for the call list',
-      onClick: () => go(onNavigate, 'my-calls'), hint: "Today's calls and outcomes live in the Power Dialer" },
+    { label: 'Calls today', value: fmt(myDay?.did?.calls), icon: Phone, iconClass: 'bg-sky-500/15 text-sky-400 border border-sky-500/30', valueClass: 'text-sky-300', caption: 'Review the call history',
+      onClick: () => go(onNavigate, 'my-calls'), hint: "Review today's calls and outcomes" },
     { label: 'Calling stage', value: fmt(sc.Calling ?? 0), icon: PhoneCall, iconClass: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30', valueClass: 'text-emerald-400', caption: 'In the Calling status',
       onClick: toLeads({ statuses: ['Calling'] }), hint: 'Open leads in Calling' },
     { label: 'Meetings+', value: fmt(meetingsPlus), icon: CalendarCheck, iconClass: 'bg-purple-500/15 text-purple-400 border border-purple-500/30', valueClass: 'text-purple-300', caption: 'Meeting stage or beyond',
@@ -144,7 +145,6 @@ export const Dashboard = ({ onLeadClick, onNavigate, userName = '', userRole = '
               <Button size="sm" variant={globalView ? 'primary' : 'outline'} onClick={() => setGlobalView(true)} title="Show all org-wide data"><Globe size={13} /> Global</Button>
             </div>
           )}
-          {isRep && <Button size="sm" onClick={() => go(onNavigate, 'my-calls')} data-tour="dashboard-dial"><PhoneOutgoing size={14} /> Start calling</Button>}
           {canExport && <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="outline" disabled={loading} data-tour="dashboard-export"><Download size={14} /> Export <ChevronDown size={13} /></Button>

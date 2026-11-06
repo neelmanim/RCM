@@ -280,12 +280,11 @@ const NAV_ITEMS = [
   },
   {
     id: 'my-calls',
-    label: 'Power Dialer',
-    tooltip: 'Power Dialer',
+    label: 'Call history',
+    tooltip: 'Call history',
     roles: ['SDR', 'AE'],
     icon: (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="23 7 23 1 17 1"/><line x1="16" y1="8" x2="23" y2="1"/>
         <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.5 19.79 19.79 0 0 1 1.61 4.87 2 2 0 0 1 3.58 2.69h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 10a16 16 0 0 0 6 6l.92-.91a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.73 17.3z"/>
       </svg>
     ),
@@ -373,30 +372,13 @@ const CollapseIcon = ({ collapsed }) => (
 );
 
 // ── Role visibility helper ────────────────────────────────────────────────────
-// Temporary lockdown: Pipeline & CSM Portal (the Super Admin oversight tab,
-// AE's own AE Pipeline, and CSM's own Inbox/Portfolio/Playbooks/Digest) are
-// hidden from EVERYONE, including admins, while that surface is reworked —
-// additive on top of the existing role check, so restoring it for a role
-// later is a one-line revert. Nav-hide only, not a backend gate (see
-// routes/ae_pipeline_routes.py, routes/csm_portal_routes.py). Unlocked only
-// for this one account, by navigating to #mogambo once per browser session
-// (see app.js _parseHash, which sets MOGAMBO_KEY in sessionStorage and
-// itself checks the email too — this is a second, independent gate).
-export const MOGAMBO_KEY = 'alternate:mogambo-unlocked';
-const PIPELINE_CSM_LOCKDOWN_EMAIL = 'neelmani.mishra@screen-magic.com';
+// Hide Pipeline and CSM navigation while those views are being reworked.
 const isPipelineOrCsmItem = (id) => id === 'pipeline-hub' || id === 'ae-pipeline' || id.startsWith('csm-');
 
-function hasMogamboUnlock(userEmail) {
-  if ((userEmail || '').trim().toLowerCase() !== PIPELINE_CSM_LOCKDOWN_EMAIL) return false;
-  try { return sessionStorage.getItem(MOGAMBO_KEY) === '1'; } catch { return false; }
-}
-
-function isItemVisible(item, userRole, userEmail) {
+function isItemVisible(item, userRole) {
   const role = (userRole || '').trim();
   const roleAllowed = item.roles.includes('all') || item.roles.some(r => r.toLowerCase() === role.toLowerCase());
-  if (!roleAllowed) return false;
-  if (isPipelineOrCsmItem(item.id)) return hasMogamboUnlock(userEmail);
-  return true;
+  return roleAllowed && !isPipelineOrCsmItem(item.id);
 }
 
 function getRoleColor(userRole) {
@@ -411,7 +393,6 @@ function getRoleColor(userRole) {
 export function NavSidebar({
   userRole = '',
   userName = '',
-  userEmail = '',
   activeView = 'dashboard',
   collapsed: initialCollapsed = false,
   mobileNavOpen = false,
@@ -463,7 +444,7 @@ export function NavSidebar({
   }, []);
 
   // Visible items for this role
-  const visibleItems = NAV_ITEMS.filter(item => isItemVisible(item, userRole, userEmail));
+  const visibleItems = NAV_ITEMS.filter(item => isItemVisible(item, userRole));
 
   // Tapping a nav link closes the mobile drawer too — a no-op on desktop.
   const navigate = useCallback((id) => {
@@ -486,7 +467,7 @@ export function NavSidebar({
 
       {/* Brand Header */}
       <div className="nh-logo">
-        <div className="w-8 h-8 rounded-xl bg-[#C9FF68] flex items-center justify-center text-[#090D0E] shrink-0 font-black shadow-[0_0_15px_rgba(201,255,104,0.3)]">
+        <div className="w-8 h-8 rounded-xl bg-indigo-300 flex items-center justify-center text-slate-950 shrink-0 font-black">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="2" x2="12" y2="22"/>
             <line x1="2" y1="12" x2="22" y2="12"/>
@@ -497,10 +478,10 @@ export function NavSidebar({
         {!collapsed && (
           <div className="nh-logo__text">
             <div className="flex items-center gap-1.5 leading-none">
-              <span className="nh-logo__name font-black text-sm text-[#F4F6F2] tracking-tight">alternate<span className="text-[#C9FF68]">crm</span></span>
+              <span className="nh-logo__name font-black text-sm text-[#F4F6F2] tracking-tight">alternate<span className="text-indigo-300">crm</span></span>
               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-white/10 text-[#9BA9A5]">OS</span>
             </div>
-            <span className="nh-logo__sub text-[10px] text-[#9BA9A5] mt-1 font-medium tracking-wide">Connected Workspace</span>
+            <span className="nh-logo__sub text-[10px] text-[#9BA9A5] mt-1 font-medium tracking-wide">Sales workspace</span>
           </div>
         )}
       </div>
@@ -537,15 +518,14 @@ export function NavSidebar({
             );
           })}
 
-          {/* Conversation OS Sandbox Demo */}
+          {/* Interactive demo */}
           <li className="nh-nav__item">
             <a
               href="sandbox.html"
               className="nh-nav__link"
-              style={{ color: '#818cf8' }}
-              onMouseEnter={e => showTooltip(e, 'Conversation OS Sandbox')}
+              onMouseEnter={e => showTooltip(e, 'Interactive demo')}
               onMouseLeave={hideTooltip}
-              aria-label="Conversation OS Sandbox"
+              aria-label="Interactive demo"
             >
               <span className="nh-nav__icon">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -554,8 +534,7 @@ export function NavSidebar({
               </span>
               {!collapsed && (
                 <span className="nh-nav__label flex items-center justify-between w-full">
-                  <span className="font-semibold text-indigo-300">Conversation OS</span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/25 text-indigo-200 font-bold border border-indigo-500/30">DEMO</span>
+                  Interactive demo
                 </span>
               )}
             </a>
@@ -595,7 +574,7 @@ export function NavSidebar({
             className="nh-avatar"
             size={34}
           />
-          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#C9FF68] ring-2 ring-[#090D0E]" />
+          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#172033]" />
         </div>
         {!collapsed && (
           <div className="nh-footer__info">

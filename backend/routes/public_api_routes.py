@@ -5,7 +5,7 @@ Authentication via X-API-Key header (managed in Admin Settings → Public API ta
 
 Available endpoints:
   GET /api/public/sf/account       — Look up a Salesforce Account (or Lead fallback)
-                                      using messaging_provider_AccountId__c or Account Name.
+                                      using the configured messaging account ID field or Account Name.
   GET /api/public/leads/search     — Search leads by name/email/company.
   GET /api/public/leads/{id}/calls — Call history for a lead.
   GET /api/public/health           — Unauthenticated liveness check.
@@ -17,6 +17,7 @@ consumer, and only hand it out for read-only internal tooling (e.g. the
 Alternate CRM MCP server in mcp_server/).
 """
 import logging
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -43,8 +44,8 @@ router = APIRouter(prefix="/api/public", tags=["public-api"])
 # apart, and the domain rule no longer needs a JWT-shaped input to be called.
 _API_KEY_ACTOR = Actor.service("public-api-key")
 
-# ── SF field name for SMS Magic Account ID on Account object ──────────────────
-SF_MESSAGING_PROVIDER_FIELD = "messaging_provider_AccountId__c"
+# ── SF field name for messaging provider account ID on Account object ──────────────────
+SF_MESSAGING_PROVIDER_FIELD = os.getenv("SF_MESSAGING_PROVIDER_FIELD", "").strip()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ def _build_sf_url(sf_client, record_id: str, object_type: str) -> Optional[str]:
 
 
 def _query_account_by_messaging_provider_id(sf, sms_id: str) -> Optional[dict]:
-    """Query Salesforce Account object by messaging_provider_AccountId__c (exact match)."""
+    """Query Salesforce Account object by the configured messaging account ID field (exact match)."""
     safe_id = _escape_soql(sms_id)
     try:
         result = sf.query(
@@ -138,7 +139,7 @@ def _query_account_by_name(sf, company_name: str) -> Optional[dict]:
 
 
 def _query_lead_by_messaging_provider_id(sf, sms_id: str) -> Optional[dict]:
-    """Fallback: query Salesforce Lead by messaging_provider_AccountId__c."""
+    """Fallback: query Salesforce Lead by the configured messaging account ID field."""
     safe_id = _escape_soql(sms_id)
     try:
         result = sf.query(
@@ -206,7 +207,7 @@ def public_health():
 
 @router.get("/sf/account")
 def get_sf_account(
-    messaging_provider_id: Optional[str] = Query(None, description="SMS Magic Account ID (messaging_provider_AccountId__c value in Salesforce)"),
+    messaging_provider_id: Optional[str] = Query(None, description="Messaging provider account ID from Salesforce"),
     company_name: Optional[str] = Query(None, description="Salesforce Account Name to look up"),
     _auth: bool = Depends(require_api_key),
 ):
@@ -217,7 +218,7 @@ def get_sf_account(
 
     Lookup priority:
       1. Try Salesforce Account object
-           a. If messaging_provider_id → WHERE messaging_provider_AccountId__c = '<id>'
+           a. If messaging_provider_id → WHERE the configured messaging account ID field = '<id>'
            b. If company_name → WHERE Name = '<name>' then LIKE fallback
       2. No Account found → try Salesforce Lead object (same matching)
       3. Nothing found → found: false
@@ -233,6 +234,11 @@ def get_sf_account(
             status_code=400,
             detail="Provide at least one of: messaging_provider_id, company_name"
         )
+
+    if messaging_provider_id and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", SF_MESSAGING_PROVIDER_FIELD):
+        if not company_name:
+            raise HTTPException(status_code=503, detail="Salesforce messaging account lookup is not configured. Provide company_name to search by name.")
+        messaging_provider_id = None
 
     # ── Get SF client (uses Alternate CRM's configured connection) ───────────────
     sf = get_sf_client()

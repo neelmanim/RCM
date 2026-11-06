@@ -5,17 +5,13 @@
 // See .claude/skills/settings-architecture/skill.md and
 // .claude/plans/i-was-working-on-idempotent-ritchie.md.
 import { currentUser, isAdmin, isSuperAdmin, isPodAdmin, isSDR, authHeaders, API_BASE, dialerEnabled, isViewAsSession, getAuthToken } from './auth.js';
-import { syncSalesforce, globalSearch, uploadSdrCsv, fetchDialerStatus, startDialerCall, getCallStatus, addLeadNote, getMyActiveCall, forceEndCall, getMyCapabilities } from './api.js';
-import { showLoader, showToast, fullName } from './utils.js';
+import { syncSalesforce, globalSearch, fetchDialerStatus, startDialerCall, getCallStatus, addLeadNote, getMyActiveCall, forceEndCall, getMyCapabilities, fetchDisqualifyRequests, approveDisqualifyRequest, rejectDisqualifyRequest } from './api.js';
+import { showLoader, showToast, fmtDate } from './utils.js';
 import { stackTopBanner, unstackTopBanner } from './top_banner_stack.js';
 
 // renderDashboard removed — replaced by DashboardHub React IIFE (v9.6.0)
 
-import { renderLeads, renderLeadDetail, setNavLeadsFromRaw } from './views/leads.js';
-import { getNavLeads } from './views/lead_list.js';
-import { renderDisqualifyRequests } from './views/disqualify_requests.js';
-import { renderPods }       from './views/pods.js';
-import { renderLeaderboard } from './views/leaderboard.js';
+import { getNavLeads, setNavLeadsFromRaw } from './views/lead_navigation.js';
 import { initModals, openCallModal, openNoShowModal, openDemoFailedModal, runLeadStageAction } from './views/modals.js';
 import { showDialerWidget, showManualDialWidget, isWidgetActive, initIncomingCallWatcher } from './views/dialer_widget.js';
 // Side-effect-only import: messenger_dialer.js's module body registers the
@@ -28,16 +24,13 @@ import { showDialerWidget, showManualDialWidget, isWidgetActive, initIncomingCal
 // comment on why that's unsafe.
 import './messenger_dialer.js?v=20260729a';
 
-import { renderSdrPerformance } from './views/sdr_performance.js';
 import { getPhoneTimezone, renderPhoneLocalTime } from './phone_timezone.js'; // ENH-01
 
 // Expose phone timezone utils for manual dial widget TZ preview
 window._phoneTimezoneUtils = { getPhoneTimezone, renderPhoneLocalTime };
 // metrics.js sunset — legacy 'metrics' route redirects to 'analytics' (line 352)
-import { renderSdrSettings } from './views/sdr_settings.js';
 import { fetchPendingTasks, snoozeTask, dismissTask, fetchPendingReplies, dismissReply } from './api.js';
 import { runAiQuery, injectSmartAnalyticsStyles } from './views/smart_analytics.js';
-import { renderCallMonitor } from './views/call_monitor.js';
 import { initErrorReporter, flushPendingErrors } from './error_reporter.js';
 import { mp } from './mp.js';
 
@@ -84,7 +77,6 @@ const vc = document.getElementById('view-container');
         token:       localStorage.getItem('crm_token'),
         userRole:    currentUser?.role || '',
         userName:    currentUser?.name || currentUser?.email || '',
-        userEmail:   currentUser?.email || '',
         avatarUrl:   currentUser?.avatar_url || null,
         podId:       currentUser?.pod_id || null,
         apiBase:     API_BASE,
@@ -120,37 +112,12 @@ const vc = document.getElementById('view-container');
         },
     };
 
-    function _mountSandboxBanner() {
-        if (localStorage.getItem('crm_is_sandbox') !== 'true') return;
-        if (document.getElementById('sandbox-banner')) return;
-        const banner = document.createElement('div');
-        banner.id = 'sandbox-banner';
-        banner.style.cssText = 'background: linear-gradient(90deg, #152226 0%, #12181A 100%); border-bottom: 1px solid rgba(201, 255, 104, 0.25); color: #F4F6F2; padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; z-index: 9999;';
-        banner.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 6px; background: rgba(201, 255, 104, 0.15); color: #C9FF68; font-size: 12px; font-weight: 800;">⚡</span>
-                <span><strong>Interactive Sandbox Active</strong> — Previewing Alternate CRM with simulated commercial pipeline data.</span>
-            </div>
-            <button id="exit-sandbox-btn" style="background: rgba(201, 255, 104, 0.12); border: 1px solid rgba(201, 255, 104, 0.3); color: #C9FF68; padding: 5px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s;">
-                Exit Sandbox
-            </button>
-        `;
-        document.body.prepend(banner);
-        document.getElementById('exit-sandbox-btn')?.addEventListener('click', () => {
-            localStorage.removeItem('crm_is_sandbox');
-            localStorage.removeItem('crm_token');
-            sessionStorage.clear();
-            window.location.href = 'login.html';
-        });
-    }
-
     function _doMount() {
         const sidebarEl = document.getElementById('nav-sidebar-root');
         const topbarEl  = document.getElementById('nav-topbar-root');
         if (sidebarEl && topbarEl && window.NavHub) {
             window.NavHub.mount(sidebarEl, topbarEl, navProps);
             _mountViewAsBanner();
-            _mountSandboxBanner();
         }
     }
 
@@ -314,6 +281,7 @@ const VIEW_HUBS = {
     'pods':             'PodsHub',
     'activity-monitor': 'ActivityMonitorHub',
     'digest':           'DailyDigestHub',
+    'disqualify-requests': 'DisqualificationReviewHub',
     'my-settings':      'MySettingsHub',
     'leaderboard':      'LeaderboardHub',
     'control-center':   'ControlCenterHub',
@@ -350,6 +318,7 @@ function _calendarSkeleton() {
 }
 
 async function loadView(viewName, extra, backView) {
+    window.WorkspaceRecoveryHub?.unmount();
     // RCA 2026-08-20: several call sites pass a lead id that can resolve to
     // JS `undefined` (e.g. a lead object that hadn't finished loading yet).
     // That used to sail straight through to a bare `#lead-detail` hash and a
@@ -587,16 +556,24 @@ async function loadView(viewName, extra, backView) {
             mySettingsWaited += 50;
         }
         if (!window.MySettingsHub) {
-            // Legacy renderSdrSettings() stays imported purely as this
-            // crash-fallback, same pattern as Pods Hub / Activity Monitor.
-            await renderSdrSettings(vc);
+            document.getElementById('my-settings-react-root').textContent = 'Could not load My Settings. Refresh to try again.';
             return;
         }
 
         window.MySettingsHub.mount(document.getElementById('my-settings-react-root'), mySettingsProps);
     } else if (viewName === 'disqualify-requests') {
         if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
-        await renderDisqualifyRequests(vc);
+        if (!document.getElementById('disqualification-review-root')) {
+            const root = document.createElement('div');
+            root.id = 'disqualification-review-root';
+            vc.replaceChildren(root);
+        }
+        window.DisqualificationReviewHub.navigate(document.getElementById('disqualification-review-root'), {
+            fetchRequests: fetchDisqualifyRequests,
+            approve: approveDisqualifyRequest,
+            reject: rejectDisqualifyRequest,
+            formatDate: fmtDate,
+        });
     } else if (viewName === 'pods') {
         if (!isAdmin) { vc.innerHTML = `<div style="padding:60px;text-align:center;"><h2>🚫 Access Denied</h2></div>`; return; }
         // v11.5.7: PodsHub (React) replaces the classic POD Management view —
@@ -686,9 +663,7 @@ async function loadView(viewName, extra, backView) {
             leaderboardWaited += 50;
         }
         if (!window.LeaderboardHub) {
-            // Legacy renderLeaderboard() stays imported purely as this
-            // crash-fallback, same pattern as My Settings / Pods Hub.
-            await renderLeaderboard(vc);
+            document.getElementById('leaderboard-react-root').textContent = 'Could not load Leaderboard. Refresh to try again.';
             return;
         }
 
@@ -725,9 +700,7 @@ async function loadView(viewName, extra, backView) {
             sdrPerfWaited += 50;
         }
         if (!window.SdrPerformanceHub) {
-            // Legacy renderSdrPerformance() stays imported purely as this
-            // crash-fallback, same pattern as Leaderboard / My Settings.
-            await renderSdrPerformance(vc, extra, loadView);
+            document.getElementById('sdr-performance-react-root').textContent = 'Could not load Rep Performance. Refresh to try again.';
             return;
         }
 
@@ -940,7 +913,7 @@ async function loadView(viewName, extra, backView) {
             _calendarLoading = false;
         }
     } else if (viewName === 'my-calls') {
-        // Power Dialer — replaces the old classic "Today's Calls" log view.
+        // Read-only call history.
         // Mirrors the CalendarHub mount/navigate pattern above.
         if (_powerDialerLoading) return;
 
@@ -968,7 +941,7 @@ async function loadView(viewName, extra, backView) {
             if (!window.PowerDialerHub) {
                 document.getElementById('power-dialer-react-root').innerHTML = `
                   <div style="padding:60px;text-align:center;color:#ef4444;">
-                    <div>⚠️ Failed to load Power Dialer.</div>
+                    <div>⚠️ Failed to load call history.</div>
                     <button id="power-dialer-retry-btn" style="margin-top:14px;font-size:0.85rem;font-weight:600;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:6px 16px;cursor:pointer;">Retry</button>
                   </div>`;
                 document.getElementById('power-dialer-retry-btn')?.addEventListener('click', () => loadView('my-calls'));
@@ -1237,12 +1210,10 @@ async function loadView(viewName, extra, backView) {
         }
 
         window.PipelineHub.mount(document.getElementById('pipeline-hub-react-root'), pipelineHubProps);
-    } else if (viewName === 'playground') {
-        // Deprecated per product direction: redirect to control-center
-        loadView('control-center').catch(() => {});
-        return;
     } else {
-        vc.innerHTML = `<h2>View not found</h2>`;
+        const fallback = _defaultView();
+        history.replaceState(history.state, '', `#${fallback}`);
+        return loadView(fallback);
     }
 }
 
@@ -1260,44 +1231,6 @@ document.querySelectorAll('.sidebar-nav a[data-view]').forEach(link => {
 
 // Feedback modal is handled entirely by the React NavHub bundle
 // (window.NavHub.openFeedback(), see nav-entry.jsx / layout/FeedbackModal.jsx).
-
-// ── Sync Button ───────────────────────────────────────────────────────────────
-const syncBtn = document.getElementById('sync-btn');
-if (syncBtn) {
-    syncBtn.addEventListener('click', async () => {
-        const orig = syncBtn.innerHTML;
-        syncBtn.innerHTML = '<span class="icon">⏳</span> Syncing...'; syncBtn.disabled = true;
-        try {
-            const res = await syncSalesforce();
-            if (res.ok) {
-                const data = await res.json();
-                const pulled = data.leads_synced || 0;
-                const pushed = data.leads_pushed_to_sf || 0;
-                const parts = [];
-                if (pulled) parts.push(`${pulled} pulled`);
-                if (pushed) parts.push(`${pushed} pushed`);
-                const summary = parts.length ? parts.join(', ') : 'No changes';
-                syncBtn.innerHTML = `<span class="icon">✅</span> Synced (${summary})`;
-                await loadView(currentView, currentExtra);
-            } else {
-                const err = await res.json().catch(() => ({}));
-                syncBtn.innerHTML = '<span class="icon">❌</span> Sync Failed';
-                showToast(`Sync failed: ${err.detail || 'Unknown error'}`);
-            }
-        } catch (e) { syncBtn.innerHTML = '<span class="icon">❌</span> API Error'; console.error(e); }
-        setTimeout(() => { syncBtn.innerHTML = orig; syncBtn.disabled = false; }, 5000);
-    });
-}
-
-// ── Upload Leads: now handled by Control Center's Data section (React) ───────
-
-// ── Global Search ─────────────────────────────────────────────────────────────
-// The old vanilla #global-search input was removed when NavHub (React) replaced
-// the topbar. Search is now driven by NavTopbar.jsx via the onSearch callback,
-// which calls window._runGlobalSearch(query).
-// We still render #search-results in index.html as the dropdown container.
-const searchResults  = document.getElementById('search-results');
-let searchTimeout;
 
 // Expose globalSearch for NavTopbar's inline React dropdown
 window._globalSearchFn = globalSearch;
@@ -1317,51 +1250,6 @@ window._dismissTask = dismissTask;
 window._fetchPendingReplies = fetchPendingReplies;
 window._dismissReply = dismissReply;
 
-/**
- * _runGlobalSearch — called by NavTopbar onSearch prop with the typed query.
- * Renders matching leads/users in #search-results dropdown.
- * Also used by the '/' keyboard shortcut below.
- */
-window._runGlobalSearch = async (q) => {
-    if (!searchResults) return;
-    if (!q || q.length < 2) { searchResults.style.display = 'none'; return; }
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(async () => {
-        try {
-            const data = await globalSearch(q);
-            let html = '';
-            if (data.leads?.length > 0) {
-                html += `<div style="padding:8px 12px;font-weight:600;font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);background:#f8fafc;">Leads</div>`;
-                data.leads.forEach(l => {
-                    html += `<div style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;transition:background 0.15s;" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''" onclick="document.getElementById('search-results').style.display='none';window._loadView('lead-detail','${l.id}')">
-                        <div style="font-weight:600;font-size:0.9rem;">${fullName(l)}</div>
-                        <div style="font-size:0.8rem;color:var(--text-muted);">${l.company || ''} &middot; ${l.email || ''}${l.phone ? ' · 📞 ' + l.phone : ''}</div>
-                    </div>`;
-                });
-            }
-            if (data.users?.length > 0) {
-                html += `<div style="padding:8px 12px;font-weight:600;font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);background:#f8fafc;">Users/SDRs</div>`;
-                data.users.forEach(u => {
-                    html += `<div style="padding:10px 12px;border-bottom:1px solid #f1f5f9;">
-                        <div style="font-weight:600;font-size:0.9rem;">${u.name || ''} <span class="badge" style="float:right;">${u.role}</span></div>
-                        <div style="font-size:0.8rem;color:var(--text-muted);">${u.email || ''}</div>
-                    </div>`;
-                });
-            }
-            if (!html) html = `<div style="padding:12px;color:var(--text-muted);font-size:0.85rem;text-align:center;">No results found.</div>`;
-            searchResults.innerHTML = html;
-            searchResults.style.display = 'block';
-        } catch (err) { console.error('Search error', err); }
-    }, 300);
-};
-
-// Close dropdown on outside click
-if (searchResults) {
-    document.addEventListener('click', e => {
-        if (!searchResults.contains(e.target)) searchResults.style.display = 'none';
-    });
-}
-
 // ── Keyboard shortcuts for search ─────────────────────────────────────────────
 // ⌘K is handled inside NavTopbar.jsx — NavHub.focusSearch() is the bridge.
 // The '/' shortcut below also delegates to the React search input.
@@ -1370,27 +1258,6 @@ document.addEventListener('keydown', e => {
     if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) {
         e.preventDefault();
         window.NavHub?.focusSearch?.();
-    }
-    // Escape — close results dropdown
-    if (e.key === 'Escape' && searchResults) {
-        searchResults.style.display = 'none';
-    }
-});
-
-// ── CSV SDR Upload (Admin) ────────────────────────────────────────────────────
-document.addEventListener('change', async e => {
-    if (e.target.id === 'sdr-csv-input') {
-        const file = e.target.files[0];
-        if (!file) return;
-        showLoader(vc);
-        const text = await file.text();
-        try {
-            const res  = await uploadSdrCsv(text);
-            const data = await res.json();
-            if (res.ok) { showToast('Success: ' + data.message, 'success'); if (currentView === 'admin') loadView('admin'); }
-            else showToast('Error: ' + data.detail);
-        } catch (err) { console.error(err); showToast('Upload failed.'); }
-        finally { e.target.value = ''; }
     }
 });
 
@@ -2251,129 +2118,32 @@ window._openMessagingWidget = (leadId, leadName, phone, lead = {}) => {
 // button; an SDR without the channel simply doesn't see one.
 window._canMessageLeads = () => !!(_capabilities?.sms?.enabled || _capabilities?.whatsapp?.enabled);
 
-// Parse hash to restore view on page refresh / initial load
-function _parseHash() {
-    const raw = location.hash.replace(/^#/, '');
-    // CSM lands on their Inbox — the "what needs you today" queue, not the
-    // SDR/AE-shaped Dashboard (My Leads, Calling, Meetings Booked,
-    // leaderboard — none of it applies to a CSM's account-portfolio work;
-    // NavSidebar.jsx also hides both of those nav items from CSM for the
-    // same reason). 2026-09-16: was 'csm-portal' (one wrapper page); Inbox
-    // is now its own flat nav item and the natural landing section.
-    if (!raw) return { view: currentUser?.role === 'CSM' ? 'csm-inbox' : 'dashboard', extra: null };
-    // Easter-egg unlock for Pipeline & CSM Portal (see NavSidebar.jsx
-    // MOGAMBO_KEY) — those nav items are hidden from everyone while that
-    // surface is reworked; typing #mogambo once per browser session reveals
-    // them again, but only for this one account (NavSidebar re-checks the
-    // email itself, this isn't the only gate). Not a real view, so fall
-    // through to the default landing view instead of trying to mount a
-    // "mogambo" hub.
-    if (raw.toLowerCase() === 'mogambo') {
-        let justUnlocked = false;
-        if ((currentUser?.email || '').trim().toLowerCase() === 'neelmani.mishra@screen-magic.com') {
-            try { sessionStorage.setItem('alternate:mogambo-unlocked', '1'); justUnlocked = true; } catch {}
-        }
-        return { view: currentUser?.role === 'CSM' ? 'csm-inbox' : 'dashboard', extra: null, justUnlocked };
-    }
-    const parts = raw.split('/');
-    return { view: parts[0], extra: parts.slice(1).join('/') || null };
-}
-
-// Listen for back/forward navigation
-window.addEventListener('hashchange', () => {
-    // EC-15b: skip if this hashchange was triggered by loadView itself setting the hash
-    if (_skipHashUpdate) return;
-    const { view, extra, justUnlocked } = _parseHash();
-    if (view !== currentView || extra !== currentExtra) {
-        _skipHashUpdate = true;
-        loadView(view, extra).finally(() => { _skipHashUpdate = false; });
-    } else if (justUnlocked) {
-        // #mogambo resolves to whatever view the user is already on (most
-        // often "dashboard") — the equality check above then skips loadView
-        // entirely, so NavSidebar never got nudged to re-render and pick up
-        // the sessionStorage flag it just set. Nothing else changed, but
-        // NavHub.update() calls React's root.render() directly, which
-        // re-runs NavSidebar regardless of whether activeView's value
-        // actually differs.
-        window.NavHub?.update({ activeView: currentView });
-    }
-});
-
-try {
-    const { view: initView, extra: initExtra } = _parseHash();
-    await loadView(initView, initExtra);
-    // Flush any errors that were queued before the token was available
-    flushPendingErrors().catch(() => {});
-} catch (err) {
-    console.error('Boot Error:', err);
-
-    // Check if this is a cold-start / 503 error
-    const isColdStart = err.message?.includes('503') ||
-                        err.message?.includes('Failed to fetch') ||
-                        err.message?.includes('NetworkError') ||
-                        err.message?.includes('Load failed');
-
-    if (isColdStart) {
-        // ── Cold Start Recovery Overlay ──────────────────────────────────
-        vc.innerHTML = `
-            <div id="cold-start-overlay" style="padding:80px 40px;text-align:center;max-width:480px;margin:0 auto;">
-                <div style="font-size:3rem;margin-bottom:16px;">✨</div>
-                <h2 style="font-size:1.3rem;font-weight:700;color:#18181b;margin:0 0 8px;">Alternate CRM is waking up...</h2>
-                <p style="font-size:0.88rem;color:#71717a;margin:0 0 24px;line-height:1.5;">
-                    Our server fell asleep due to inactivity.<br>It's booting up now — this usually takes 20–40 seconds.
-                </p>
-                <div style="width:100%;max-width:320px;height:6px;background:#e4e4e7;border-radius:3px;margin:0 auto 16px;overflow:hidden;">
-                    <div id="cold-start-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#6366f1,#a855f7);border-radius:3px;transition:width 0.4s ease;"></div>
-                </div>
-                <div id="cold-start-status" style="font-size:0.78rem;color:#a1a1aa;">Checking server status...</div>
-                <div style="margin-top:28px;padding:14px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;font-size:0.75rem;color:#6d28d9;">
-                    💡 <strong>Tip:</strong> This only happens after the server has been idle. Once active, it stays fast.
-                </div>
-            </div>`;
-
-        const bar = document.getElementById('cold-start-bar');
-        const statusEl = document.getElementById('cold-start-status');
-        let attempt = 0;
-        const maxAttempts = 20;  // 20 × 3s = 60s max wait
-
-        const checkHealth = setInterval(async () => {
-            attempt++;
-            const pct = Math.min(5 + (attempt / maxAttempts) * 90, 95);
-            if (bar) bar.style.width = pct + '%';
-            if (statusEl) statusEl.textContent = `Attempt ${attempt}/${maxAttempts} — pinging server...`;
-
+// The React shell starts routing once these authenticated view handlers are ready.
+window.dispatchEvent(new CustomEvent('crm:routes-ready', {
+    detail: {
+        defaultView: currentUser?.role === 'CSM' ? 'csm-inbox' : 'dashboard',
+        async onHistoryNavigation(view, extra) {
+            if (_skipHashUpdate || (view === currentView && extra === currentExtra)) return;
+            _skipHashUpdate = true;
             try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000);
-                const resp = await fetch(`${API_BASE}/api/health`, { signal: controller.signal });
-                clearTimeout(timeoutId);
-                if (resp.ok || resp.status === 404) {
-                    // Server is up (404 fine — it just means /api/health doesn't exist as a route)
-                    clearInterval(checkHealth);
-                    if (bar) bar.style.width = '100%';
-                    if (statusEl) {
-                        statusEl.textContent = '✅ Server is ready! Loading...';
-                        statusEl.style.color = '#059669';
-                    }
-                    setTimeout(() => location.reload(), 500);
-                }
-            } catch (e) {
-                // Still waking up
-                if (attempt >= maxAttempts) {
-                    clearInterval(checkHealth);
-                    if (statusEl) {
-                        statusEl.innerHTML = '⚠️ Taking longer than usual. <a href="#" onclick="location.reload()" style="color:#6366f1;font-weight:600;">Retry manually</a>';
-                    }
-                }
+                await loadView(view, extra);
+            } finally {
+                _skipHashUpdate = false;
             }
-        }, 3000);
-    } else {
-        // Non-cold-start error — show standard error page
-        vc.innerHTML = `
-            <div style="padding:40px;text-align:center;color:#ef4444;">
-                <h3>⚠️ Loading Error</h3>
-                <p style="font-size:0.9rem;margin-top:8px;">${err.message}</p>
-                <button class="btn btn-outline" onclick="location.reload()" style="margin-top:20px;">Retry</button>
-            </div>`;
-    }
-}
+        },
+        async onInitialNavigation(view, extra) {
+            await loadView(view, extra);
+            flushPendingErrors().catch(() => {});
+        },
+        onNavigationError(err) {
+            console.error('Navigation Error:', err);
+        },
+        onBootError(err) {
+            console.error('Boot Error:', err);
+            const reconnect = /503|Failed to fetch|NetworkError|Load failed/.test(err?.message || '');
+            const root = document.createElement('div');
+            vc.replaceChildren(root);
+            window.WorkspaceRecoveryHub.mount(root, { apiBase: API_BASE, reconnect });
+        },
+    },
+}));

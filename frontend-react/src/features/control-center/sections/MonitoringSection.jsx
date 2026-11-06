@@ -83,7 +83,6 @@ function AuditLogTab() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     AdminService.getAuditLogs({ page, per_page: PER_PAGE, search, date_from: range.from, date_to: range.to })
       .then((res) => { if (!cancelled) { setResult(res); setError(null); } })
       .catch((err) => { if (!cancelled) setError(err.message || 'Failed to load'); })
@@ -158,7 +157,6 @@ function LoginHistoryTab() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     AdminService.getLoginLogs({ page, per_page: PER_PAGE, search })
       .then((res) => { if (!cancelled) { setResult(res); setError(null); } })
       .catch((err) => { if (!cancelled) setError(err.message || 'Failed to load'); })
@@ -258,7 +256,6 @@ function ClaudeLogsTab() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     AdminService.getClaudeLogs({ page, per_page: PER_PAGE, search })
       .then((res) => { if (!cancelled) { setResult(res); setError(null); } })
       .catch((err) => { if (!cancelled) setError(err.response?.data?.detail || err.message || 'Failed to load'); })
@@ -337,7 +334,6 @@ function FeedbackTab() {
 
   const load = () => {
     let cancelled = false;
-    setLoading(true);
     AdminService.getFeedback({ page, per_page: PER_PAGE, status })
       .then((res) => { if (!cancelled) { setResult(res); setError(null); } })
       .catch((err) => { if (!cancelled) setError(err.message || 'Failed to load'); })
@@ -576,7 +572,7 @@ function SfSyncLogTab() {
         </>
       )}
 
-      <SfLogDetailModal logId={detailLogId} onClose={() => setDetailLogId(null)} />
+      {detailLogId && <SfLogDetailModal key={detailLogId} logId={detailLogId} onClose={() => setDetailLogId(null)} />}
     </div>
   );
 }
@@ -588,12 +584,10 @@ function SfSyncLogTab() {
 // implementation.
 function SfLogDetailModal({ logId, onClose }) {
   const [log, setLog] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!logId) { setLog(null); return; }
     let cancelled = false;
-    setLoading(true);
     AdminService.getSfLogDetail(logId)
       .then((res) => { if (!cancelled) setLog(res); })
       .catch(() => { if (!cancelled) setLog(null); })
@@ -706,7 +700,6 @@ function ErrorLogsTab() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     AdminService.getErrorLogs(cleanParams({ page, per_page: PER_PAGE, ...filters }))
       .then((res) => { if (!cancelled) { setData(res); setError(null); } })
       .catch((err) => { if (!cancelled) setError(err.message || 'Failed to load'); })
@@ -836,7 +829,6 @@ function PerfHealthTab() {
   const [loading, setLoading] = useState(true);
 
   const load = () => {
-    setLoading(true);
     const win = PERF_WINDOWS.find((w) => w.id === window_);
     const params = win.id === 'deploy' ? { since_deploy: true } : { hours: win.hours };
     AdminService.getPerfSummary(params)

@@ -678,9 +678,6 @@ def _duplicate_lead_response(dup, user, lead_data):
 @router.post("/leads")
 def create_lead(lead_data: dict, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     from cache import invalidate
-    # Invalidate all list/page caches when a new lead is created
-    invalidate('dashboard'); invalidate('leads_page')
-    invalidate('my_leads'); invalidate('leads_count'); invalidate('lead_companies')
     """Creates a new lead in local DB only. Lead will be pushed to SF when it reaches Meeting Scheduled.
     Auto-assigns the lead to the creating user so it appears in their My Leads immediately.
     """
@@ -724,6 +721,8 @@ def create_lead(lead_data: dict, user: dict = Depends(get_current_user), db: Ses
                 models.assign_lead(db_user, dup, reason=oh.R_DUPLICATE, actor_id=user["sub"])
             db.commit()
             db.refresh(dup)
+            for namespace in ('dashboard', 'leads_page', 'my_leads', 'leads_count', 'lead_companies'):
+                invalidate(namespace)
             try:
                 from activity_logger import log_activity
                 lead_name = f"{dup.first_name or ''} {dup.last_name or ''}".strip()
@@ -781,6 +780,8 @@ def create_lead(lead_data: dict, user: dict = Depends(get_current_user), db: Ses
 
         db.commit()
         db.refresh(new_lead)
+        for namespace in ('dashboard', 'leads_page', 'my_leads', 'leads_count', 'lead_companies'):
+            invalidate(namespace)
 
         # Activity log: CREATE_LEAD
         try:
@@ -792,10 +793,6 @@ def create_lead(lead_data: dict, user: dict = Depends(get_current_user), db: Ses
                          metadata={"lead_name": lead_name, "company": new_lead.company, "status": requested_status})
         except Exception:
             pass
-
-        # Fire-and-forget: sync new lead to Audience Manager
-        from audience_manager import sync_leads_to_am_background
-        sync_leads_to_am_background([new_lead.id])
 
         return _lead_to_dict(new_lead)
     except HTTPException:
@@ -1492,89 +1489,8 @@ def get_messaging_config(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Return the Alternate Messenger iframe URL for a lead.
-    Uses Audience Manager record_id (search/create on demand)."""
-    lead = models.exclude_deleted_leads(db.query(models.Lead)).filter(models.Lead.id == lead_id).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    authorize_lead(user, lead)  # sending itself is gated by conversations_routes' edit check
-
-    settings = db.query(models.SyncSettings).first()
-    if not settings or not settings.messenger_enabled:
-        return {"enabled": False, "reason": "Conversations not enabled. Configure in Settings → Conversations."}
-
-    if not settings.messenger_api_key:
-        return {"enabled": False, "reason": "Conversations API key not configured. Contact your admin."}
-
-    phone = (lead.phone or "").strip() or (lead.phone_secondary or "").strip()
-    if not phone:
-        return {"enabled": True, "has_phone": False, "reason": "No phone number on this lead."}
-
-    base_url = (settings.messenger_base_url or "https://app.alternatecrm.com").rstrip("/")
-    api_key = settings.messenger_api_key
-
-    # Per-SDR Alternate Messenger user ID: check the current user first, then fall back to global
-    current_user = db.query(models.User).filter(models.User.id == user["sub"]).first()
-    user_id = (
-        (getattr(current_user, 'messenger_user_id', None) or "").strip()
-        or (settings.messenger_user_id or "")
-    )
-
-    # If we already have the AM record_id, use it directly
-    record_id = lead.am_record_id
-
-    # If not, try to search/create in Audience Manager on-demand
-    if not record_id:
-        from audience_manager import ensure_contact, lead_extra_fields
-        record_id = ensure_contact(
-            base_url=base_url,
-            api_key=api_key,
-            user_id=user_id,
-            first_name=lead.first_name or "",
-            last_name=lead.last_name or "",
-            phone=phone,
-            email=lead.email or "",
-            extra_fields=lead_extra_fields(lead, db=db),
-        )
-        # Persist the record_id for future use
-        if record_id:
-            lead.am_record_id = record_id
-            db.commit()
-
-    if not record_id:
-        return {
-            "enabled": True,
-            "has_phone": True,
-            "synced": False,
-            "reason": "Could not sync contact. Try again later.",
-        }
-
-    iframe_url = f"{base_url}/fastapp/desk/#/inbox?record_id={record_id}&record_type=contacts"
-
-    # Server-side auth: use shared AlternateMessengerAuthManager for cached HMAC-based JWT
-    auth_ok = False
-    auth_error = None
-    try:
-        from messaging_auth import AlternateMessengerAuthManager
-        access_token = AlternateMessengerAuthManager.get_token(base_url, api_key, user_id)
-        if access_token:
-            iframe_url += f"&session_id={access_token}"
-            auth_ok = True
-            logger.info(f"[Messaging] Server-side auth succeeded for user={user_id}")
-    except Exception as auth_err:
-        auth_error = f"Authentication failed: {str(auth_err)[:100]}"
-        logger.warning(f"[Messaging] Server-side auth failed: {auth_err}")
-
-    return {
-        "enabled": True,
-        "has_phone": True,
-        "synced": True,
-        "iframe_url": iframe_url,
-        "phone": phone,
-        "record_id": record_id,
-        "auth_ok": auth_ok,
-        "auth_error": auth_error,
-    }
+    load_lead(db, user, lead_id)
+    return {"enabled": False, "reason": "Connect a messaging provider to use SMS or WhatsApp."}
 
 
 @router.post("/leads/{lead_id}/messaging/sync")
@@ -1583,34 +1499,5 @@ def sync_messaging_contact(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Manually trigger Audience Manager contact sync for a lead."""
-    lead = models.exclude_deleted_leads(db.query(models.Lead)).filter(models.Lead.id == lead_id).first()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    authorize_lead(user, lead, edit=True)
-
-    settings = db.query(models.SyncSettings).first()
-    if not settings or not settings.messenger_enabled or not settings.messenger_api_key:
-        raise HTTPException(status_code=400, detail="Conversations not configured")
-
-    phone = (lead.phone or "").strip()
-    if not phone:
-        raise HTTPException(status_code=400, detail="Lead has no phone number")
-
-    from audience_manager import ensure_contact, lead_extra_fields
-    base_url = (settings.messenger_base_url or "https://app.alternatecrm.com").rstrip("/")
-    record_id = ensure_contact(
-        base_url=base_url,
-        api_key=settings.messenger_api_key,
-        user_id=settings.messenger_user_id or "",
-        first_name=lead.first_name or "",
-        last_name=lead.last_name or "",
-        phone=phone,
-        email=lead.email or "",
-        extra_fields=lead_extra_fields(lead, db=db),
-    )
-    if record_id:
-        lead.am_record_id = record_id
-        db.commit()
-        return {"synced": True, "record_id": record_id}
-    raise HTTPException(status_code=502, detail="Failed to sync contact to Audience Manager")
+    load_lead(db, user, lead_id, edit=True)
+    raise HTTPException(status_code=503, detail="Connect a messaging provider to sync messaging contacts.")

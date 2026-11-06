@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
@@ -53,19 +54,19 @@ export default function Status() {
       {/* Navigation */}
       <header className="relative z-10 border-b border-white/10 bg-[#080b0d]/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-2.5 text-xl font-bold tracking-tight text-white hover:opacity-90 transition-opacity">
+          <Link href="/" className="flex items-center gap-2.5 text-xl font-bold tracking-tight text-white hover:opacity-90 transition-opacity">
             <span className="text-[#d3fa76] text-xl font-black">✳</span>
             <span>
               alternate<span className="text-[#8899a6] font-normal">crm</span>
             </span>
-          </a>
+          </Link>
 
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-[#9ba9a5]">
-            <a href="/#platform" className="hover:text-white transition-colors">The OS</a>
-            <a href="/#outcomes" className="hover:text-white transition-colors">Why AlternateCRM</a>
-            <a href="/#how" className="hover:text-white transition-colors">How it works</a>
-            <a href="/blog" className="hover:text-white transition-colors">Blog</a>
-            <a href="/status" className="text-white font-semibold">Status</a>
+            <Link href="/#platform" className="hover:text-white transition-colors">The OS</Link>
+            <Link href="/#outcomes" className="hover:text-white transition-colors">Why AlternateCRM</Link>
+            <Link href="/#how" className="hover:text-white transition-colors">How it works</Link>
+            <Link href="/blog" className="hover:text-white transition-colors">Blog</Link>
+            <Link href="/status" className="text-white font-semibold">Status</Link>
           </nav>
 
           <div className="flex items-center gap-3">
@@ -77,12 +78,12 @@ export default function Status() {
             >
               Try Sandbox <span>⚡</span>
             </a>
-            <a
+            <Link
               href="/#top"
               className="px-4 py-2 rounded-xl text-xs font-bold bg-[#d3fa76] text-[#080b0d] hover:bg-[#bfe660] transition-all shadow-[0_0_20px_rgba(211,250,118,0.25)]"
             >
               Get early access ↗
-            </a>
+            </Link>
           </div>
         </div>
       </header>

@@ -5,16 +5,9 @@ import { SearchInput } from './ui/SearchInput';
 import { Select } from './ui/Select';
 import { Checkbox } from './ui/Checkbox';
 import { Button } from './ui/Button';
+import { mailboxSummary } from '../utils/mailboxSummary';
 
 const PER_PAGE = 8;
-
-/** Plain-words summary of a mailbox selection — what it actually means for sending. */
-export function mailboxSummary(list) {
-  const domains = new Set(list.map((a) => a.domain)).size;
-  const perDay = list.reduce((n, a) => n + (a.daily_limit || 0), 0);
-  const count = `${list.length} mailbox${list.length === 1 ? '' : 'es'} on ${domains} domain${domains === 1 ? '' : 's'}`;
-  return perDay ? `${count} · up to ${perDay.toLocaleString()} emails/day` : count;
-}
 
 /** Instantly mailboxes in a searchable, paginated table, filterable by domain.
  *  Shared by Control Center (which mailboxes cadences may use) and the cadence

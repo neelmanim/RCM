@@ -30,37 +30,17 @@ function parseJwt(token) {
     catch { return null; }
 }
 
-let _parsedUser = CRM_TOKEN ? parseJwt(CRM_TOKEN) : null;
-if (!_parsedUser && localStorage.getItem('crm_is_sandbox') === 'true') {
-    _parsedUser = {
-        sub: 'sandbox-1',
-        id: 1,
-        user_id: 1,
-        email: 'sandbox@alternatecrm.test',
-        role: localStorage.getItem('crm_user_role') || 'Super Admin',
-        name: 'Sandbox User',
-        pod_id: 1,
-        exp: Math.floor(Date.now() / 1000) + 86400 * 7,
-        is_sandbox: true,
-        dialer_enabled: true
-    };
-}
-export const currentUser = _parsedUser;
+export const currentUser = CRM_TOKEN ? parseJwt(CRM_TOKEN) : null;
 
 // Check if token is expired (exp is in seconds since epoch)
 const isTokenExpired = currentUser && currentUser.exp && (currentUser.exp * 1000 < Date.now());
 
 // Redirect to login if not authenticated or token expired
 if (!currentUser || isTokenExpired) {
-    if (localStorage.getItem('crm_is_sandbox') === 'true') {
-        // In sandbox mode, ensure user is always treated as authenticated
-        console.info('[Sandbox] Active sandbox session');
-    } else {
-        sessionStorage.removeItem('crm_view_as_token');
-        localStorage.removeItem('crm_token');
-        window.location.href = isTokenExpired ? 'login.html?expired=1' : 'login.html';
-        throw new Error('Not authenticated or session expired, redirecting to login...');
-    }
+    sessionStorage.removeItem('crm_view_as_token');
+    localStorage.removeItem('crm_token');
+    window.location.href = isTokenExpired ? 'login.html?expired=1' : 'login.html';
+    throw new Error('Not authenticated or session expired, redirecting to login...');
 }
 
 // V2 role helpers (also supports V1 "Admin" → treat as Super Admin)

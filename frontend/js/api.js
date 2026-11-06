@@ -4,9 +4,6 @@ import { API_BASE, authHeaders, isAdmin } from './auth.js';
 /** If any API call returns 401, session is expired — redirect to login. */
 function handleUnauthorized(res) {
     if (res.status === 401) {
-        if (localStorage.getItem('crm_is_sandbox') === 'true') {
-            return;
-        }
         localStorage.removeItem('crm_token');
         window.location.href = 'login.html?expired=1';
         throw new Error('Session expired. Redirecting to login...');
@@ -19,9 +16,6 @@ function handleUnauthorized(res) {
 async function _checkOk(res, errMsg) {
     handleUnauthorized(res);
     if (!res.ok) {
-        if (localStorage.getItem('crm_is_sandbox') === 'true') {
-            return;
-        }
         throw new Error(errMsg);
     }
 }
@@ -1070,16 +1064,10 @@ export async function getMyCapabilities() {
     try {
         const res = await fetch(`${API_BASE}/api/me/capabilities`, { headers: authHeaders() });
         if (!res.ok) {
-            if (localStorage.getItem('crm_is_sandbox') === 'true') {
-                return { calling: { enabled: true, provider: 'alternate' }, sms: { enabled: true, ready: true }, whatsapp: { enabled: true }, messaging_provider: 'alternate', any: true };
-            }
             throw new Error(`Failed to load capabilities (${res.status})`);
         }
         return res.json();
     } catch (e) {
-        if (localStorage.getItem('crm_is_sandbox') === 'true') {
-            return { calling: { enabled: true, provider: 'alternate' }, sms: { enabled: true, ready: true }, whatsapp: { enabled: true }, messaging_provider: 'alternate', any: true };
-        }
         throw e;
     }
 }

@@ -32,8 +32,7 @@ export const SECTIONS = [
     // Dashboard by default until that was fixed to route them to CSM
     // Portal instead — the nav item itself is now hidden from CSM too.
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => role === 'super_admin' ? `
-            <div style="margin-bottom:16px;"><img src="img/guide/dashboard.png" alt="Dashboard" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
+    content: (role) => role === 'super_admin' ? `
             <p>Your org-wide command centre shows:</p>
             <ul>
                 <li><strong>Total Leads</strong>, <strong>Lead Assigned</strong>, <strong>Calling</strong>, <strong>Meetings Scheduled</strong> tiles</li>
@@ -62,7 +61,7 @@ export const SECTIONS = [
     id: "section-23",
     title: '📅 Calendar',
     roles: ['sdr', 'ae', 'csm', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: (role) => `
             <p>Calendar shows every scheduled meeting on your leads in one place. It's read-only — meetings land here automatically, there's no drag-to-reschedule.</p>
 
             <h4>Views</h4>
@@ -86,8 +85,7 @@ export const SECTIONS = [
     // Excludes CSM (2026-09-16) — CSM works accounts, not leads; the Leads
     // nav item is now hidden from them.
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
-            <div style="margin-bottom:16px;"><img src="img/guide/leads.png" alt="Leads Table" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
+    content: (role) => `
             <p>${role === 'sdr' ? 'Click <strong>Leads</strong> in the sidebar to see all leads assigned to you.' : 'Click <strong>Leads</strong> to see all leads across your ' + (role === 'super_admin' ? 'organization' : 'POD') + '.'}</p>
 
             <h4>Filtering</h4>
@@ -138,8 +136,7 @@ export const SECTIONS = [
     id: "section-3",
     title: '👤 Lead Detail',
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
-            <div style="margin-bottom:16px;"><img src="img/guide/lead_detail.png" alt="Lead Detail" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
+    content: () => `
             <h4>Pipeline Stepper</h4>
             <p>The visual pipeline at the top shows the lead's journey:</p>
             <ul>
@@ -200,7 +197,7 @@ export const SECTIONS = [
     id: "section-4",
     title: '🔔 Task Notifications',
     roles: ['sdr', 'ae', 'csm', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: () => `
             <h4>What is the Notification Bell?</h4>
             <p>The <strong>🔔 bell icon</strong> in the top-right of every page shows how many tasks are due right now. Click it to open the <strong>Notification Panel</strong>.</p>
 
@@ -233,8 +230,7 @@ export const SECTIONS = [
     // Excludes CSM (2026-09-16) — a meetings-booked competition doesn't
     // apply to CSM's account-portfolio work; the nav item is now hidden.
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
-            <div style="margin-bottom:16px;"><img src="img/guide/leaderboard.png" alt="Leaderboard" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
+    content: () => `
             <h4>Leaderboard</h4>
             <p>SDRs ranked by <strong>meetings booked</strong>. Top 3 shown as medal cards.</p>
             <ul>
@@ -262,7 +258,7 @@ export const SECTIONS = [
     id: "section-23",
     title: '🎛️ Control Center',
     roles: ['super_admin'],
-    content: (role, roleName) => `
+    content: () => `
                 <p>A single home for org configuration, replacing five separate pages — <strong>Settings, Admin, Upload Center, System Logs, and POD Management's assignment tools</strong> — with one Super-Admin-only surface, organized into 5 tabs. Use the search box at the top to jump straight to a setting instead of hunting through tabs.</p>
 
                 <h4>🔌 Integrations</h4>
@@ -306,9 +302,8 @@ export const SECTIONS = [
     id: "section-7",
     title: '🛡️ Admin Panel',
     roles: ['pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: (role) => `
                 ${role === 'super_admin' ? '<div class="guide-note"><strong>Super Admins:</strong> this is now covered by Control Center\'s Team & Access tab — see that guide section. This page still works if you need it.</div>' : ''}
-                <div style="margin-bottom:16px;"><img src="img/guide/admin.png" alt="Admin Panel" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
                 <p>${role === 'super_admin' ? 'See <strong>all users</strong> across all PODs, organized by role tabs (Super Admins / Pod Admins / SDRs).' : 'See your <strong>POD\'s users</strong> only.'}</p>
 
                 ${role === 'super_admin' ? `
@@ -356,7 +351,7 @@ export const SECTIONS = [
     id: "section-8",
     title: '👥 POD Management',
     roles: ['pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: (role) => `
                 <p>POD Management has two tabs: <strong>Team Roster</strong> and <strong>Manage Pods</strong>.</p>
 
                 <h4>Team Roster</h4>
@@ -391,7 +386,7 @@ export const SECTIONS = [
     id: "section-9",
     title: '🔒 Audit Logs',
     roles: ['super_admin'],
-    content: (role, roleName) => `
+    content: () => `
                 <div class="guide-note"><strong>Now in Control Center:</strong> this page's tabs (Activity, Login History, Feedback, SF Logs, Error Logs, Perf Health) live under Control Center's Monitoring tab — see that guide section. This page still works if you need it.</div>
                 <p>A unified view for all system logs and feedback, organized into <strong>4 tabs</strong>.</p>
 
@@ -444,7 +439,7 @@ export const SECTIONS = [
     id: "section-10",
     title: '💬 Send Feedback',
     roles: ['sdr', 'ae', 'csm', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: () => `
             <p>Click the <strong>💬 Send Feedback</strong> button in the sidebar to report bugs, suggest features, or share general feedback.</p>
             <ol>
                 <li>Click <strong>💬 Send Feedback</strong></li>
@@ -459,7 +454,7 @@ export const SECTIONS = [
     id: "section-11",
     title: '📞 Call & Pipeline Settings',
     roles: ['super_admin'],
-    content: (role, roleName) => `
+    content: () => `
                 <p>Found in <strong>Settings → Call & Pipeline Settings</strong>:</p>
                 <table class="guide-table">
                     <tr><th>Setting</th><th>Description</th></tr>
@@ -479,7 +474,7 @@ export const SECTIONS = [
     id: "section-12",
     title: '📞 Aircall Dialer',
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: () => `
             <h4>What is it?</h4>
             <p>Aircall integration lets SDRs make calls directly from Alternate CRM with <strong>one click</strong>. Calls are tracked automatically — no manual logging needed.</p>
 
@@ -525,7 +520,7 @@ export const SECTIONS = [
     id: "section-13",
     title: '📞 Alternate Messenger Dialer (Browser Calling)',
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: () => `
             <h4>What is it?</h4>
             <p>The Alternate Messenger Contact Center integration lets SDRs make calls <strong>directly in the browser</strong> using WebRTC — no external app required. A floating call widget appears on screen with real-time controls.</p>
             <div class="guide-note"><strong>Note:</strong> Your admin assigns each SDR to either Aircall or Alternate Messenger. You'll use whichever is assigned to you — the Call button works the same way regardless.</div>
@@ -585,8 +580,7 @@ export const SECTIONS = [
     id: "section-14",
     title: '📈 SDR Metrics',
     roles: ['pod_admin', 'super_admin'],
-    content: (role, roleName) => `
-                <div style="margin-bottom:16px;"><img src="img/guide/metrics.png" alt="SDR Metrics" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
+    content: () => `
                 <p>Click <strong>📈 SDR Metrics</strong> in the sidebar to view team performance analytics.</p>
                 <ul>
                     <li><strong>Date Range Picker:</strong> Use From/To date inputs or quick presets (<strong>7D</strong>, <strong>30D</strong>, <strong>90D</strong>, <strong>180D</strong>) to filter metrics by time period</li>
@@ -602,7 +596,7 @@ export const SECTIONS = [
     id: "section-15",
     title: '📡 Activity Monitor',
     roles: ['pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: (role) => `
                 <p>Click <strong>📡 Activity Monitor</strong> in the sidebar to see exactly what your SDRs/AEs are doing across every outreach channel — calls, emails, and SMS/WhatsApp messages — in one place, without opening individual leads.</p>
                 <div class="guide-note"><strong>Purpose:</strong> Spot-check that outreach is actually happening and working — not a KPI dashboard (that's Analytics Hub). ${role === 'super_admin' ? 'You see activity org-wide.' : "You see your POD's activity."}</div>
 
@@ -639,9 +633,8 @@ export const SECTIONS = [
     id: "section-16",
     title: '⚙️ Settings',
     roles: ['pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: (role) => `
                 ${role === 'super_admin' ? '<div class="guide-note"><strong>Super Admins:</strong> this is now covered by Control Center\'s Integrations, AI & Automation, and Data tabs — see that guide section. This page still works if you need it.</div>' : ''}
-                <div style="margin-bottom:16px;"><img src="img/guide/settings.png" alt="Settings" style="width:100%;border-radius:10px;border:1px solid var(--border-color);" loading="lazy"></div>
                 <p>Settings uses a <strong>2-tab layout</strong>:</p>
                 <h4>🔌 Connection Tab</h4>
                 <ul>
@@ -661,7 +654,7 @@ export const SECTIONS = [
     id: "section-17",
     title: '🔌 APIs',
     roles: ['super_admin'],
-    content: (role, roleName) => `
+    content: () => `
                 <p>Alternate CRM exposes a secure <strong>Public API</strong> that lets external tools (like the Contract Management Tool) look up Salesforce Account or Lead records using Alternate CRM's configured SF connection — without sharing Salesforce credentials.</p>
 
                 <div style="margin:16px 0;padding:14px 18px;background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:12px;display:flex;align-items:center;gap:14px;">
@@ -689,14 +682,14 @@ export const SECTIONS = [
                 <h4>📥 Query Parameters</h4>
                 <table class="guide-table">
                     <tr><th>Parameter</th><th>Required</th><th>Description</th></tr>
-                    <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">messaging_provider_id</code></td><td>Conditional*</td><td>SMS Magic Account ID (exact match on <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">messaging_provider_AccountId__c</code> in SF)</td></tr>
+                    <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">messaging_provider_id</code></td><td>Conditional*</td><td>Messaging provider account ID (requires <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">SF_MESSAGING_PROVIDER_FIELD</code> to be configured)</td></tr>
                     <tr><td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">company_name</code></td><td>Conditional*</td><td>Salesforce Account Name — exact first, then LIKE fallback</td></tr>
                 </table>
                 <p style="font-size:0.82rem;color:#64748b;">* At least one of the two must be provided. If both are sent, <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">messaging_provider_id</code> takes precedence.</p>
 
                 <h4>🔍 Lookup Logic</h4>
                 <ol style="font-size:0.85rem;line-height:1.8;">
-                    <li>Query <strong>Salesforce Account</strong> — exact match on <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">messaging_provider_AccountId__c</code> or <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">Name</code></li>
+                    <li>Query <strong>Salesforce Account</strong> — exact match on <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">SF_MESSAGING_PROVIDER_FIELD</code> or <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">Name</code></li>
                     <li>If no exact match → try <strong>LIKE search</strong> on Account Name</li>
                     <li>If still nothing → fall back to <strong>Salesforce Lead</strong> (same order)</li>
                     <li>If nothing found → returns <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">found: false</code></li>
@@ -754,7 +747,7 @@ export const SECTIONS = [
     id: "section-18",
     title: '🔄 Pipeline Statuses',
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: () => `
             <table class="guide-table">
                 <tr><th>Status</th><th>Meaning</th></tr>
                 <tr><td><span class="guide-badge" style="background:#e0e7ff;color:#4338ca;">Lead Assigned</span></td><td>New lead awaiting research</td></tr>
@@ -787,7 +780,7 @@ export const SECTIONS = [
     id: "section-20",
     title: '📞 Power Dialer',
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: () => `
             <p>Power Dialer is where you work through your assigned leads and dial them one after another, with today's call history right alongside the queue.</p>
 
             <h4>Dialing Queue</h4>
@@ -823,7 +816,7 @@ export const SECTIONS = [
     id: "section-21",
     title: '📊 Analytics Hub',
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => role === 'sdr' ? `
+    content: (role) => role === 'sdr' ? `
             <p>As an SDR or AE, Analytics Hub shows <strong>your own</strong> numbers only — leads, calls, emails, and meetings you're personally working. There's no pod-wide view here; the dashboard is automatically scoped to you.</p>
             <ul>
                 <li>Pick a date range (7D / 30D / 90D / All / Custom) to see your funnel, trend chart, and email breakdown for that period.</li>
@@ -848,7 +841,7 @@ export const SECTIONS = [
     // Excludes CSM (2026-09-16) — Cadence/Campaigns operate on leads a rep
     // selects themselves; CSM has none, and the nav item is now hidden.
     roles: ['sdr', 'ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: (role) => `
             <p><strong>Sales Tools</strong> (sidebar — formerly "Sales Cadences") is the home for reaching out to leads at scale. It has two tabs: <strong>Cadence</strong> and <strong>Campaigns</strong>.</p>
             <div class="guide-tip"><strong>Tip:</strong> First time here? A short guided walkthrough points out the New Campaign button, the Performance/Templates tabs, and campaign filtering the first time you open Sales Tools — click "Got it"/"Skip tour" to dismiss it, it won't show again.</div>
             ${role === 'sdr' ? '<div class="guide-note">The Cadence tab is only visible to Pod Admins and Super Admins — you land on the Campaigns tab directly.</div>' : ''}
@@ -917,7 +910,7 @@ export const SECTIONS = [
     id: "section-19",
     title: '💡 Tips & Best Practices',
     roles: ['sdr', 'ae', 'csm', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => role === 'sdr' ? `
+    content: (role) => role === 'sdr' ? `
             <ul>
                 <li><strong>Start your day</strong> on Dashboard → work through New Leads and Research Pending first</li>
                 <li><strong>Complete research</strong> before calling — the Call button unlocks after research</li>
@@ -946,7 +939,7 @@ export const SECTIONS = [
     id: "section-24",
     title: '💼 AE Pipeline',
     roles: ['ae', 'pod_admin', 'super_admin'],
-    content: (role, roleName) => `
+    content: (role) => `
             <p>AE Pipeline is your own working view of Salesforce Opportunities — synced in read-only, alongside the one write action that matters: closing a deal.${role === 'super_admin' ? ' As a Super Admin you reach this under <strong>AE Pipeline &amp; CSM Portal</strong> in the nav, on its AE Pipeline tab.' : ''}</p>
 
             <h4>The Opportunity Table</h4>
@@ -975,7 +968,7 @@ export const SECTIONS = [
     id: "section-25",
     title: '❤️ CSM Portal',
     roles: ['csm', 'super_admin'],
-    content: (role, roleName) => `
+    content: (role) => `
             <p>CSM Portal is your account portfolio — health, renewals, and the four playbooks worth acting on today.${role === 'csm' ? ' Inbox, Portfolio, Playbooks, and Digest are their own items in your left nav — Inbox is what you land on by default.' : ' As a Super Admin you reach this under <strong>AE Pipeline &amp; CSM Portal</strong>, on its CSM Portal tab, with all four as tabs inside for browsing the whole org’s accounts in one place.'}</p>
 
             <h4>Inbox</h4>

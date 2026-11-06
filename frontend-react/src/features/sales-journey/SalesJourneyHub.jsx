@@ -30,7 +30,7 @@ export const SalesJourneyHub = ({ isAdmin = true, openJourneyId = null }) => {
         // answer every mutating route enforces.
         canEdit: data.can_edit, isMine: data.is_mine, ownerName: data.owner_name,
       });
-    } catch (err) {
+    } catch {
       setLoadError('Failed to load this cadence.');
     }
   }, [loadGraph]);

@@ -31,14 +31,15 @@ const PAGE_SIZE = 10;
 // enrollment-status donut alone never could (it only shows part-of-whole
 // enrollment counts, not engagement).
 function CadencePerformanceSummary({ journeys }) {
-  const [byJourney, setByJourney] = useState(null); // null = loading
+  const [statsResult, setStatsResult] = useState(null);
+  const byJourney = journeys.length === 0 ? {} : statsResult?.journeys === journeys ? statsResult.data : null;
 
   useEffect(() => {
     let cancelled = false;
-    if (journeys.length === 0) { setByJourney({}); return; }
+    if (journeys.length === 0) return;
     SalesJourneyService.getStatsBulk(journeys.map((j) => j.id))
-      .then((data) => { if (!cancelled) setByJourney(data.journeys || {}); })
-      .catch(() => { if (!cancelled) setByJourney({}); });
+      .then((data) => { if (!cancelled) setStatsResult({ journeys, data: data.journeys || {} }); })
+      .catch(() => { if (!cancelled) setStatsResult({ journeys, data: {} }); });
     return () => { cancelled = true; };
   }, [journeys]);
 
@@ -108,7 +109,7 @@ export function JourneyList({ onOpen }) {
     setError(null);
     try {
       setJourneys(await SalesJourneyService.list());
-    } catch (err) {
+    } catch {
       setError('Failed to load cadences.');
     } finally {
       setLoading(false);
@@ -138,7 +139,7 @@ export function JourneyList({ onOpen }) {
       setNewName('');
       setNewPodId('');
       onOpen(created.id, created.name);
-    } catch (err) {
+    } catch {
       setError('Failed to create cadence.');
     } finally {
       setCreating(false);
@@ -226,7 +227,6 @@ export function JourneyList({ onOpen }) {
         deleteTarget.ids.map(id => SalesJourneyService.archive(id, deleteTarget.activeCounts[id]))
       );
       const failedIds = deleteTarget.ids.filter((_, i) => results[i].status === 'rejected');
-      const succeededCount = deleteTarget.ids.length - failedIds.length;
       await load();
       if (failedIds.length > 0) {
         setError(`Failed to delete ${failedIds.length} cadence${failedIds.length > 1 ? 's' : ''} — try again.`);

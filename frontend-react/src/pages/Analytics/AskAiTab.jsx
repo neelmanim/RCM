@@ -231,7 +231,7 @@ const QueryTypeahead = ({ query, savedReports, onSelectSaved, onSelectSuggestion
 /* ══════════════════════════════════════════════════════════ */
 /* ── AskAiTab ────────────────────────────────────────────── */
 /* ══════════════════════════════════════════════════════════ */
-export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess, onEditFilters }) => {
+export const AskAiTab = ({ filters, initialQuery, onPinSuccess, onEditFilters }) => {
   const [queryText, setQueryText]       = useState(initialQuery || '');
   const [isRunning, setIsRunning]       = useState(false);
   const [result, setResult]             = useState(null);
@@ -482,7 +482,9 @@ export const AskAiTab = ({ token, filters, initialQuery, onPinSuccess, onEditFil
     try {
       await SmartAnalyticsService.deleteReport(id);
       setSavedReports(prev => prev.filter(r => r.id !== id));
-    } catch {}
+    } catch {
+      setError("Could not delete the saved report.");
+    }
   };
 
   // Called when user answers a clarify prompt

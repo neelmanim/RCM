@@ -4,7 +4,8 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { Checkbox } from '../../components/ui/Checkbox';
-import { MailboxPicker, mailboxSummary } from '../../components/MailboxPicker';
+import { MailboxPicker } from '../../components/MailboxPicker';
+import { mailboxSummary } from '../../utils/mailboxSummary';
 import { Modal } from '../../components/ui/Modal';
 import { STATUSES } from '../leads-hub/constants';
 import { useJourneyStore } from './store/useJourneyStore';
@@ -13,7 +14,7 @@ import { toast } from './toast';
 import { EmailPreview, MessagePreview } from './EmailPreview';
 import { MergeFieldComposer } from '../../components/ui/MergeFieldComposer';
 import {
-  NODE_LABELS, CONDITION_EVENT_TYPES, ENTRY_TRIGGER_EVENT_TYPES, EMAIL_MERGE_FIELDS, SMS_MAX_LENGTH, SMS_SEGMENT_LENGTH,
+  labelForNode, CONDITION_EVENT_TYPES, ENTRY_TRIGGER_EVENT_TYPES, EMAIL_MERGE_FIELDS, SMS_MAX_LENGTH, SMS_SEGMENT_LENGTH,
   TASK_KINDS, LINKEDIN_CONNECT_OUTCOMES, FIELD_RULE_FIELDS, FIELD_RULE_OPS,
 } from './nodeDefaults';
 
@@ -32,12 +33,6 @@ const selectClass = 'w-full px-3 py-2 rounded-lg text-sm border border-slate-200
 // Node ids are auto-generated (n<timestamp>_<counter>) and meaningless to a user —
 // show "Email #2" instead, numbered only when a type repeats so a single Wait
 // node just reads "Wait", not "Wait #1".
-export function labelForNode(node, allNodes) {
-  const sameType = allNodes.filter((n) => n.type === node.type);
-  const idx = sameType.findIndex((n) => n.id === node.id);
-  const suffix = sameType.length > 1 ? ` #${idx + 1}` : '';
-  return `${NODE_LABELS[node.type] || node.type}${suffix}`;
-}
 
 function TriggerFields({ node, update }) {
   const event = node.data.event || 'status_changed';
@@ -198,12 +193,12 @@ function SubjectBodyEditor({ subjectLabel, subject, body, onSubjectChange, onBod
 
 const escapeHtml = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 /** Plain body → HTML paragraphs (blank line = new paragraph, newline = <br>). */
-export function textToHtml(text) {
+function textToHtml(text) {
   if (!text.trim()) return '';
   return text.split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('');
 }
 /** HTML body → plain text, keeping paragraph breaks. */
-export function htmlToText(html) {
+function htmlToText(html) {
   if (!html) return '';
   const doc = new DOMParser().parseFromString(html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|tr|li|h\d)>/gi, '$&\n\n'), 'text/html');
   return (doc.body.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
@@ -423,7 +418,6 @@ function SendFromPicker({ node, update }) {
   const available = accounts || [];
   const pickedAvailable = available.filter((a) => picked.includes(a.email));
   const gone = picked.length - pickedAvailable.length;
-  const pool = picked.length ? pickedAvailable : available;
 
   return (
     <div className="mt-4 pt-4 border-t border-slate-100">
@@ -485,7 +479,11 @@ function DurationPicker({ totalHours, onChange, label = 'Duration' }) {
   // snapping back to "0" — which is what made this feel like typing didn't
   // work, forcing the spinner arrows instead.
   const [local, setLocal] = React.useState({ d: String(d), h: String(h), m: String(m), s: String(s) });
-  React.useEffect(() => { setLocal({ d: String(d), h: String(h), m: String(m), s: String(s) }); }, [totalHours]);
+  const [previousHours, setPreviousHours] = React.useState(totalHours);
+  if (previousHours !== totalHours) {
+    setPreviousHours(totalHours);
+    setLocal({ d: String(d), h: String(h), m: String(m), s: String(s) });
+  }
 
   const commit = (next) => {
     const nd = Number(next.d) || 0;

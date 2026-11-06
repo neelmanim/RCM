@@ -6,12 +6,12 @@ import AppSidebar from './AppSidebar';
 export default function AppShell() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem('crm_dark_mode');
-    return saved !== null ? saved === 'true' : true; // Dark mode by default
+    const saved = sessionStorage.getItem('crm_sandbox_dark_mode');
+    return saved !== null ? saved === 'true' : false;
   });
 
   useEffect(() => {
-    localStorage.setItem('crm_dark_mode', darkMode);
+    sessionStorage.setItem('crm_sandbox_dark_mode', darkMode);
     if (darkMode) {
       document.documentElement.classList.add('dark');
     } else {
@@ -20,7 +20,7 @@ export default function AppShell() {
   }, [darkMode]);
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`crm-workspace min-h-screen flex flex-col font-sans ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       {/* 1. Persistent 1-Click Interactive Sandbox Ribbon */}
       <SandboxTopRibbon
         darkMode={darkMode}
@@ -34,7 +34,7 @@ export default function AppShell() {
           isMobileMenuOpen={isMobileMenuOpen}
           onClose={() => setIsMobileMenuOpen(false)}
         />
-        <main className="flex-1 overflow-y-auto bg-slate-100/50 dark:bg-slate-900/30">
+        <main id="workspace-content" className="crm-canvas min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </main>
       </div>

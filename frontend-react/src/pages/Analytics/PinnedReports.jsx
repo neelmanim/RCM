@@ -19,12 +19,6 @@ import { AiResultChart } from './AiResultChart';
 import { IconButton } from '../../components/ui/IconButton';
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
-const fmt = (ts) => {
-  if (!ts) return '';
-  const d = new Date(ts.endsWith('Z') || ts.includes('+') ? ts : ts + 'Z');
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
 const relTime = (ts) => {
   if (!ts) return '';
   const diff = Math.round((Date.now() - new Date(ts)) / 60000);
@@ -178,7 +172,7 @@ const PinnedReportCard = ({ report, onUnpin }) => {
 };
 
 /* ── PinnedReports (section) ─────────────────────────────────────────────── */
-export const PinnedReports = ({ token, onPinCountChange }) => {
+export const PinnedReports = ({ onPinCountChange }) => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
 

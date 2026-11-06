@@ -17,7 +17,8 @@ import { useTableView } from '../../../utils/useTableView';
 import { SfMappingService } from '../../../services/api';
 import { toast, errorText } from '../notify';
 import { Banner } from './Banner';
-import { AuditLogPanel, formatWhen } from './AuditLogPanel';
+import { AuditLogPanel } from './AuditLogPanel';
+import { formatWhen } from './auditFormat';
 
 const CUSTOM_SEARCH = ['label', 'lead_field', 'sf_field'];
 const BUILTIN_SEARCH = ['label', 'lead_field', 'sf_field'];

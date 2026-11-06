@@ -213,7 +213,7 @@ function SaveFilterAsCallList({ total, onSave, onToast }) {
 }
 
 export function FilterBar({ list, onToast }) {
-  const { filters, setFilter, toggleMultiFilter, clearFilter, activeFilterKeys, addFilterKey, removeFilterKey, clearAllFilters, searchInput, setSearchInput, tags, refreshTags, sdrs, companies, uploadLogs, outcomes, isAdmin, total, saveFilterAsCallList } = list;
+  const { filters, setFilter, toggleMultiFilter, activeFilterKeys, addFilterKey, removeFilterKey, clearAllFilters, searchInput, setSearchInput, tags, refreshTags, sdrs, companies, uploadLogs, outcomes, isAdmin, total, saveFilterAsCallList } = list;
 
   const FILTER_DEFS = useMemo(() => [
     { key: 'status', label: 'Status', type: 'list-multi', options: ['Unassigned', ...STATUSES] },

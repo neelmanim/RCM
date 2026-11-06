@@ -35,12 +35,16 @@ function EditableField({ icon: Icon, value, placeholder, canModify, onSave, trai
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || '');
 
-  useEffect(() => { setDraft(value || ''); }, [value]);
+  const [previousValue, setPreviousValue] = useState(value);
+  if (previousValue !== value) {
+    setPreviousValue(value);
+    setDraft(value || '');
+  }
 
   if (!canModify) {
     return value ? (
       <div className="flex items-center gap-2 text-slate-700">
-        <Icon size={14} className="text-slate-400" /> {value} {trailing}
+        {React.createElement(Icon, { size: 14, className: 'text-slate-400' })} {value} {trailing}
       </div>
     ) : null;
   }
@@ -48,7 +52,7 @@ function EditableField({ icon: Icon, value, placeholder, canModify, onSave, trai
   if (editing) {
     return (
       <div className="flex items-center gap-2">
-        <Icon size={14} className="text-slate-400 flex-shrink-0" />
+        {React.createElement(Icon, { size: 14, className: 'text-slate-400 flex-shrink-0' })}
         <input
           autoFocus
           value={draft}
@@ -68,7 +72,7 @@ function EditableField({ icon: Icon, value, placeholder, canModify, onSave, trai
   return (
     <div className="flex items-center justify-between gap-2 text-slate-700 group">
       <span className="flex items-center gap-2 min-w-0">
-        <Icon size={14} className="text-slate-400 flex-shrink-0" />
+        {React.createElement(Icon, { size: 14, className: 'text-slate-400 flex-shrink-0' })}
         <span className={value ? '' : 'text-slate-400 italic'}>{value || placeholder}</span>
         {trailing}
         <button type="button" onClick={() => setEditing(true)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600">

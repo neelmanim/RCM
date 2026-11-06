@@ -5,7 +5,7 @@ Copy-paste this file and adapt it for your own backend.
 This FastAPI app acts as the proxy between the SDK (browser) and Alternate Messenger's API.
 
 5 routes:
-  POST /dialer/call/start      → Alternate Messenger /calls/initiate
+  POST /dialer/call/start      → 503 while voice is unavailable
   POST /dialer/call/action     → Alternate Messenger /calls/{id}/action  (mute/hold)
   POST /dialer/call/end        → Alternate Messenger /calls/disconnect
   POST /dialer/webhook         → Validate Alternate Messenger signature → SSE fan-out
@@ -132,90 +132,17 @@ _active_calls: dict[str, dict] = {}
 # ── Route 1: Start call ───────────────────────────────────────────────────────
 @app.post("/dialer/call/start")
 async def call_start(req: CallStartRequest):
-    """
-    POST /dialer/call/start
-    Proxies to Alternate Messenger /calls/initiate.
-    Returns { call_id, livekit_token, livekit_url, room_name } to the browser SDK.
-    """
-    if not MESSENGER_API_KEY:
-        raise HTTPException(status_code=500, detail="MESSENGER_API_KEY not configured")
-
-    # Format phone to 00-prefixed international format
-    phone = req.phone.strip().replace(" ", "").replace("-", "")
-    if phone.startswith("+"):
-        phone = "00" + phone[1:]
-    elif not phone.startswith("00"):
-        phone = "00" + phone
-
-    payload: dict = {
-        "phone_number":  phone,
-        "user_id":       MESSENGER_USER_ID,
-        "from_number":   MESSENGER_FROM_NUM,
-        "call_mode":     req.call_mode,
-    }
-
-    result = await _messenger_post("/calls/initiate", payload)
-
-    call_id       = str(result.get("call_id") or result.get("id", ""))
-    livekit_token = result.get("token")
-    livekit_url   = result.get("livekit_url")
-    room_name     = result.get("room_name")
-
-    if not call_id:
-        raise HTTPException(status_code=502, detail="Alternate Messenger did not return a call_id")
-
-    # Register with poller
-    _active_calls[call_id] = {
-        "call_id":   call_id,
-        "room_name": room_name,
-        "phone":     req.phone,
-    }
-
-    logger.info("[Proxy] Call started: %s → %s", req.phone, call_id)
-
-    return {
-        "call_id":       call_id,
-        "livekit_token": livekit_token,
-        "livekit_url":   livekit_url,
-        "room_name":     room_name,
-        "contact_name":  req.contact_name,
-    }
+    raise HTTPException(status_code=503, detail="Connect a voice provider to place calls.")
 
 # ── Route 2: Call action (mute / hold / resume) ───────────────────────────────
 @app.post("/dialer/call/action")
 async def call_action(req: CallActionRequest):
-    """
-    POST /dialer/call/action
-    Proxies to Alternate Messenger /calls/{call_id}/action.
-    Gap-3 guard: room_name is ONLY sent if non-null (Alternate Messenger returns 400 otherwise).
-    """
-    body: dict = {
-        "call_id": req.call_id,
-        "action":  req.action,
-    }
-    if req.room_name:          # Guard-3: omit room_name entirely if null/empty
-        body["room_name"] = req.room_name
-
-    result = await _messenger_post(f"/calls/{req.call_id}/action", body)
-    logger.info("[Proxy] Call action %s on %s", req.action, req.call_id)
-    return result
+    raise HTTPException(status_code=503, detail="Voice controls are unavailable in the reference proxy.")
 
 # ── Route 3: End call ─────────────────────────────────────────────────────────
 @app.post("/dialer/call/end")
 async def call_end(req: CallEndRequest):
-    """
-    POST /dialer/call/end
-    Proxies to Alternate Messenger /calls/disconnect.
-    Also removes call from the active-calls registry.
-    """
-    body: dict = {}
-    if req.call_id:
-        body["call_id"] = req.call_id
-        _active_calls.pop(req.call_id, None)
-
-    result = await _messenger_post("/calls/disconnect", body)
-    logger.info("[Proxy] Call ended: %s", req.call_id)
-    return result
+    raise HTTPException(status_code=503, detail="Voice controls are unavailable in the reference proxy.")
 
 # ── Route 4: Webhook receiver ─────────────────────────────────────────────────
 @app.post("/dialer/webhook")

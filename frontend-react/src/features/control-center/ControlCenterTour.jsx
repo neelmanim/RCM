@@ -5,7 +5,7 @@ export const CONTROL_CENTER_TOUR_KEY = 'alternate:control-center-tour-seen-v2';
 
 // Control Center, in plain language. The tabs are always on the page; the steps inside a tab press that tab first (`click`), so the
 // guide opens the right screen itself. A step for something this person cannot see (Export History is Super Admin only) is skipped.
-export const CONTROL_CENTER_STEPS = [
+const CONTROL_CENTER_STEPS = [
   {
     target: '[data-tour="cc-search"]',
     title: 'Welcome to Control Center',

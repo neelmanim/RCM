@@ -66,13 +66,13 @@ export function useColumnLayout(isAdmin = true) {
   // always empty and whose edits always 403. Excluded here, not just at the
   // render call site, so it also never appears as a toggle in the Columns
   // menu (allColumns below) that would silently do nothing if enabled.
-  const roleFilter = (k) => isAdmin || k !== 'assignedTo';
+
 
   const columns = useMemo(
-    () => order.filter((k) => !hidden.has(k) && roleFilter(k)).map((k) => COLUMN_BY_KEY.get(k)).filter(Boolean),
+    () => order.filter((k) => !hidden.has(k) && (isAdmin || k !== 'assignedTo')).map((k) => COLUMN_BY_KEY.get(k)).filter(Boolean),
     [order, hidden, isAdmin]
   );
-  const allColumns = useMemo(() => COLUMN_DEFS.filter((c) => roleFilter(c.key)), [isAdmin]);
+  const allColumns = useMemo(() => COLUMN_DEFS.filter((c) => isAdmin || c.key !== 'assignedTo'), [isAdmin]);
 
   const reorder = useCallback((draggedKey, targetKey) => {
     if (draggedKey === targetKey) return;

@@ -1,7 +1,9 @@
 import axios from 'axios';
-import { getToken, logout } from './auth';
+import { getToken } from './auth';
 import { handleSandboxRequest } from './sandboxMock';
 
+
+const isSandbox = /^\/(?:sandbox(?:\.html)?|demo)\/?$/.test(window.location.pathname);
 
 const api = axios.create({
   // baseURL intentionally empty — resolved dynamically per request below
@@ -33,9 +35,14 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   // If sandbox mode is active, simulate responses locally for instant, reliable interactive sandbox
-  if (localStorage.getItem('crm_is_sandbox') === 'true') {
+  if (isSandbox) {
     config.adapter = async (cfg) => {
       const mock = handleSandboxRequest(cfg);
+      if (mock.status >= 400) {
+        throw new axios.AxiosError(mock.data.detail, axios.AxiosError.ERR_BAD_REQUEST, cfg, undefined, {
+          data: mock.data, status: mock.status, statusText: 'Not implemented', headers: {}, config: cfg,
+        });
+      }
       return {
         data: mock.data,
         status: mock.status,
@@ -45,6 +52,7 @@ api.interceptors.request.use((config) => {
         request: {}
       };
     };
+    return config;
   }
 
   // Resolve base at request time, not module load time.
@@ -70,8 +78,8 @@ const SESSION_ENDED = ['Invalid or expired token', 'Not authenticated', 'Your ac
 let endingSession = false;
 
 api.interceptors.response.use((response) => response, async (error) => {
-  if (localStorage.getItem('crm_is_sandbox') === 'true') {
-    return Promise.resolve({ data: {} });
+  if (isSandbox) {
+    return Promise.reject(error);
   }
 
   const res = error.response;
@@ -200,7 +208,7 @@ export const EmailService = {
   // Added for the My Settings React port (v12.2) — these three were reachable
   // only from legacy frontend/js/api.js before, which is why the React app had
   // no way to render that page.
-  getStatus: async () => (await api.get("/email/status")).data,
+
   toggleBranding: async (hide) =>
     (await api.patch("/email/toggle-branding", { hide_branding_in_email: hide })).data,
   uploadSignatureLogo: async (file) => {
@@ -222,7 +230,8 @@ export const AdminService = {
     const params = new URLSearchParams({ range, format });
     if (startDate) params.set('start_date', startDate);
     if (endDate) params.set('end_date', endDate);
-    return `${API_BASE}/api/admin/metrics/export?${params}`;
+    const base = window.__CRM_API_BASE__ || window.__APP_CONFIG__?.API_BASE || "";
+    return `${base}/api/admin/metrics/export?${params}`;
   },
   // fresh: skip the server's 120s cache — settings screens re-read after every change and must show the truth
   getUsers: async ({ fresh = false } = {}) => (await api.get("/admin/users", fresh ? { params: { fresh: true } } : undefined)).data,

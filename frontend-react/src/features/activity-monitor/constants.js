@@ -54,3 +54,7 @@ export const EMPTY_FILTERS = {
 export const PER_PAGE = 25;
 export const POLL_INTERVAL_MS = 30_000;
 export const CSV_EXPORT_CAP = 2000;
+
+export const CALLS_COLUMNS = ['Time', 'SDR', 'Lead', 'Provider', 'Direction', 'Duration', 'Outcome', 'Status', 'Recording'];
+export const EMAIL_COLUMNS = ['Time', 'SDR', 'Lead', 'Direction', 'Subject', 'Opens', 'Clicks'];
+export const MESSAGES_COLUMNS = ['Time', 'SDR', 'Lead', 'Channel', 'Direction', 'Status', 'Template'];

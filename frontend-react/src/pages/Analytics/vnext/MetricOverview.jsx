@@ -18,15 +18,22 @@ const CATEGORY_LABELS = {
  * landing view.
  */
 export const MetricOverview = ({ metrics, filters }) => {
-  const [values, setValues] = useState({});
+  const [result, setResult] = useState({ metrics, filters, values: {} });
+  const values = result.metrics === metrics && result.filters === filters ? result.values : {};
 
   useEffect(() => {
     let cancelled = false;
-    setValues({});
     metrics.forEach((m) => {
       AnalyticsVNextService.resolveMetric(m.id, filters).then((data) => {
         if (cancelled) return;
-        setValues((prev) => ({ ...prev, [m.id]: data?.error ? null : data?.value }));
+        setResult(prev => ({
+          metrics,
+          filters,
+          values: {
+            ...(prev.metrics === metrics && prev.filters === filters ? prev.values : {}),
+            [m.id]: data?.error ? null : data?.value,
+          },
+        }));
       });
     });
     return () => { cancelled = true; };

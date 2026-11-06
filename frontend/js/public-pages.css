@@ -1,0 +1,2 @@
+*{box-sizing:border-box}body{color:#1e293b;background:#f5f7fb;margin:0;font:16px/1.6 system-ui,sans-serif}main{max-width:42rem;margin:8vh auto;padding:2rem 1rem}h1{font-size:1.75rem;line-height:1.2}button{font:inherit;color:#fff;cursor:pointer;background:#4f46e5;border:0;border-radius:.5rem;padding:.5rem .875rem}button:focus-visible{outline-offset:3px;outline:2px solid #4f46e5}
+/*$vite$:1*/

@@ -78,7 +78,7 @@ export default function SandboxTopRibbon({ darkMode, setDarkMode, onToggleMenu }
       )}
 
       {/* Ribbon Bar */}
-      <div className="h-11 bg-slate-950 border-b border-indigo-950/60 px-4 flex items-center justify-between text-xs text-slate-300 select-none z-40">
+      <div className="min-h-11 bg-slate-950 border-b border-indigo-950/60 px-3 py-2 sm:px-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300 select-none z-40">
         {/* Left: Sandbox Badge & Mobile Menu */}
         <div className="flex items-center gap-2.5">
           {onToggleMenu && (
@@ -92,23 +92,24 @@ export default function SandboxTopRibbon({ darkMode, setDarkMode, onToggleMenu }
           )}
           <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 font-semibold">
             <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-            <span className="hidden sm:inline">Interactive Sandbox Demo</span>
+            <span className="hidden sm:inline">Demo workspace</span>
             <span className="sm:hidden">Sandbox</span>
           </div>
           <span className="hidden md:inline text-slate-500 font-mono">
-            Zero-Config Client-Side Engine
+            Sample data
           </span>
         </div>
 
         {/* Right: Controls & Persona Switcher */}
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
           {/* Persona Switcher */}
           <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1">
             <User className="w-3.5 h-3.5 text-indigo-400" />
             <select
               value={activePersona.id}
               onChange={handlePersonaChange}
-              className="bg-transparent text-slate-200 font-medium focus:outline-none cursor-pointer text-xs"
+              aria-label="Demo persona"
+              className="max-w-36 sm:max-w-none bg-transparent text-slate-200 font-medium focus:outline-none cursor-pointer text-xs"
             >
               {PERSONAS.map(p => (
                 <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">
@@ -125,7 +126,7 @@ export default function SandboxTopRibbon({ darkMode, setDarkMode, onToggleMenu }
             title="Launch Simulated Outbound Call"
           >
             <PhoneCall className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Simulate Call</span>
+            <span className="hidden sm:inline">Simulate call</span>
           </button>
 
           {/* Reset Action */}
@@ -135,7 +136,7 @@ export default function SandboxTopRibbon({ darkMode, setDarkMode, onToggleMenu }
             title="Reset to clean sample data"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Reset State</span>
+            <span className="hidden sm:inline">Reset demo</span>
           </button>
 
           {/* Dual Theme Toggle */}

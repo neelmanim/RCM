@@ -339,7 +339,7 @@ from routes.sandbox_routes import router as sandbox_router
 from routes.error_log_routes import router as error_log_router
 from routes.monitoring_routes import router as monitoring_router
 from routes.sms_routes import router as sms_router  # V33: Alternate Messenger Floating Widget
-from routes.conversations_routes import router as conversations_router  # V34: Native Converse Desk
+from routes.conversations_routes import router as conversations_router  # Native messaging conversations
 from routes.integration_health_routes import router as integration_health_router  # V35: Dialer + Chat health diagnostics
 from routes.sse_routes import router as sse_router  # V36: SSE real-time call events
 from routes.smart_analytics_routes import router as smart_analytics_router  # V41: Smart Analytics NL queries
@@ -398,7 +398,7 @@ app.include_router(sandbox_router)
 app.include_router(error_log_router)
 app.include_router(monitoring_router)
 app.include_router(sms_router)  # V33: Alternate Messenger Floating Widget SMS
-app.include_router(conversations_router)  # V34: Native Converse Desk conversations
+app.include_router(conversations_router)  # Native messaging conversations
 app.include_router(integration_health_router)  # V35: Integration health diagnostics
 app.include_router(sse_router)  # V36: SSE real-time call events
 app.include_router(smart_analytics_router)  # V41: Smart Analytics NL queries

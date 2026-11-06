@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { EngagementPanel } from './EngagementPanel';
 import { RepPerformanceTable } from './RepPerformanceTable';
 import { TrendPanel } from './TrendPanel';
@@ -19,16 +19,13 @@ export function ReportingTab({ journeyId, nodes }) {
   // per click. ACTIVITY_PAGE_LIMIT caps this at 100 events server-side.
   const [activity, setActivity] = useState([]);
 
-  const loadActivity = useCallback(async () => {
-    try {
-      setActivity(await SalesJourneyService.getActivity(journeyId));
-    } catch {
-      // Non-fatal — the roster and engagement stats are still useful
-      // without per-lead activity; expand rows just show "no activity".
-    }
+  useEffect(() => {
+    let cancelled = false;
+    SalesJourneyService.getActivity(journeyId)
+      .then(data => { if (!cancelled) setActivity(data); })
+      .catch(() => { /* Activity is optional for the reporting panels. */ });
+    return () => { cancelled = true; };
   }, [journeyId]);
-
-  useEffect(() => { loadActivity(); }, [loadActivity]);
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">

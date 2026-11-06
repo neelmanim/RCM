@@ -24,7 +24,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.6 var(--font-dm-sans), "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -43,7 +43,7 @@ h1, h2, h3, p {
 }
 
 h1, h2, h3 {
-  font-family: var(--font-manrope), "Manrope", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.055em;
   line-height: 1.12;
 }
@@ -87,7 +87,7 @@ h3 {
   display: flex;
   align-items: center;
   gap: 11px;
-  font: 800 20px var(--font-manrope), "Manrope", sans-serif;
+  font: 800 20px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.06em;
 }
 
@@ -410,7 +410,7 @@ h3 {
 
 .metric strong {
   display: block;
-  font: 800 30px var(--font-manrope), "Manrope", sans-serif;
+  font: 800 30px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: -0.06em;
   line-height: 1.5;
   color: #fff;
@@ -670,7 +670,7 @@ h3 {
 }
 
 .reputation strong {
-  font: 800 48px var(--font-manrope), "Manrope", sans-serif;
+  font: 800 48px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #eff7ec;
   letter-spacing: -0.07em;
 }
@@ -1211,7 +1211,7 @@ h3 {
 }
 
 .lead-modal-title {
-  font-family: var(--font-manrope), "Manrope", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.04em;

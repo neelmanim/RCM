@@ -90,7 +90,6 @@ const runRuleEngine = (f) => {
   const insights = [];
   const leads    = f.leads_assigned || 0;
   const calls    = f.calls_made     || 0;
-  const connects = f.calls_connected|| 0;
   const meetings = f.meetings       || 0;
   const disq     = f.disqualified   || 0;
   const connRate = f.connect_rate;
@@ -125,7 +124,7 @@ const RichKpiCard = ({ label, value, subtitle, badge, icon: Icon, colorClass, bg
   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col gap-1" title={tooltip || ''}>
     <div className="flex items-center justify-between mb-1">
       <div className={`w-8 h-8 ${bgClass} rounded-xl flex items-center justify-center ${colorClass}`}>
-        <Icon size={16} />
+        {React.createElement(Icon, { size: 16 })}
       </div>
       {badge && <span dangerouslySetInnerHTML={{ __html: badge }} />}
     </div>
@@ -172,7 +171,7 @@ const StepPill = ({ num: n, label, active, locked }) => (
 );
 
 /* ── Activity Trend Chart (Chart.js via window.Chart) ────── */
-const TrendChart = ({ data, filters }) => {
+const TrendChart = ({ data }) => {
   const canvasRef = useRef(null);
   const chartRef  = useRef(null);
   const [metricToggles, setMetricToggles] = useState({
@@ -309,7 +308,6 @@ const TrendChart = ({ data, filters }) => {
 /* ── DashboardTab ────────────────────────────────────────── */
 /* ══════════════════════════════════════════════════════════ */
 export const DashboardTab = ({ token, userRole, filters: externalFilters, onFiltersChange, pinRefresh }) => {
-  const isSuperAdmin = userRole === 'Super Admin' || userRole === 'Admin' || userRole === 'Pod Admin';
   // AE: Analytics Hub is forced to their own leads/calls server-side
   // regardless of any pod_id sent (see backend analytics_routes._effective_ae_sdr)
   // — no pod-wide view exists for this role, so the pod picker (which
@@ -368,7 +366,6 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
 
   // Data
   const [funnel, setFunnel]               = useState(null);
-  const [rawFunnel, setRawFunnel]         = useState(null); // for rule engine
   const [sdrTable, setSdrTable]           = useState([]);
   const [trendData, setTrendData]         = useState(null);
   const [batchSummary, setBatchSummary]   = useState([]);
@@ -389,7 +386,7 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
   // UI
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState('');
-  const [sdrSortBy, setSdrSortBy]       = useState('calls_made');
+  const sdrSortBy = 'calls_made';
   const [showCustomDates, setShowCustomDates] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
   const [sdrSearch, setSdrSearch]       = useState('');
@@ -478,7 +475,6 @@ export const DashboardTab = ({ token, userRole, filters: externalFilters, onFilt
         const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
         const normalised = isObj(funnelData) ? normalizeFunnel(funnelData) : null;
         setFunnel(normalised);
-        setRawFunnel(isObj(funnelData) ? funnelData : null);
         setSdrTable(Array.isArray(sdrData?.sdrs) ? sdrData.sdrs : []);
         setTrendData(isObj(trendRaw) ? trendRaw : null);
       }

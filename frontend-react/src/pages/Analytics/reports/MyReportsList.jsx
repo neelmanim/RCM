@@ -64,7 +64,7 @@ export const MyReportsList = ({ onCreateNew, onEdit, onLogsChanged }) => {
       );
       load();
       onLogsChanged?.();
-    } catch (err) {
+    } catch {
       showToast(`Failed to run "${report.name}".`);
     } finally {
       setRunningId(null);

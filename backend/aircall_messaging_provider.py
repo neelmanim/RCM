@@ -150,7 +150,7 @@ class AircallMessagingProvider(MessagingProvider):
     def list_recent_conversations(self, count: int = 100) -> list[ConversationSummary]:
         """
         ponytail: Aircall has no thread/conversation grouping the way
-        Alternate Messenger's Converse Desk does — this groups individual messages
+        Alternate Messenger's inbox does — this groups individual messages
         from /numbers/:number_id/messages by counterpart phone number as a
         best-effort stand-in. Aircall's Messages resource also supports real
         webhooks (the same mechanism the existing call integration already

@@ -27,17 +27,7 @@ def _get_dialer_service():
 
 @router.post("/calls/start")
 def start_call(body: dict, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    ds = _get_dialer_service()
-    if not ds:
-        raise HTTPException(status_code=501, detail="Dialer service not configured")
-    lead_id = body.get("lead_id")
-    phone_number = body.get("phone_number")
-    if not lead_id or not phone_number:
-        raise HTTPException(status_code=400, detail="lead_id and phone_number are required")
-    result = ds.initiate_call(db, user, lead_id, phone_number)
-    if not result.get("success"):
-        raise HTTPException(status_code=422, detail=result.get("error", "Call initiation failed"))
-    return result
+    raise HTTPException(status_code=503, detail="Connect a voice provider to place calls.")
 
 
 @router.post("/webhooks/dialer")
@@ -71,11 +61,15 @@ async def dialer_webhook(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/dialer/status")
 def dialer_status(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    ds = _get_dialer_service()
-    if not ds:
-        return {"active": False, "provider": "none", "has_credentials": False}
-    config = ds.get_dialer_config(db)
-    return {"active": config.get("provider", "none") != "none" and config.get("has_credentials", False), "provider": config.get("provider", "none"), "has_credentials": config.get("has_credentials", False)}
+    return {
+        "active": False,
+        "provider": "none",
+        "has_credentials": False,
+        "sender_id": "",
+        "from_number": "",
+        "dialer_enabled": False,
+        "aircall_everywhere_enabled": False,
+    }
 
 
 @router.get("/dialer/config")

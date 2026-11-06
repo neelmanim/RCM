@@ -25,24 +25,24 @@ export default function PipelinePage() {
   };
 
   return (
-    <div className="p-8 max-w-full space-y-6 animate-fadeIn">
+    <div className="crm-page space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Enterprise Pipeline Kanban
+            Pipeline
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Visual revenue velocity. Click the advance arrow on any card to simulate deal progression.
+            Review deal stages and move sample deals through the pipeline.
           </p>
         </div>
         <div className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-          5 Active Stages
+          {PIPELINE_STAGES.length} stages
         </div>
       </div>
 
       {/* Kanban Board Columns */}
-      <div className="flex gap-5 overflow-x-auto pb-4 items-start">
+      <section aria-label="Pipeline stages" tabIndex={0} className="flex gap-3 overflow-x-auto pb-4 items-start">
         {PIPELINE_STAGES.map((stage) => {
           const stageLeads = leads.filter(l => l.stage === stage);
           const stageArr = stageLeads.reduce((acc, l) => {
@@ -52,7 +52,7 @@ export default function PipelinePage() {
           return (
             <div
               key={stage}
-              className="w-72 flex-shrink-0 bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-4 space-y-4"
+              className="w-64 shrink-0 bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-4 space-y-4"
             >
               {/* Column Header */}
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
@@ -79,7 +79,7 @@ export default function PipelinePage() {
                   stageLeads.map((lead) => (
                     <div
                       key={lead.id}
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm hover:shadow-md transition-all space-y-3"
+                      className="crm-panel p-4 space-y-3"
                     >
                       <div className="flex items-start justify-between">
                         <div>
@@ -118,7 +118,7 @@ export default function PipelinePage() {
             </div>
           );
         })}
-      </div>
+      </section>
     </div>
   );
 }

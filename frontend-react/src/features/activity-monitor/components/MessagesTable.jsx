@@ -29,7 +29,7 @@ function StatusBadge({ status }) {
   return <Badge variant={variant}>{status}</Badge>;
 }
 
-export const COLUMNS = ['Time', 'SDR', 'Lead', 'Channel', 'Direction', 'Status', 'Template'];
+import { MESSAGES_COLUMNS as COLUMNS } from '../constants';
 const SORT_KEYS = { Time: 'time', Channel: 'channel', Direction: 'direction', Status: 'status' };
 
 export function MessagesTable({ items, onOpenLead, sort, onSort }) {

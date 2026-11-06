@@ -39,14 +39,22 @@ export function FeedbackModal({ open, onClose }) {
   const [errorText, setErrorText] = useState('');
   const textareaRef = useRef(null);
 
-  useEffect(() => {
+  const [previousOpen, setPreviousOpen] = useState(open);
+  if (open !== previousOpen) {
+    setPreviousOpen(open);
     if (open) {
       setStatus('idle');
       setErrorText('');
-      setTimeout(() => textareaRef.current?.focus(), 80);
-    } else {
-      setTimeout(() => { setMessage(''); setType('bug'); setStatus('idle'); }, 300);
     }
+  }
+
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(() => textareaRef.current?.focus(), 80);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => { setMessage(''); setType('bug'); setStatus('idle'); }, 300);
+    return () => clearTimeout(t);
   }, [open]);
 
   const handleSubmit = async () => {
@@ -92,7 +100,7 @@ export function FeedbackModal({ open, onClose }) {
                       ? 'bg-blue-50 border-blue-400 text-blue-700'
                       : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
                 >
-                  <Icon size={14} />
+                  {React.createElement(Icon, { size: 14 })}
                   {label}
                 </button>
               ))}

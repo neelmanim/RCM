@@ -50,7 +50,7 @@ function MetricCard({ icon: Icon, label, value, color }) {
     <Card>
       <CardContent className="py-4">
         <div className="flex items-center gap-2 mb-2.5">
-          <Icon size={16} color={color} />
+          {React.createElement(Icon, { size: 16, color })}
           <span className="text-[0.78rem] font-semibold text-slate-500 uppercase tracking-wide">{label}</span>
         </div>
         <div className="text-[1.6rem] font-extrabold leading-none" style={{ color }}>{value}</div>
@@ -86,8 +86,6 @@ export function SdrPerformanceHub({ sdrId, onBack }) {
   const [error, setError] = useState(null);
 
   const load = useCallback(async (p, r) => {
-    setError(null);
-    setData(null);
     try {
       const result = await CallsService.getSdrPerformance(sdrId, {
         period: p,
@@ -95,17 +93,43 @@ export function SdrPerformanceHub({ sdrId, onBack }) {
         end_date: p === 'custom' ? r.end_date : undefined,
       });
       setData(result);
+      setError(null);
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'Failed to load SDR performance.');
     }
   }, [sdrId]);
 
-  useEffect(() => { load(period, range); }, [sdrId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [previousSdrId, setPreviousSdrId] = useState(sdrId);
+  if (sdrId !== previousSdrId) {
+    setPreviousSdrId(sdrId);
+    setData(null);
+    setError(null);
+  }
+  useEffect(() => {
+    let ignore = false;
+    CallsService.getSdrPerformance(sdrId, {
+      period,
+      start_date: period === 'custom' ? range.start_date : undefined,
+      end_date: period === 'custom' ? range.end_date : undefined,
+    }).then((result) => {
+      if (!ignore) {
+        setData(result);
+        setError(null);
+      }
+    }).catch((err) => {
+      if (!ignore) {
+        setError(err.response?.data?.detail || err.message || 'Failed to load SDR performance.');
+      }
+    });
+    return () => { ignore = true; };
+  }, [sdrId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectPreset = (key) => {
     setShowCustom(key === 'custom');
     if (key === 'custom') return;
     setPeriod(key);
+    setData(null);
+    setError(null);
     load(key, range);
   };
 
@@ -113,6 +137,8 @@ export function SdrPerformanceHub({ sdrId, onBack }) {
     setRange(next);
     if (next.start_date && next.end_date) {
       setPeriod('custom');
+      setData(null);
+      setError(null);
       load('custom', next);
     }
   };

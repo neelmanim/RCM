@@ -40,7 +40,7 @@ function formatTime(seconds) {
 
 const AudioPlayerContext = createContext(null);
 
-export function useAudioPlayer() {
+function useAudioPlayer() {
   const api = useContext(AudioPlayerContext);
   if (!api) throw new Error('useAudioPlayer must be used inside AudioPlayerProvider');
   return api;

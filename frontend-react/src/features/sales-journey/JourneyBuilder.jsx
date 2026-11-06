@@ -177,13 +177,13 @@ export function JourneyBuilder({ journeyName, journeyStatus, journeyPodId, journ
     } finally {
       setPublishing(false);
     }
-  }, [journeyId]);
+  }, [journeyId, setPublishedVersions]);
 
   const openArchiveConfirm = useCallback(async () => {
     try {
       const stats = await SalesJourneyService.getStats(journeyId);
       setArchiveConfirm({ count: stats.active });
-    } catch (err) {
+    } catch {
       toast('Failed to check active enrollments — please try again.', 'error');
     }
   }, [journeyId]);

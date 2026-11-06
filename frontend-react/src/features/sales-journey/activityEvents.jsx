@@ -6,7 +6,7 @@ import { Badge } from '../../components/ui/Badge';
 // reporting revamp — its global, un-correlated feed duplicated what the
 // roster now shows per lead). Kept here since EnrollmentRosterPanel's
 // per-lead expand row renders the exact same event shapes.
-export const EVENT_META = {
+const EVENT_META = {
   email_sent:        { icon: Mail, label: (e) => `Email sent to ${e.lead_name}` },
   email_reply:       { icon: MessageSquareReply, label: (e) => `${e.lead_name} replied` },
   email_auto_reply:  { icon: MessageSquareReply, label: (e) => `${e.lead_name} — auto-reply (out-of-office)` },
@@ -16,7 +16,7 @@ export const EVENT_META = {
   whatsapp_reply:    { icon: MessageSquareReply, label: (e) => `${e.lead_name} replied via WhatsApp` },
 };
 
-export function formatWhen(iso) {
+function formatWhen(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });

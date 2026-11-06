@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Vite config for building the Email Hub as a self-contained IIFE bundle.
@@ -27,8 +27,8 @@ export default defineConfig({
       name: 'append-email-scoped-css',
       closeBundle() {
         const MARKER = '/* ─── appended from frontend/css/email-hub.css ─── */';
-        const builtCss  = resolve(__dirname, '../frontend/js/email-hub.css');
-        const scopedCss = resolve(__dirname, '../frontend/css/email-hub.css');
+        const builtCss  = fileURLToPath(new URL('../frontend/js/email-hub.css', import.meta.url));
+        const scopedCss = fileURLToPath(new URL('../frontend/css/email-hub.css', import.meta.url));
         if (!existsSync(scopedCss)) return;
         try {
           const extra = readFileSync(scopedCss, 'utf8');

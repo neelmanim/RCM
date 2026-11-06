@@ -7,7 +7,7 @@ import { DirectionBadge } from './CallsTable';
 import { EmailExpandRow } from './EmailExpandRow';
 import { EmptyState } from './EmptyState';
 
-export const COLUMNS = ['Time', 'SDR', 'Lead', 'Direction', 'Subject', 'Opens', 'Clicks'];
+import { EMAIL_COLUMNS as COLUMNS } from '../constants';
 const SORT_KEYS = { Time: 'time', Direction: 'direction' };
 
 export function EmailTable({ items, onOpenLead, sort, onSort }) {

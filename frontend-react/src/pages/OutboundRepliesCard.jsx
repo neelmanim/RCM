@@ -19,7 +19,7 @@ export const OutboundRepliesCard = ({ userRole }) => {
   const [state, setState] = useState('loading'); // loading | ok | error | hidden
 
   useEffect(() => {
-    if (!allowed) { setState('hidden'); return undefined; }
+    if (!allowed) return undefined;
     let cancelled = false;
     // Staggered 1000ms after mount — lowest priority, after the Groq card.
     const timer = setTimeout(async () => {
@@ -33,7 +33,7 @@ export const OutboundRepliesCard = ({ userRole }) => {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [allowed]);
 
-  if (state === 'hidden') return null;
+  if (!allowed || state === 'hidden') return null;
   // Not the onNavigate prop: the shell's onNavigate is (view) => loadView(view) and drops `extra`.
   const open = () => window._loadView?.('sales-tools', 'replies');
   const rate = data?.reply_rate;

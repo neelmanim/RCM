@@ -18,7 +18,7 @@ export function FailedEnrollmentsPanel({ journeyId, readOnly = false }) {
     setLoading(true);
     try {
       setEnrollments(await SalesJourneyService.getFailedEnrollments(journeyId));
-    } catch (err) {
+    } catch {
       toast('Failed to load failed enrollments.', 'error');
     } finally {
       setLoading(false);
@@ -33,7 +33,7 @@ export function FailedEnrollmentsPanel({ journeyId, readOnly = false }) {
       await SalesJourneyService.retryEnrollment(enrollmentId);
       toast('Enrollment re-activated.', 'success');
       await load();
-    } catch (err) {
+    } catch {
       toast('Failed to retry — please try again.', 'error');
     } finally {
       setBusyId(null);
@@ -46,7 +46,7 @@ export function FailedEnrollmentsPanel({ journeyId, readOnly = false }) {
       await SalesJourneyService.skipEnrollment(enrollmentId);
       toast('Enrollment skipped.', 'success');
       await load();
-    } catch (err) {
+    } catch {
       toast('Failed to skip — please try again.', 'error');
     } finally {
       setBusyId(null);

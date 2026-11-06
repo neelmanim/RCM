@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileText, ScrollText } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '../../../components/ui/Card';
 import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from '../../../components/ui/Table';
@@ -36,27 +36,41 @@ export const ReportLogs = () => {
     AnalyticsService.listReports().then(setReports);
   }, []);
 
-  // Any filter change re-starts from page 1 — a stale page number past the
-  // end of a narrower result set would otherwise render an empty table with
-  // no obvious explanation.
-  useEffect(() => { setPage(1); }, [reportFilter, statusFilter, search, sort]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const res = await AnalyticsService.listReportExecutions({
+  useEffect(() => {
+    let cancelled = false;
+    AnalyticsService.listReportExecutions({
       report_id: reportFilter || undefined,
       status: statusFilter || undefined,
       search: search || undefined,
       sort_by: sort.key ? `${sort.dir === 'desc' ? '-' : ''}${sort.key}` : undefined,
       page,
       per_page: PER_PAGE,
+    }).then(res => {
+      if (cancelled) return;
+      setExecutions(res.items || []);
+      setPageInfo({ page: res.page || 1, pages: res.pages || 1, total: res.total || 0 });
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
     });
-    setExecutions(res.items || []);
-    setPageInfo({ page: res.page || 1, pages: res.pages || 1, total: res.total || 0 });
-    setLoading(false);
+    return () => { cancelled = true; };
   }, [reportFilter, statusFilter, search, sort, page]);
 
-  useEffect(() => { load(); }, [load]);
+  const changeFilter = (setter, value, current) => {
+    if (value === current) return;
+    setter(value);
+    setPage(1);
+    setLoading(true);
+  };
+  const changeSort = (key) => {
+    toggleSort(key);
+    setPage(1);
+    setLoading(true);
+  };
+  const changePage = (nextPage) => {
+    if (nextPage === page) return;
+    setPage(nextPage);
+    setLoading(true);
+  };
 
   return (
     <Card className="animate-fade-in">
@@ -65,21 +79,21 @@ export const ReportLogs = () => {
         <div className="flex items-center flex-wrap gap-2">
           <Select
             value={reportFilter}
-            onChange={(v) => setReportFilter(v)}
+            onChange={(v) => changeFilter(setReportFilter, v, reportFilter)}
             options={reports.map((r) => ({ value: r.id, label: r.name }))}
             placeholder="All Reports"
             searchable
           />
           <Select
             value={statusFilter}
-            onChange={(v) => setStatusFilter(v)}
+            onChange={(v) => changeFilter(setStatusFilter, v, statusFilter)}
             options={STATUSES.map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }))}
             placeholder="All Statuses"
           />
           <SearchInput
             placeholder="Search logs…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => changeFilter(setSearch, e.target.value, search)}
             className="flex-1 min-w-[200px] max-w-xs"
           />
         </div>
@@ -93,12 +107,12 @@ export const ReportLogs = () => {
             <Table>
               <TableHead>
                 <TableRow>
-                  <SortableTableHeader label="Report" sortKey="report_name" sort={sort} onSort={toggleSort} />
+                  <SortableTableHeader label="Report" sortKey="report_name" sort={sort} onSort={changeSort} />
                   <TableHeader>Reporting Period</TableHeader>
-                  <SortableTableHeader label="Started" sortKey="started_at" sort={sort} onSort={toggleSort} />
+                  <SortableTableHeader label="Started" sortKey="started_at" sort={sort} onSort={changeSort} />
                   <TableHeader>Triggered By</TableHeader>
                   <TableHeader>Recipients</TableHeader>
-                  <SortableTableHeader label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
+                  <SortableTableHeader label="Status" sortKey="status" sort={sort} onSort={changeSort} />
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -128,7 +142,7 @@ export const ReportLogs = () => {
                 })}
               </TableBody>
             </Table>
-            <Pagination page={pageInfo.page} pages={pageInfo.pages} total={pageInfo.total} perPage={PER_PAGE} onChange={setPage} />
+            <Pagination page={pageInfo.page} pages={pageInfo.pages} total={pageInfo.total} perPage={PER_PAGE} onChange={changePage} />
           </>
         )}
       </CardContent>

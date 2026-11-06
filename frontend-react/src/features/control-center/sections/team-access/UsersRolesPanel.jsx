@@ -241,7 +241,7 @@ export function UsersRolesPanel({ userRole }) {
                       <span className="inline-flex gap-1 text-sm">
                         {CHANNEL_CHIPS.map(({ field, icon: Icon, name }) => (
                           <span key={field} title={`${name}: ${u[field] ? 'granted' : 'not granted'}`} className={u[field] ? 'text-slate-600' : 'text-slate-300'}>
-                            <Icon size={14} />
+                            {React.createElement(Icon, { size: 14 })}
                           </span>
                         ))}
                       </span>

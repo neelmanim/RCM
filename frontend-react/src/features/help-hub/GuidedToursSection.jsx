@@ -6,7 +6,7 @@ import { toursFor } from './data/tours';
 import { PENDING_TOUR_KEY } from '../../components/ui/GuidedTour';
 
 // Opens the page and asks its guide to start (the guide reads the pending key when it appears, so it works even though the page has to load first).
-export function startTour(tour) {
+function startTour(tour) {
   try { window.sessionStorage.setItem(PENDING_TOUR_KEY, tour.seenKey); } catch { /* storage blocked: the page opens, the guide starts only if unseen */ }
   window._loadView?.(tour.view);
 }

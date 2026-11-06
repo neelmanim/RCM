@@ -128,3 +128,23 @@ export const SMS_MAX_LENGTH = 1600;
 // Standard GSM-7 segment size — shown as a friendly "N segments" estimate,
 // not enforced (real segment count depends on the recipient's encoding).
 export const SMS_SEGMENT_LENGTH = 160;
+
+export function labelForNode(node, allNodes) {
+  const sameType = allNodes.filter((n) => n.type === node.type);
+  const idx = sameType.findIndex((n) => n.id === node.id);
+  const suffix = sameType.length > 1 ? ` #${idx + 1}` : '';
+  return `${NODE_LABELS[node.type] || node.type}${suffix}`;
+}
+
+
+export const NODE_ACCENT = {
+  trigger:   { border: 'border-amber-400',   header: 'bg-amber-100 text-amber-800',   hex: '#fbbf24' },
+  email:     { border: 'border-blue-400',    header: 'bg-blue-100 text-blue-800',     hex: '#60a5fa' },
+  wait:      { border: 'border-slate-400',   header: 'bg-slate-200 text-slate-700',   hex: '#94a3b8' },
+  condition: { border: 'border-purple-400',  header: 'bg-purple-100 text-purple-800', hex: '#c084fc' },
+  call:      { border: 'border-emerald-400', header: 'bg-emerald-100 text-emerald-800', hex: '#34d399' },
+  task:      { border: 'border-orange-400',  header: 'bg-orange-100 text-orange-800',  hex: '#fb923c' },
+  sms:       { border: 'border-teal-400',    header: 'bg-teal-100 text-teal-800',      hex: '#2dd4bf' },
+  whatsapp:  { border: 'border-green-400',   header: 'bg-green-100 text-green-800',    hex: '#4ade80' },
+  instantly_sequence: { border: 'border-indigo-400', header: 'bg-indigo-100 text-indigo-800', hex: '#818cf8' },
+};

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Mic, Users, Phone, ArrowLeftRight, Target, MessageSquare, CircleDot } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { SearchInput } from '../../../components/ui/SearchInput';
@@ -27,7 +27,6 @@ import {
 export function FilterBar({ channel, sdrs, onApply }) {
   const [draft, setDraft] = useState(EMPTY_FILTERS);
 
-  useEffect(() => { setDraft(EMPTY_FILTERS); }, [channel]);
 
   const set = (key) => (val) => setDraft((d) => ({ ...d, [key]: val }));
 

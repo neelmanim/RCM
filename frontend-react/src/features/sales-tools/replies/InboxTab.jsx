@@ -45,9 +45,10 @@ export function InboxTab() {
   const [page, setPage] = useState(1);
   const [options, setOptions] = useState({ journeys: [], reps: [], mailboxes: [], intents: [] });
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [requestState, setRequestState] = useState(null);
   const [attempt, setAttempt] = useState(0);
+  const loading = !requestState || requestState.filters !== filters || requestState.page !== page || requestState.attempt !== attempt;
+  const error = loading ? null : requestState.error;
   const [activeId, setActiveId] = useState(null);
   const [openId, setOpenId] = useState(null);
   const wide = useIsWide();
@@ -59,18 +60,21 @@ export function InboxTab() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setError(null);
     const params = { page, per_page: PER_PAGE };
     Object.entries(filters).forEach(([k, v]) => { if (v !== '' && v != null) params[k] = v; });
     InstantlyInboxService.replies(params)
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch((e) => { if (!cancelled) setError(errorMessage(e)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .then(d => {
+        if (!cancelled) {
+          setData(d);
+          setRequestState({ filters, page, attempt, error: null });
+        }
+      })
+      .catch(e => { if (!cancelled) setRequestState({ filters, page, attempt, error: errorMessage(e) }); });
     return () => { cancelled = true; };
   }, [filters, page, attempt]);
 
-  const items = data?.items || [];
-  const summary = data?.summary || {};
+  const items = useMemo(() => data?.items || [], [data]);
+  const summary = useMemo(() => data?.summary || {}, [data]);
   const open = items.find((r) => r.id === openId) || null;
 
   const apply = (next = draft) => { setFilters(next); setDraft(next); setPage(1); setOpenId(null); setActiveId(null); };

@@ -20,9 +20,10 @@ import { PreCallIntelligence } from './components/PreCallIntelligence';
 import { ActivityTimeline } from './components/ActivityTimeline';
 import { TasksPanel } from './components/TasksPanel';
 import { EmailsPanel } from './components/EmailsPanel';
+import { NoShowDialog } from './components/NoShowDialog';
 
 import { QuickActions } from './rail/QuickActions';
-import { useEnrollInCadence } from '../sales-journey/EnrollInCadence';
+import { useEnrollInCadence } from '../sales-journey/useEnrollInCadence';
 import { tasksChanged } from '../../components/tasks/taskMeta';
 import { CallStrategy } from './rail/CallStrategy';
 import { NotesPanel } from './rail/NotesPanel';
@@ -56,6 +57,10 @@ export function LeadDetailHub({
   } = useLeadDetail(leadId);
 
   const [activityFilter, setActivityFilter] = useState('all');
+  const [noShow, setNoShow] = useState({ leadId, open: false });
+  if (noShow.leadId !== leadId) {
+    setNoShow({ leadId, open: false });
+  }
 
   // ── Alternate Messenger Widget context sync ──────────────────────────────────────
   // Mirrors frontend/js/views/lead_detail.js's exact sync so the FAB's Call
@@ -187,11 +192,7 @@ export function LeadDetailHub({
         startCall();
         break;
       case 'no-show':
-        if (typeof window._openNoShowModal === 'function') {
-          window._openNoShowModal(lead.id, [lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.email);
-        } else {
-          toast('This action needs the classic view for now.', 'error');
-        }
+        if (lead?.id === leadId) setNoShow({ leadId, open: true });
         break;
       case 'demo-failed':
         if (typeof window._openDemoFailedModal === 'function') {
@@ -227,7 +228,7 @@ export function LeadDetailHub({
       default:
         break; // unhandled ctaKinds are a no-op by design
     }
-  }, [startCall, lead, runStageAction]);
+  }, [startCall, lead, leadId, runStageAction]);
 
   const handleChangeStage = useCallback((status) => {
     LeadsService.updateLead(leadId, { status })
@@ -268,10 +269,10 @@ export function LeadDetailHub({
   const tasksMoved = useCallback(() => { refetch.tasks(); tasksChanged(); }, [refetch]);
   const handleAddTask = useCallback((title, dueDate, dueTime) => {
     LeadsService.addTask(leadId, title, dueDate, dueTime).then(tasksMoved).catch(() => toast('Failed to add task', 'error'));
-  }, [leadId, refetch, tasksMoved]);
+  }, [leadId, tasksMoved]);
   const handleCompleteTask = useCallback((taskId, done) => {
     LeadsService.patchTask(leadId, taskId, { done }).then(tasksMoved).catch(() => toast('Failed to update task', 'error'));
-  }, [leadId, refetch, tasksMoved]);
+  }, [leadId, tasksMoved]);
   // A cadence manual step's outcome finishes the task and moves the cadence on.
   const handleTaskOutcome = useCallback((taskId, outcome) => {
     LeadsService.patchTask(leadId, taskId, { done: true, outcome })
@@ -294,7 +295,7 @@ export function LeadDetailHub({
   const handleDeleteTask = useCallback((taskId) => {
     return LeadsService.deleteTask(leadId, taskId).then(tasksMoved)
       .catch((err) => toast(err.response?.data?.detail || 'Failed to delete task', 'error'));
-  }, [leadId, refetch, tasksMoved]);
+  }, [leadId, tasksMoved]);
   // v13.7.0 "Skip this step": the cadence moves on without this step (nothing sent).
   const handleSkipTask = useCallback((taskId) => {
     return LeadsService.skipTask(leadId, taskId)
@@ -510,6 +511,16 @@ export function LeadDetailHub({
       </div>
       <div id="lead-detail-hub-tasks" />
 
+      {noShow.open && noShow.leadId === leadId && (
+        <NoShowDialog
+          key={leadId}
+          leadId={leadId}
+          leadName={leadName}
+          onClose={() => setNoShow({ leadId, open: false })}
+          onSaved={handleOutcomeResolved}
+          onToast={toast}
+        />
+      )}
       {confirmAction && (
         <ConfirmDialog
           open

@@ -22,6 +22,41 @@
   }
 }
 
+@layer components {
+  .crm-workspace {
+    --crm-canvas: #f5f7fb;
+    --crm-surface: #fff;
+    --crm-border: #dbe2ec;
+    --crm-focus: #4f46e5;
+  }
+
+  .crm-workspace.dark {
+    --crm-canvas: #111827;
+    --crm-surface: #172033;
+    --crm-border: #334155;
+    --crm-focus: #a5b4fc;
+  }
+
+  .crm-canvas {
+    background: var(--crm-canvas);
+  }
+
+  .crm-page {
+    @apply mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8;
+  }
+
+  .crm-panel {
+    background: var(--crm-surface);
+    border: 1px solid var(--crm-border);
+    border-radius: 0.75rem;
+  }
+
+  .crm-workspace :focus-visible {
+    outline: 2px solid var(--crm-focus);
+    outline-offset: 2px;
+  }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }

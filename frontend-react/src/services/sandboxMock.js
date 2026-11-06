@@ -1,4 +1,4 @@
-// ── sandboxMock.js — Rich mock data and request handler for Alternate CRM Sandbox Mode ──
+// â”€â”€ sandboxMock.js â€” Rich mock data and request handler for Alternate CRM Sandbox Mode â”€â”€
 
 export const MOCK_LEADS = [
   {
@@ -16,7 +16,7 @@ export const MOCK_LEADS = [
     assigned_to_name: 'Alex Rivera',
     pod_id: 1,
     created_at: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-    last_activity: 'Call completed · 4m 12s',
+    last_activity: 'Call completed Â· 4m 12s',
     notes: 'Interested in consolidating SDR power dialing and AI cadences across their 45-person sales org.',
     tags: ['High Intent', 'Enterprise'],
     custom_fields: { arr: '$180,000', rep_count: '45' }
@@ -136,7 +136,7 @@ export const MOCK_LEADS = [
     assigned_to_name: 'Alex Rivera',
     pod_id: 1,
     created_at: new Date(Date.now() - 3600000 * 24 * 14).toISOString(),
-    last_activity: 'Contract signed · 1 Year Enterprise',
+    last_activity: 'Contract signed Â· 1 Year Enterprise',
     notes: 'Contract executed. Onboarding scheduled with CSM Elena.',
     tags: ['Enterprise', 'Won'],
     custom_fields: { arr: '$240,000', rep_count: '60' }
@@ -187,7 +187,6 @@ export const MOCK_STATS = {
 
 export function handleSandboxRequest(config) {
   const url = (config.url || '').replace(/^https?:\/\/[^/]+/, '').replace(/^\/api/, '');
-  const method = (config.method || 'GET').toUpperCase();
 
   // Dashboard Stats
   if (url.includes('/leads/dashboard-stats')) {
@@ -288,7 +287,7 @@ export function handleSandboxRequest(config) {
       status: 200,
       data: [
         { id: 1, action: 'status_change', details: 'Moved to Qualified', created_at: new Date().toISOString(), user_name: 'Alex Rivera' },
-        { id: 2, action: 'call_logged', details: 'Outbound Call · 4m 12s', created_at: new Date(Date.now() - 3600000).toISOString(), user_name: 'Sarah Chen' },
+        { id: 2, action: 'call_logged', details: 'Outbound Call Â· 4m 12s', created_at: new Date(Date.now() - 3600000).toISOString(), user_name: 'Sarah Chen' },
         { id: 3, action: 'meeting_booked', details: 'Demo Scheduled for Figma', created_at: new Date(Date.now() - 7200000).toISOString(), user_name: 'David Kim' }
       ]
     };
@@ -305,12 +304,8 @@ export function handleSandboxRequest(config) {
     };
   }
 
-  // Default fallback for any mutation or other GET in sandbox
   return {
-    status: 200,
-    data: {
-      success: true,
-      message: 'Sandbox operation simulated successfully'
-    }
+    status: 501,
+    data: { detail: 'This action is unavailable in the demo.' },
   };
 }

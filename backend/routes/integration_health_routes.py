@@ -4,10 +4,7 @@ Lightweight, auth-protected health endpoints for Alternate Messenger integration
 No secrets are exposed — only presence/validity status is returned.
 
 GET /api/dialer/health  — Check Alternate Messenger Contact Center (calling) config
-GET /api/chat/health    — Check Alternate Messenger Conversations (messaging) config
-
-Both endpoints perform live API pings so you get real connectivity status,
-not just "are credentials stored?" — useful for debugging staging vs prod.
+GET /api/chat/health    — Check whether messaging is available
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -104,7 +101,7 @@ def dialer_health(
         # 3. Live API ping (only if credentials exist)
         if api_key and user_id:
             try:
-                from messaging_provider import AlternateDialerProvider
+                from dialer_messaging_provider import AlternateDialerProvider
                 base_url = (
                     getattr(settings, "dialer_base_url", None)
                     or settings.messenger_base_url
@@ -167,102 +164,16 @@ def dialer_health(
 @router.get("/chat/health")
 def chat_health(
     user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
-    """
-    Diagnose the Alternate Messenger Conversations (messaging/SMS/WhatsApp) integration.
-    Checks: enabled flag → api_key → user_id → account_id → sender_id → live API ping.
-    Safe: no secrets in response. Requires auth (any role).
-    """
-    settings = db.query(models.SyncSettings).filter(models.SyncSettings.id == 1).first()
-    if not settings:
-        return {"status": "error", "message": "SyncSettings row missing — initialize default settings"}
-
-    checks = {}
-    overall_ok = True
-
-    # 1. Feature enabled
-    enabled = getattr(settings, "messenger_enabled", False)
-    checks["feature_enabled"] = _check(
-        enabled,
-        "Alternate Messenger messaging is enabled",
-        "Alternate Messenger messaging is disabled (Settings → Conversations → Enable toggle)",
-    )
-    if not enabled:
-        overall_ok = False
-
-    # 2. API Key
-    api_key = settings.messenger_api_key or ""
-    checks["api_key_present"] = _check(
-        bool(api_key),
-        f"API Key present ({_masked(api_key)})",
-        "API Key missing — set messenger_api_key in Settings → Conversations",
-    )
-    if not api_key:
-        overall_ok = False
-
-    # 3. User ID
-    user_id = settings.messenger_user_id or ""
-    checks["user_id_present"] = _check(
-        bool(user_id),
-        f"User ID present ({_masked(user_id)})",
-        "User ID missing — set messenger_user_id in Settings → Conversations",
-    )
-    if not user_id:
-        overall_ok = False
-
-    # 4. Account ID
-    account_id = getattr(settings, "messenger_account_id", None) or ""
-    checks["account_id_present"] = _check(
-        bool(account_id),
-        f"Account ID present ({_masked(account_id)})",
-        "Account ID missing — set messenger_account_id in Settings → Conversations",
-    )
-    if not account_id:
-        overall_ok = False
-
-    # 5. Sender ID (outbound number)
-    sender_id = getattr(settings, "messenger_sender_id", None) or ""
-    checks["sender_id_present"] = _check(
-        bool(sender_id),
-        f"Sender ID (outbound number) set to '{sender_id}'",
-        "Sender ID missing — outbound messages will fail. Set messenger_sender_id in Settings → Conversations",
-    )
-    if not sender_id:
-        overall_ok = False
-
-    # 6. Live API ping (only if all credentials are present)
-    if api_key and user_id and account_id:
-        try:
-            from conversations_service import AlternateMessenger
-            svc = AlternateMessenger(
-                api_key=api_key,
-                user_id=user_id,
-                account_id=account_id,
-            )
-            # Ping: fetch 1 conversation — lightest possible request
-            result = svc.get_conversations(count=1, index=0)
-            reachable = result is not None
-            checks["api_reachable"] = _check(
-                reachable,
-                "Conversations API reachable — credentials valid",
-                "Conversations API returned no response — check credentials",
-            )
-            if not reachable:
-                overall_ok = False
-        except Exception as e:
-            checks["api_reachable"] = {"ok": False, "message": f"API ping failed: {e}"}
-            overall_ok = False
-    else:
-        checks["api_reachable"] = {
-            "ok": False,
-            "message": "Skipped — one or more credentials missing (api_key, user_id, account_id)",
-        }
-        overall_ok = False
-
+    """Report whether a messaging provider is available."""
     return {
-        "status": "ok" if overall_ok else "degraded",
-        "checks": checks,
+        "status": "degraded",
+        "checks": {
+            "feature_enabled": {
+                "ok": False,
+                "message": "Connect a messaging provider to use SMS and WhatsApp.",
+            },
+        },
     }
 
 

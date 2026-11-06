@@ -79,10 +79,7 @@ class AlternateMessengerAuthManager:
 
     @classmethod
     def _sign(cls, api_key: str, user_id: str) -> dict:
-        """HMAC signing step shared by _hmac_authenticate (server-side JWT
-        fetch) and build_browser_auth_url (browser-facing redirect URL) —
-        both hit the same /api/v2/crm/authenticate endpoint, just from a
-        different caller."""
+        """Sign the provider authentication request."""
         now = datetime.now(timezone.utc)
         timestamp = now.strftime('%Y-%m-%dT%H:%M:%S.') + now.strftime('%f')[:3] + 'Z'
         message = f'userId={user_id}&timestamp={timestamp}&'
@@ -90,33 +87,6 @@ class AlternateMessengerAuthManager:
             hmac.new(api_key.encode(), message.encode(), hashlib.sha256).digest()
         ).decode()
         return {"userId": str(user_id), "apiKey": api_key, "timestamp": timestamp, "signature": signature}
-
-    @classmethod
-    def build_browser_auth_url(cls, base_url: str, api_key: str, user_id: str, redirect_url: str) -> str:
-        """
-        Builds the /api/v2/crm/authenticate URL for the BROWSER to load
-        directly (e.g. as an iframe src) — unlike get_token(), this makes no
-        HTTP call itself. Alternate Messenger's full web app (/app/#/...) reads its
-        session from the mAgIC_pAnDa cookie that this endpoint sets via
-        Set-Cookie, then honors `redirect_url` to send the browser on to the
-        real destination. get_token()'s server-side call reaches the same
-        endpoint but the Set-Cookie response lands on our backend's process,
-        never the end user's browser — fine for the simpler embeddable
-        widget (/fastapp/desk/#/inbox, reads session_id straight off the
-        URL — see lead_routes.py::get_messaging_config), not for the full
-        SPA, which is why it fell back to its own login form.
-        """
-        if not api_key or not user_id:
-            raise RuntimeError("Alternate Messenger API Key and User ID are required. Configure them in Settings.")
-        base_url = base_url.rstrip("/")
-        p = cls._sign(api_key, user_id)
-        query = urllib.parse.urlencode({
-            "crm": "audience_manager",
-            "userId": p["userId"], "apiKey": p["apiKey"],
-            "timestamp": p["timestamp"], "signature": p["signature"],
-            "redirect_url": redirect_url,
-        })
-        return f"{base_url}/api/v2/crm/authenticate?{query}"
 
     @classmethod
     def _hmac_authenticate(cls, base_url: str, api_key: str, user_id: str) -> Tuple[str, float]:

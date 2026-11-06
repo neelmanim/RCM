@@ -1521,29 +1521,6 @@ def _email_sync_job(batch_size: int = 50):
         return {"ran": False, "reason": str(e)}
 
 
-# v10.9.13: Alternate Messenger/Messaging Provider messaging (SMS + WhatsApp via the Converse
-# Desk API) has no inbound webhook at all — same gap email had before
-# _email_sync_job existed, same fix shape. A reply sent through the Widget's
-# Message tab or an automated Cadence WhatsApp step previously had no way to
-# reach our DB at all; this is that missing trigger.
-def _messaging_sync_job(count: int = 100):
-    """Periodic inbound-message sync: reuses messaging_sync.sync_recent_conversations
-    (account-wide conversation poll → per-thread inbound fetch → sms_logs) —
-    the actual sync logic is untouched and reused as-is."""
-    try:
-        from database import SessionLocal
-        from messaging_sync import sync_recent_conversations
-
-        db = SessionLocal()
-        try:
-            stats = sync_recent_conversations(db, count=count)
-            return {"ran": True, **stats}
-        finally:
-            db.close()
-    except Exception as e:
-        logger.error(f"[MessagingSync] error: {e}")
-        return {"ran": False, "reason": str(e)}
-
 
 def _should_run_aircall_sync_on_startup() -> bool:
     """
@@ -2028,12 +2005,6 @@ def _register_jobs():
     # _email_sync_job docstring). No enable/disable toggle: it's a no-op
     # already when Nylas isn't configured or no mailbox is connected.
     _schedule_recurring(_email_sync_job, 300, "email_sync")                        # 5 min
-
-    # v10.9.13: Messaging (SMS/WhatsApp) inbound sync — same shape as email
-    # sync above. No enable/disable toggle: no-ops already when Alternate Messenger
-    # isn't configured (messaging_service.get_messaging_provider_for_org
-    # returns None).
-    _schedule_recurring(_messaging_sync_job, 300, "messaging_sync")                # 5 min
 
     # EC-16: Stale call sweeper — heals zombie CALL_STARTED / CALL_ANSWERED records
     # that never received a CALL_ENDED webhook (browser closed mid-call, webhook drop).

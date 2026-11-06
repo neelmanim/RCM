@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { SandboxStore, PIPELINE_STAGES } from '../services/sandboxStore';
-import { useModules } from '../core/modules/ModuleContext';
-import { 
-  ArrowLeft, PhoneCall, Mail, Zap, ShieldCheck, 
-  Clock, Plus, CheckCircle2, MessageSquare, AlertCircle 
+import {
+  ArrowLeft, PhoneCall,
+  Clock, Plus, CheckCircle2, MessageSquare, AlertCircle
 } from 'lucide-react';
 
 export default function LeadDetailPage() {
   const { id } = useParams();
-  const { isInstalled } = useModules();
   const [lead, setLead] = useState(() => {
     const leads = SandboxStore.getLeads();
     return leads.find(l => l.id === Number(id)) || leads[0];
@@ -44,10 +42,10 @@ export default function LeadDetailPage() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 animate-fadeIn">
+    <div className="crm-page space-y-5">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-14 right-6 z-50 flex items-center gap-3 px-4 py-3 bg-slate-900 text-white border border-indigo-500/40 rounded-xl shadow-xl backdrop-blur-md">
+        <div role="status" className="fixed top-14 right-6 z-50 flex items-center gap-3 px-4 py-3 bg-slate-900 text-white border border-indigo-500/40 rounded-xl shadow-xl backdrop-blur-md">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           <span className="text-xs font-semibold">{toastMessage}</span>
         </div>
@@ -77,7 +75,7 @@ export default function LeadDetailPage() {
       {/* Split Pane */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Account Profile */}
-        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-5 h-fit">
+        <div className="crm-panel p-4 sm:p-6 space-y-5 h-fit">
           <div className="space-y-3 pb-5 border-b border-slate-100 dark:border-slate-800">
             <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
               Deal Pipeline Stage
@@ -96,10 +94,10 @@ export default function LeadDetailPage() {
           <div className="space-y-4 text-xs">
             <div>
               <span className="text-slate-400 block text-[11px]">Email Address</span>
-              <span className="font-semibold text-slate-900 dark:text-white font-mono">{lead.email}</span>
+              <span className="font-semibold text-slate-900 dark:text-white font-mono break-all">{lead.email}</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[11px]">Direct Phone (Voice/SMS)</span>
+              <span className="text-slate-400 block text-[11px]">Phone</span>
               <span className="font-semibold text-slate-900 dark:text-white font-mono">{lead.phone}</span>
             </div>
             <div>
@@ -131,9 +129,9 @@ export default function LeadDetailPage() {
           </div>
         </div>
 
-        {/* Right Column: Modular Pluggable Tabs */}
-        <div className="lg:col-span-2 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-6">
-          {/* Tab Navigation (Dynamically includes tabs for installed modules) */}
+        {/* Lead activity */}
+        <div className="lg:col-span-2 crm-panel p-4 sm:p-6 space-y-6">
+          {/* Activity tabs */}
           <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 overflow-x-auto">
             <button
               onClick={() => setActiveTab('notes')}
@@ -146,65 +144,17 @@ export default function LeadDetailPage() {
               Activity & Notes
             </button>
 
-            {/* Power Dialer Tab (Only if installed) */}
-            {isInstalled('power-dialer') && (
-              <button
-                onClick={() => setActiveTab('calls')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  activeTab === 'calls'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <PhoneCall className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Call Logs ({lead.call_logs?.length || 0})</span>
-              </button>
-            )}
-
-            {/* Cadences Tab (Only if installed) */}
-            {isInstalled('cadences') && (
-              <button
-                onClick={() => setActiveTab('cadence')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  activeTab === 'cadence'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-500" />
-                <span>Sales Cadence</span>
-              </button>
-            )}
-
-            {/* Email Hub Tab (Only if installed) */}
-            {isInstalled('email-hub') && (
-              <button
-                onClick={() => setActiveTab('email')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  activeTab === 'email'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Mail className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Email Thread</span>
-              </button>
-            )}
-
-            {/* CSM Tab (Only if installed) */}
-            {isInstalled('csm') && (
-              <button
-                onClick={() => setActiveTab('csm')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  activeTab === 'csm'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Health Score</span>
-              </button>
-            )}
+            <button
+              onClick={() => setActiveTab('calls')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'calls'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <PhoneCall className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Call Logs ({lead.call_logs?.length || 0})</span>
+            </button>
           </div>
 
           {/* Tab 1: Activity & Notes */}
@@ -212,11 +162,11 @@ export default function LeadDetailPage() {
             <div className="space-y-6">
               {/* Add Note Form */}
               <form onSubmit={handleAddNote} className="space-y-3">
-                <textarea
+                <textarea aria-label="Activity note"
                   rows={3}
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Log an executive update, deal requirement, or objection..."
+                  placeholder="What happened, and what should happen next?"
                   className="w-full p-3 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
                 <div className="flex justify-end">
@@ -225,7 +175,7 @@ export default function LeadDetailPage() {
                     className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-500 transition-all flex items-center gap-1.5"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Log Activity Note</span>
+                    <span>Save note</span>
                   </button>
                 </div>
               </form>
@@ -243,11 +193,11 @@ export default function LeadDetailPage() {
             </div>
           )}
 
-          {/* Tab 2: Call Logs (Power Dialer Module) */}
+          {/* Call logs */}
           {activeTab === 'calls' && (
             <div className="space-y-4">
               <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Call history recorded via AI Power Dialer module:
+                Sample and simulated calls for this lead.
               </div>
               {lead.call_logs && lead.call_logs.length > 0 ? (
                 <div className="space-y-3">
@@ -273,58 +223,6 @@ export default function LeadDetailPage() {
             </div>
           )}
 
-          {/* Tab 3: Cadence (Cadence Module) */}
-          {activeTab === 'cadence' && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-200 text-xs font-semibold">
-                Enrolled Sequence: {lead.cadence?.name || 'Tier 1 Enterprise Outbound'}
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800">
-                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-[10px]">✓</span>
-                  <div>
-                    <div className="font-bold text-slate-900 dark:text-white">Step 1: Introduction Email with Video Snippet</div>
-                    <div className="text-[11px] text-slate-400">Opened · 2 clicks on calendar link</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-800">
-                  <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">2</span>
-                  <div>
-                    <div className="font-bold text-slate-900 dark:text-white">Step 2: AI Power Dial Outbound Touch</div>
-                    <div className="text-[11px] text-indigo-400">Scheduled for today at 2:00 PM</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Tab 4: Email Hub */}
-          {activeTab === 'email' && (
-            <div className="space-y-3">
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
-                <div className="flex justify-between text-xs font-bold text-slate-900 dark:text-white">
-                  <span>Re: Alternate Conversation OS Evaluation</span>
-                  <span className="text-[11px] text-slate-400">Oct 23</span>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300">
-                  Hi Alex, the security team reviewed the SOC-2 documentation. We are ready to proceed with the technical architecture review this Thursday.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Tab 5: CSM Health */}
-          {activeTab === 'csm' && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Customer Health Score</div>
-                  <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{lead.health_score || 92} / 100</div>
-                </div>
-                <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">Low Churn Risk</span>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
