@@ -24,6 +24,11 @@
 html {
   scroll-behavior: smooth;
   color-scheme: dark;
+  scroll-padding-top: 84px;
+}
+
+#top, [id] {
+  scroll-margin-top: 84px;
 }
 
 body {
@@ -68,11 +73,10 @@ button {
 .nav-shell {
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: 100;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(6, 8, 12, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: #06080c;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.7);
 }
 
 .nav {
