@@ -503,15 +503,15 @@ h3 {
 .float-review {
   left: -5%;
   top: 196px;
-  width: 209px;
-  transform: rotate(-4deg);
+  width: 235px;
+  transform: rotate(-3deg);
 }
 
 .float-call {
   right: -5%;
   top: 108px;
-  width: 202px;
-  transform: rotate(4deg);
+  width: 215px;
+  transform: rotate(3deg);
 }
 
 .floating small {
