@@ -1,6 +1,20 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 
+const SANDBOX_URL =
+  process.env.NEXT_PUBLIC_SANDBOX_URL || "https://app.alternatecrm.com/sandbox";
+const SIGNIN_URL =
+  process.env.NEXT_PUBLIC_SIGNIN_URL || "https://app.alternatecrm.com/login.html";
+
 export default function Blog() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [year] = useState(() => new Date().getFullYear().toString());
+
+  const toggleMenu = () => setIsMenuOpen((prev) => !prev);
+  const closeMenu = () => setIsMenuOpen(false);
+
   const posts = [
     {
       title: "Why We Killed the Traditional CRM: Introducing Conversation OS",
@@ -29,128 +43,251 @@ export default function Blog() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#080b0d] text-[#f4f5f0] relative overflow-hidden font-sans selection:bg-[#d3fa76] selection:text-[#080b0d]">
-      {/* Background Ambient Glows */}
-      <div className="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-[#d3fa76]/10 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute top-[400px] right-[-100px] w-[500px] h-[500px] bg-[#4ade80]/5 rounded-full blur-[160px] pointer-events-none" />
-
-      {/* Navigation */}
-      <header className="relative z-10 border-b border-white/10 bg-[#080b0d]/80 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5 text-xl font-bold tracking-tight text-white hover:opacity-90 transition-opacity">
-            <span className="text-[#d3fa76] text-xl font-black">✳</span>
+    <div className="min-h-screen text-slate-100 relative overflow-hidden font-sans selection:bg-[#d3fa76] selection:text-[#06080c]">
+      {/* ── Frosted Navbar ────────────────────────────────────────── */}
+      <div className="nav-shell">
+        <header className="wrap nav">
+          <Link className="brand" href="/" aria-label="Alternate CRM home">
+            <span className="mark">✳</span>
             <span>
-              alternate<span className="text-[#8899a6] font-normal">crm</span>
+              alternate<span className="suffix">crm</span>
             </span>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-[#9ba9a5]">
-            <Link href="/#platform" className="hover:text-white transition-colors">The OS</Link>
-            <Link href="/#outcomes" className="hover:text-white transition-colors">Why AlternateCRM</Link>
-            <Link href="/#how" className="hover:text-white transition-colors">How it works</Link>
-            <Link href="/blog" className="text-white font-semibold">Blog</Link>
-            <Link href="/status" className="hover:text-white transition-colors">Status</Link>
+          <nav className="links" aria-label="Main Navigation">
+            <Link href="/#platform">The Platform</Link>
+            <Link href="/#outcomes">Why Alternate CRM</Link>
+            <Link href="/#how">Playbook</Link>
+            <Link href="/blog" className="text-white font-bold">Insights</Link>
+            <Link href="/status">System Status</Link>
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="right">
             <a
-              href="https://app.alternatecrm.com/sandbox"
+              href={SANDBOX_URL}
               target="_blank"
               rel="noreferrer"
-              className="px-4 py-2 rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-all flex items-center gap-1.5"
+              className="btn btn-secondary"
             >
-              Try Sandbox <span>⚡</span>
+              Open Live Demo <span>⚡</span>
             </a>
             <Link
               href="/#top"
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-[#d3fa76] text-[#080b0d] hover:bg-[#bfe660] transition-all shadow-[0_0_20px_rgba(211,250,118,0.25)]"
+              className="btn btn-primary"
             >
-              Get early access ↗
+              Get Early Access ↗
             </Link>
+            <button
+              className="mobile-toggle"
+              aria-label="Toggle navigation"
+              aria-expanded={isMenuOpen}
+              onClick={toggleMenu}
+            >
+              {isMenuOpen ? "✕" : "☰"}
+            </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Hero Header */}
-      <main className="relative z-10 max-w-6xl mx-auto px-6 pt-16 pb-24">
+        {/* Mobile Navigation Drawer */}
+        <nav
+          className={`mobile-links ${isMenuOpen ? "open" : ""}`}
+          aria-label="Mobile Navigation"
+        >
+          <Link href="/#platform" onClick={closeMenu}>The Platform</Link>
+          <Link href="/#outcomes" onClick={closeMenu}>Why Alternate CRM</Link>
+          <Link href="/#how" onClick={closeMenu}>Playbook</Link>
+          <Link href="/blog" onClick={closeMenu}>Insights</Link>
+          <Link href="/status" onClick={closeMenu}>System Status</Link>
+          <a href={SIGNIN_URL} target="_blank" rel="noreferrer" onClick={closeMenu}>
+            Sign In to App ↗
+          </a>
+          <a
+            href={SANDBOX_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-secondary"
+            style={{ width: "100%", marginTop: "12px", textAlign: "center" }}
+            onClick={closeMenu}
+          >
+            Open Live Demo ⚡
+          </a>
+          <Link
+            href="/#top"
+            className="btn btn-primary"
+            style={{ width: "100%", marginTop: "8px", textAlign: "center" }}
+            onClick={closeMenu}
+          >
+            Get Early Access ↗
+          </Link>
+        </nav>
+      </div>
+
+      {/* ── Main Content ─────────────────────────────────────────── */}
+      <main className="wrap py-16">
         <div className="text-center max-w-3xl mx-auto mb-16">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-[#d3fa76]/10 border border-[#d3fa76]/20 text-[#d3fa76] mb-6">
-            <span>Engineering & Product Insights</span>
+          <div className="hero-pill" style={{ marginBottom: "20px" }}>
+            <span className="live-pulse" />
+            <span>ENGINEERING & PRODUCT INSIGHTS</span>
           </div>
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight mb-6 leading-tight">
-            The Conversation OS <span className="text-[#d3fa76]">Chronicles</span>
+          <h1 style={{ fontSize: "clamp(36px, 5vw, 64px)", fontWeight: 900, letterSpacing: "-0.04em", margin: "0 0 20px" }}>
+            The Conversation OS <span className="gradient-text">Chronicles</span>
           </h1>
-          <p className="text-lg text-[#9ba9a5] leading-relaxed">
-            Architectural breakdowns, engineering retrospectives, and dogfooding lessons from building the high-velocity revenue platform for modern sales teams.
+          <p style={{ fontSize: "17px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            Architectural breakdowns, edge WebRTC telemetry, and lessons learned from building the autonomous revenue engine for modern sales teams.
           </p>
         </div>
 
-        {/* Featured Post Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {/* Featured Posts Bento Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
           {posts.map((post, i) => (
             <article
               key={i}
-              className="group relative rounded-3xl bg-[#111619] border border-white/10 p-7 hover:border-[#d3fa76]/40 transition-all duration-300 flex flex-col justify-between hover:shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
+              className="bento-card"
+              style={{ minHeight: "340px" }}
             >
               <div>
-                <div className="flex items-center justify-between mb-5">
-                  <span className="text-xs font-bold text-[#d3fa76] bg-[#d3fa76]/10 border border-[#d3fa76]/20 px-3 py-1 rounded-full">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="card-badge" style={{ margin: 0 }}>
                     {post.category}
                   </span>
-                  <div className="flex items-center gap-2 text-xs text-[#7a8a84]">
+                  <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
                     <span>{post.date}</span>
                     <span>•</span>
                     <span>{post.readTime}</span>
                   </div>
                 </div>
 
-                <h2 className="text-xl font-bold mb-3 text-white group-hover:text-[#d3fa76] transition-colors leading-snug">
+                <h2 style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "-0.02em", color: "#fff", marginBottom: "12px", lineHeight: 1.3 }}>
                   {post.title}
                 </h2>
 
-                <p className="text-sm text-[#9ba9a5] leading-relaxed mb-6">
+                <p style={{ fontSize: "14px", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
                   {post.excerpt}
                 </p>
               </div>
 
-              <div className="pt-4 border-t border-white/5 flex items-center justify-between text-xs font-semibold text-[#d3fa76]">
-                <span className="text-[#7a8a84] font-normal">{post.tag}</span>
-                <span className="group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
-                  Read Analysis &rarr;
+              <div className="pt-4 border-t border-white/5 flex items-center justify-between text-xs font-bold text-lime-400 mt-6">
+                <span className="text-slate-500 font-normal">{post.tag}</span>
+                <span className="hover:underline flex items-center gap-1">
+                  Read Technical Breakdown →
                 </span>
               </div>
             </article>
           ))}
         </div>
 
-        {/* Dogfooding Inbound CTA Box */}
-        <div className="mt-20 p-10 rounded-3xl bg-gradient-to-br from-[#111619] to-[#151c20] border border-white/10 text-center relative overflow-hidden">
-          <div className="relative z-10 max-w-xl mx-auto">
-            <h3 className="text-2xl sm:text-3xl font-extrabold mb-3 text-white">
-              Experience Conversation OS in action
-            </h3>
-            <p className="text-sm text-[#9ba9a5] mb-6">
-              Join leading B2B revenue organizations scaling pipeline velocity without tool sprawl.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <a
-                href="https://app.alternatecrm.com/sandbox"
-                target="_blank"
-                rel="noreferrer"
-                className="w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-semibold bg-white/5 border border-white/15 text-white hover:bg-white/10 transition-all text-center"
-              >
-                Launch Live Sandbox ⚡
-              </a>
-              <Link
-                href="/#top"
-                className="w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-bold bg-[#d3fa76] text-[#080b0d] hover:bg-[#bfe660] transition-all text-center shadow-[0_0_25px_rgba(211,250,118,0.3)]"
-              >
-                Get Priority Access ↗
-              </Link>
-            </div>
+        {/* Live Sandbox Callout Banner */}
+        <div className="cta-banner">
+          <h2>Experience Conversation OS in action</h2>
+          <p>
+            Browse sample leads, move deals through the pipeline, or simulate an AI call with live Whisper intelligence.
+          </p>
+          <div className="flex justify-center gap-4 flex-wrap">
+            <a
+              href={SANDBOX_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-secondary"
+              style={{ padding: "14px 28px", fontSize: "15px" }}
+            >
+              Launch Live Sandbox ⚡
+            </a>
+            <Link
+              href="/#top"
+              className="btn btn-primary"
+              style={{ padding: "14px 28px", fontSize: "15px" }}
+            >
+              Get Priority Access ↗
+            </Link>
           </div>
         </div>
       </main>
+
+      {/* ── Modern SaaS Multi-Column Footer ──────────────────────── */}
+      <footer className="site-footer">
+        <div className="wrap">
+          <div className="footer-grid">
+            <div className="footer-brand">
+              <Link className="brand" href="/">
+                <span className="mark">✳</span>
+                <span>
+                  alternate<span className="suffix">crm</span>
+                </span>
+              </Link>
+              <p>
+                The Autonomous Conversation Operating System for modern sales teams. Unify telephony,
+                live speech intelligence, and automated cadences in one connected platform.
+              </p>
+              <a
+                href={SANDBOX_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-secondary"
+                style={{ padding: "8px 14px", fontSize: "12px" }}
+              >
+                ⚡ Open Live Demo
+              </a>
+            </div>
+
+            <div className="footer-col">
+              <h4>Platform</h4>
+              <ul>
+                <li><Link href="/#platform">The OS Architecture</Link></li>
+                <li><Link href="/#platform">WebRTC Power Dialer</Link></li>
+                <li><Link href="/#platform">Live Speech-to-Intent</Link></li>
+                <li><Link href="/#platform">Multi-Touch Cadences</Link></li>
+                <li><a href={SANDBOX_URL} target="_blank" rel="noreferrer">Interactive Demo</a></li>
+              </ul>
+            </div>
+
+            <div className="footer-col">
+              <h4>Resources</h4>
+              <ul>
+                <li><Link href="/blog">Engineering Blog</Link></li>
+                <li><Link href="/status">System Status</Link></li>
+                <li><Link href="/#outcomes">CRM Comparison</Link></li>
+                <li><a href="mailto:support@alternatecrm.com">Support Center</a></li>
+              </ul>
+            </div>
+
+            <div className="footer-col">
+              <h4>Company</h4>
+              <ul>
+                <li><Link href="/#outcomes">Why Alternate CRM</Link></li>
+                <li><Link href="/#how">Revenue Playbook</Link></li>
+                <li><a href="mailto:hello@alternatecrm.com">Contact Sales</a></li>
+                <li><a href="mailto:partners@alternatecrm.com">Partners</a></li>
+              </ul>
+            </div>
+
+            <div className="footer-col">
+              <h4>Access</h4>
+              <ul>
+                <li>
+                  <a href={SIGNIN_URL} target="_blank" rel="noreferrer" style={{ color: "var(--lime)", fontWeight: 700 }}>
+                    Sign In to App ↗
+                  </a>
+                </li>
+                <li><Link href="/#top">Request VIP Access</Link></li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="footer-bottom">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span>© {year} Alternate CRM Inc.</span>
+              <Link href="/status" className="version-pill" title="Operational Telemetry">
+                <span className="live-pulse" style={{ width: "6px", height: "6px" }} />
+                <span>v14.4.0 • Systems Operational</span>
+              </Link>
+            </div>
+            <div className="flex items-center gap-6">
+              <Link href="/status">Status</Link>
+              <a href="mailto:security@alternatecrm.com">Security</a>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

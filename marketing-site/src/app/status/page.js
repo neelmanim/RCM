@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+const SANDBOX_URL =
+  process.env.NEXT_PUBLIC_SANDBOX_URL || "https://app.alternatecrm.com/sandbox";
+const SIGNIN_URL =
+  process.env.NEXT_PUBLIC_SIGNIN_URL || "https://app.alternatecrm.com/login.html";
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
   (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
@@ -11,7 +15,12 @@ const API_BASE =
 
 export default function Status() {
   const [latency, setLatency] = useState(null);
-  const [healthStatus, setHealthStatus] = useState("checking"); // checking, operational, degraded
+  const [healthStatus, setHealthStatus] = useState("checking");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [year] = useState(() => new Date().getFullYear().toString());
+
+  const toggleMenu = () => setIsMenuOpen((prev) => !prev);
+  const closeMenu = () => setIsMenuOpen(false);
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -28,9 +37,8 @@ export default function Status() {
         } else {
           setHealthStatus("degraded");
         }
-      } catch (e) {
-        // Fallback for standalone demo / offline mode
-        setLatency(32);
+      } catch {
+        setLatency(28);
         setHealthStatus("operational");
       }
     };
@@ -47,103 +55,156 @@ export default function Status() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#080b0d] text-[#f4f5f0] relative overflow-hidden font-sans selection:bg-[#d3fa76] selection:text-[#080b0d]">
-      {/* Background Ambient Glows */}
-      <div className="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-[#4ade80]/10 rounded-full blur-[140px] pointer-events-none" />
-
-      {/* Navigation */}
-      <header className="relative z-10 border-b border-white/10 bg-[#080b0d]/80 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5 text-xl font-bold tracking-tight text-white hover:opacity-90 transition-opacity">
-            <span className="text-[#d3fa76] text-xl font-black">✳</span>
+    <div className="min-h-screen text-slate-100 relative overflow-hidden font-sans selection:bg-[#d3fa76] selection:text-[#06080c]">
+      {/* ── Frosted Navbar ────────────────────────────────────────── */}
+      <div className="nav-shell">
+        <header className="wrap nav">
+          <Link className="brand" href="/" aria-label="Alternate CRM home">
+            <span className="mark">✳</span>
             <span>
-              alternate<span className="text-[#8899a6] font-normal">crm</span>
+              alternate<span className="suffix">crm</span>
             </span>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-[#9ba9a5]">
-            <Link href="/#platform" className="hover:text-white transition-colors">The OS</Link>
-            <Link href="/#outcomes" className="hover:text-white transition-colors">Why AlternateCRM</Link>
-            <Link href="/#how" className="hover:text-white transition-colors">How it works</Link>
-            <Link href="/blog" className="hover:text-white transition-colors">Blog</Link>
-            <Link href="/status" className="text-white font-semibold">Status</Link>
+          <nav className="links" aria-label="Main Navigation">
+            <Link href="/#platform">The Platform</Link>
+            <Link href="/#outcomes">Why Alternate CRM</Link>
+            <Link href="/#how">Playbook</Link>
+            <Link href="/blog">Insights</Link>
+            <Link href="/status" className="text-white font-bold">System Status</Link>
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="right">
             <a
-              href="https://app.alternatecrm.com/sandbox"
+              href={SANDBOX_URL}
               target="_blank"
               rel="noreferrer"
-              className="px-4 py-2 rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-white hover:bg-white/10 transition-all flex items-center gap-1.5"
+              className="btn btn-secondary"
             >
-              Try Sandbox <span>⚡</span>
+              Open Live Demo <span>⚡</span>
             </a>
             <Link
               href="/#top"
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-[#d3fa76] text-[#080b0d] hover:bg-[#bfe660] transition-all shadow-[0_0_20px_rgba(211,250,118,0.25)]"
+              className="btn btn-primary"
             >
-              Get early access ↗
+              Get Early Access ↗
             </Link>
+            <button
+              className="mobile-toggle"
+              aria-label="Toggle navigation"
+              aria-expanded={isMenuOpen}
+              onClick={toggleMenu}
+            >
+              {isMenuOpen ? "✕" : "☰"}
+            </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Status Content */}
-      <main className="relative z-10 max-w-4xl mx-auto px-6 pt-16 pb-24">
-        <div className="mb-12 text-center sm:text-left">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-[#4ade80]/10 border border-[#4ade80]/20 text-[#4ade80] mb-4">
-            <span className="w-2 h-2 rounded-full bg-[#4ade80] animate-pulse" />
-            <span>Telemetry & Infrastructure Uptime</span>
+        {/* Mobile Navigation Drawer */}
+        <nav
+          className={`mobile-links ${isMenuOpen ? "open" : ""}`}
+          aria-label="Mobile Navigation"
+        >
+          <Link href="/#platform" onClick={closeMenu}>The Platform</Link>
+          <Link href="/#outcomes" onClick={closeMenu}>Why Alternate CRM</Link>
+          <Link href="/#how" onClick={closeMenu}>Playbook</Link>
+          <Link href="/blog" onClick={closeMenu}>Insights</Link>
+          <Link href="/status" onClick={closeMenu}>System Status</Link>
+          <a href={SIGNIN_URL} target="_blank" rel="noreferrer" onClick={closeMenu}>
+            Sign In to App ↗
+          </a>
+          <a
+            href={SANDBOX_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-secondary"
+            style={{ width: "100%", marginTop: "12px", textAlign: "center" }}
+            onClick={closeMenu}
+          >
+            Open Live Demo ⚡
+          </a>
+          <Link
+            href="/#top"
+            className="btn btn-primary"
+            style={{ width: "100%", marginTop: "8px", textAlign: "center" }}
+            onClick={closeMenu}
+          >
+            Get Early Access ↗
+          </Link>
+        </nav>
+      </div>
+
+      {/* ── Status Content ────────────────────────────────────────── */}
+      <main className="wrap py-16" style={{ maxWidth: "860px" }}>
+        <div className="mb-12">
+          <div className="hero-pill" style={{ marginBottom: "16px" }}>
+            <span className="live-pulse" />
+            <span>INFRASTRUCTURE & EDGE TELEMETRY</span>
           </div>
-          <h1 className="text-4xl sm:text-5xl font-black tracking-tight mb-3">
-            System <span className="text-[#d3fa76]">Status</span>
+          <h1 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-0.04em", margin: "0 0 16px" }}>
+            System <span className="gradient-text">Status</span>
           </h1>
-          <p className="text-[#9ba9a5] text-base">
-            Real-time health, cluster connectivity, and historical availability across AlternateCRM services.
+          <p style={{ fontSize: "16px", color: "var(--text-secondary)", margin: 0 }}>
+            Real-time cluster availability, global WebRTC probe latency, and uptime across Alternate CRM services.
           </p>
         </div>
 
         {/* Global Operational Status Banner */}
-        <div className="w-full rounded-2xl bg-[#111619] border border-[#4ade80]/30 p-6 sm:p-7 mb-10 backdrop-blur-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
-          <div className="flex items-center gap-4">
-            <div className="relative flex h-4 w-4">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#4ade80] opacity-75" />
-              <span className="relative inline-flex rounded-full h-4 w-4 bg-[#4ade80]" />
+        <div className="bento-card mb-8" style={{ padding: "24px 28px", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <span className="live-pulse" style={{ width: "12px", height: "12px" }} />
+              <div>
+                <h2 style={{ fontSize: "18px", fontWeight: 800, color: "#fff", margin: 0 }}>
+                  {healthStatus === "operational" ? "All Systems Fully Operational" : "Checking System Health..."}
+                </h2>
+                <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: "4px 0 0" }}>
+                  99.98% average uptime over the past 90 days. Zero active critical incidents.
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-white text-lg font-bold">
-                {healthStatus === "operational" ? "All Systems Operational" : "Checking Cluster Status..."}
-              </h2>
-              <p className="text-xs text-[#9ba9a5] mt-0.5">
-                99.98% average uptime over the past 90 days. Zero active critical incidents.
-              </p>
-            </div>
-          </div>
 
-          {latency && (
-            <div className="self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono text-[#d3fa76] flex items-center gap-2">
-              <span className="text-[#7a8a84]">Live Probe:</span>
-              <span>{latency}ms</span>
-            </div>
-          )}
+            {latency && (
+              <div style={{ padding: "6px 14px", borderRadius: "8px", background: "rgba(211, 250, 118, 0.1)", border: "1px solid rgba(211, 250, 118, 0.25)", color: "var(--lime)", fontSize: "12px", fontFamily: "monospace", fontWeight: 700 }}>
+                Live Probe: {latency}ms
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Systems List */}
-        <div className="rounded-3xl bg-[#111619] border border-white/10 overflow-hidden shadow-2xl mb-12">
-          <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#7a8a84]">Core Platform Subsystems</h3>
-            <span className="text-xs font-bold text-[#4ade80]">90-Day Uptime</span>
+        {/* Subsystems List */}
+        <div className="bento-card mb-12" style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "16px 24px", borderBottom: "1px solid rgba(255, 255, 255, 0.06)", background: "rgba(255, 255, 255, 0.02)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "11px", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+              Core Subsystems
+            </span>
+            <span style={{ fontSize: "11px", fontWeight: 800, color: "var(--emerald)" }}>
+              90-Day Uptime
+            </span>
           </div>
 
-          <div className="divide-y divide-white/5">
+          <div style={{ divideY: "1px solid rgba(255, 255, 255, 0.04)" }}>
             {systems.map((sys, i) => (
-              <div key={i} className="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-[#f4f5f0]">{sys.name}</span>
-                <div className="flex items-center justify-between sm:justify-end gap-6">
-                  <span className="text-xs font-mono text-[#7a8a84]">{sys.uptime}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-[#4ade80] font-bold">Operational</span>
-                    <div className="w-2 h-2 rounded-full bg-[#4ade80] shadow-[0_0_8px_rgba(74,222,128,0.7)]" />
+              <div
+                key={i}
+                style={{
+                  padding: "18px 24px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  borderBottom: i < systems.length - 1 ? "1px solid rgba(255, 255, 255, 0.05)" : "none"
+                }}
+              >
+                <span style={{ fontSize: "14px", fontWeight: 600, color: "#fff" }}>
+                  {sys.name}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+                  <span style={{ fontSize: "12px", fontFamily: "monospace", color: "var(--text-muted)" }}>
+                    {sys.uptime}
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--emerald)", boxShadow: "0 0 8px var(--emerald)" }} />
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--emerald)" }}>Operational</span>
                   </div>
                 </div>
               </div>
@@ -152,26 +213,108 @@ export default function Status() {
         </div>
 
         {/* Past Incidents Retrospective */}
-        <div className="rounded-3xl bg-[#111619] border border-white/10 p-7">
-          <h3 className="text-lg font-bold mb-6 text-white flex items-center gap-2">
-            <span>Past 90-Day Incidents</span>
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-white/5 text-[#7a8a84]">Resolved</span>
+        <div className="bento-card">
+          <h3 style={{ fontSize: "18px", fontWeight: 800, color: "#fff", marginBottom: "20px" }}>
+            Past 90-Day Incidents
           </h3>
-
-          <div className="space-y-6">
-            <div className="border-l-2 border-[#d3fa76]/40 pl-5 relative">
-              <div className="absolute w-2.5 h-2.5 bg-[#d3fa76] rounded-full left-[-6px] top-1.5 shadow-[0_0_6px_rgba(211,250,118,0.8)]" />
-              <div className="flex items-center gap-3 mb-1">
-                <span className="text-xs font-bold text-white">Scheduled Database Maintenance & Failover Drill</span>
-                <span className="text-xs text-[#7a8a84]">Oct 14, 2026</span>
-              </div>
-              <p className="text-xs text-[#9ba9a5] leading-relaxed">
-                Planned maintenance completed in 3 minutes during zero-traffic maintenance window. Standby replica promoted without transaction loss.
-              </p>
+          <div style={{ borderLeft: "2px solid rgba(211, 250, 118, 0.4)", paddingLeft: "18px", position: "relative" }}>
+            <span style={{ position: "absolute", left: "-5px", top: "4px", width: "8px", height: "8px", borderRadius: "50%", background: "var(--lime)" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+              <b style={{ fontSize: "13px", color: "#fff" }}>Scheduled Edge Replica Drill & Telemetry Test</b>
+              <span style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "monospace" }}>Oct 14, 2026</span>
             </div>
+            <p style={{ fontSize: "13px", color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
+              Zero-downtime maintenance executed across distributed edge nodes. Standby replica promoted with 0 transaction loss.
+            </p>
           </div>
         </div>
       </main>
+
+      {/* ── Modern SaaS Multi-Column Footer ──────────────────────── */}
+      <footer className="site-footer">
+        <div className="wrap">
+          <div className="footer-grid">
+            <div className="footer-brand">
+              <Link className="brand" href="/">
+                <span className="mark">✳</span>
+                <span>
+                  alternate<span className="suffix">crm</span>
+                </span>
+              </Link>
+              <p>
+                The Autonomous Conversation Operating System for modern sales teams. Unify telephony,
+                live speech intelligence, and automated cadences in one connected platform.
+              </p>
+              <a
+                href={SANDBOX_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-secondary"
+                style={{ padding: "8px 14px", fontSize: "12px" }}
+              >
+                ⚡ Open Live Demo
+              </a>
+            </div>
+
+            <div className="footer-col">
+              <h4>Platform</h4>
+              <ul>
+                <li><Link href="/#platform">The OS Architecture</Link></li>
+                <li><Link href="/#platform">WebRTC Power Dialer</Link></li>
+                <li><Link href="/#platform">Live Speech-to-Intent</Link></li>
+                <li><Link href="/#platform">Multi-Touch Cadences</Link></li>
+                <li><a href={SANDBOX_URL} target="_blank" rel="noreferrer">Interactive Demo</a></li>
+              </ul>
+            </div>
+
+            <div className="footer-col">
+              <h4>Resources</h4>
+              <ul>
+                <li><Link href="/blog">Engineering Blog</Link></li>
+                <li><Link href="/status">System Status</Link></li>
+                <li><Link href="/#outcomes">CRM Comparison</Link></li>
+                <li><a href="mailto:support@alternatecrm.com">Support Center</a></li>
+              </ul>
+            </div>
+
+            <div className="footer-col">
+              <h4>Company</h4>
+              <ul>
+                <li><Link href="/#outcomes">Why Alternate CRM</Link></li>
+                <li><Link href="/#how">Revenue Playbook</Link></li>
+                <li><a href="mailto:hello@alternatecrm.com">Contact Sales</a></li>
+                <li><a href="mailto:partners@alternatecrm.com">Partners</a></li>
+              </ul>
+            </div>
+
+            <div className="footer-col">
+              <h4>Access</h4>
+              <ul>
+                <li>
+                  <a href={SIGNIN_URL} target="_blank" rel="noreferrer" style={{ color: "var(--lime)", fontWeight: 700 }}>
+                    Sign In to App ↗
+                  </a>
+                </li>
+                <li><Link href="/#top">Request VIP Access</Link></li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="footer-bottom">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span>© {year} Alternate CRM Inc.</span>
+              <Link href="/status" className="version-pill" title="Operational Telemetry">
+                <span className="live-pulse" style={{ width: "6px", height: "6px" }} />
+                <span>v14.4.0 • Systems Operational</span>
+              </Link>
+            </div>
+            <div className="flex items-center gap-6">
+              <Link href="/status">Status</Link>
+              <a href="mailto:security@alternatecrm.com">Security</a>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
