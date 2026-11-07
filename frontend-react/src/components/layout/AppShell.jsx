@@ -6,12 +6,18 @@ import AppSidebar from './AppSidebar';
 export default function AppShell() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
-    const saved = sessionStorage.getItem('crm_sandbox_dark_mode');
-    return saved !== null ? saved === 'true' : true;
+    try {
+      const saved = sessionStorage.getItem('crm_sandbox_dark_mode');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
   });
 
   useEffect(() => {
-    sessionStorage.setItem('crm_sandbox_dark_mode', darkMode);
+    try {
+      sessionStorage.setItem('crm_sandbox_dark_mode', darkMode);
+    } catch {}
     if (darkMode) {
       document.documentElement.classList.add('dark');
     } else {

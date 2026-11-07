@@ -47,6 +47,20 @@ export default function AccessRequest() {
     if (submitting) return;
     const form = event.currentTarget;
     const values = Object.fromEntries(new FormData(form));
+
+    // Capture non-sensitive attribution parameters (LI01)
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      values.utm_source = searchParams.get("utm_source") || "";
+      values.utm_medium = searchParams.get("utm_medium") || "";
+      values.utm_campaign = searchParams.get("utm_campaign") || "";
+      values.utm_term = searchParams.get("utm_term") || "";
+      values.utm_content = searchParams.get("utm_content") || "";
+      values.referrer = typeof document !== "undefined" ? (document.referrer || "").slice(0, 500) : "";
+      values.landing_page = typeof window !== "undefined" ? window.location.pathname : "/";
+      values.form_intent = "early_access_request";
+    } catch {}
+
     setError(""); setSubmitting(true);
     try {
       const response = await fetch("/api/early-access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values), signal: AbortSignal.timeout(12000) });

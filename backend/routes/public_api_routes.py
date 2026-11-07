@@ -378,6 +378,14 @@ class InboundLeadPayload(BaseModel):
     notes: Optional[str] = ""
     source: Optional[str] = "Website - Early Access Request"
     website_hp: Optional[str] = ""  # Honeypot field for bot spam trapping
+    utm_source: Optional[str] = ""
+    utm_medium: Optional[str] = ""
+    utm_campaign: Optional[str] = ""
+    utm_term: Optional[str] = ""
+    utm_content: Optional[str] = ""
+    referrer: Optional[str] = ""
+    landing_page: Optional[str] = ""
+    form_intent: Optional[str] = "early_access_request"
 
 
 @router.post("/leads/inbound", dependencies=[Depends(public_endpoint)])
@@ -387,13 +395,12 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
     Ingests visitor early-access requests directly into AlternateCRM's database
     for real dogfooding (Pipeline, Dialer queue, Cadences, and Dashboard activity).
     """
-    # 1. Anti-bot honeypot check: Bots fill hidden website_hp field
+    # 1. Anti-bot honeypot check: Bots fill hidden website_hp field (LI05: return neutral confirmation)
     if payload.website_hp and payload.website_hp.strip():
         logger.info(f"[InboundLead] Bot submission caught by honeypot: {payload.email}")
         return {
             "success": True,
-            "lead_id": "bot_filtered",
-            "status": "created",
+            "status": "received",
             "message": "Thank you! Your early access request has been recorded."
         }
 
@@ -446,6 +453,35 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
     interest = _sanitize_inbound_text(payload.primary_interest, 100)
     user_notes = _sanitize_inbound_text(payload.notes, 2000)
 
+    # Sanitize attribution fields (LI01)
+    utm_source = _sanitize_inbound_text(payload.utm_source, 100)
+    utm_medium = _sanitize_inbound_text(payload.utm_medium, 100)
+    utm_campaign = _sanitize_inbound_text(payload.utm_campaign, 150)
+    utm_term = _sanitize_inbound_text(payload.utm_term, 100)
+    utm_content = _sanitize_inbound_text(payload.utm_content, 100)
+    referrer = _sanitize_inbound_text(payload.referrer, 500)
+    landing_page = _sanitize_inbound_text(payload.landing_page, 500) or "/"
+    form_intent = _sanitize_inbound_text(payload.form_intent, 100) or "early_access_request"
+
+    attr_parts = []
+    if utm_source:
+        attr_parts.append(f"Source: {utm_source}")
+    if utm_medium:
+        attr_parts.append(f"Medium: {utm_medium}")
+    if utm_campaign:
+        attr_parts.append(f"Campaign: {utm_campaign}")
+    if utm_term:
+        attr_parts.append(f"Term: {utm_term}")
+    if utm_content:
+        attr_parts.append(f"Content: {utm_content}")
+    if referrer:
+        attr_parts.append(f"Referrer: {referrer}")
+    if landing_page:
+        attr_parts.append(f"Landing: {landing_page}")
+    attribution_summary = ", ".join(attr_parts) if attr_parts else "Direct / Organic"
+
+    inbound_source_label = f"Website ({utm_source})" if utm_source else "Website - Early Access Request"
+
     try:
         import ownership_history as oh
         # Find active Admin for assignment
@@ -457,6 +493,21 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
         # 4. Deduplication & Re-engagement handling
         existing = db.query(models.Lead).filter(models.Lead.email == clean_email).first()
         if existing:
+            # LI02: Idempotent deduplication check for rapid repeat submissions (e.g. double clicks within 5 minutes)
+            recent_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+            recent_note = db.query(models.Note).filter(
+                models.Note.lead_id == existing.id,
+                models.Note.created_at >= recent_cutoff,
+                models.Note.author == "Website (Inbound)"
+            ).first()
+            if recent_note and (not user_notes or user_notes in (recent_note.content or "")):
+                logger.info(f"[InboundLead] Idempotent duplicate submission ignored for: {clean_email}")
+                return {
+                    "success": True,
+                    "status": "received",
+                    "message": "Thank you! Your early access request has been recorded."
+                }
+
             # Backfill any missing contact details
             if (not existing.company or existing.company == "Unknown") and company != "Unknown":
                 existing.company = company
@@ -479,19 +530,12 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
             if not existing.assigned_users and admin_user:
                 models.assign_lead(admin_user, existing, reason=oh.R_LEAD_CREATE, actor_id="public-inbound")
 
-            # If existing lead was in a terminal state (e.g. Disqualified / Won), re-open
-            reopened = False
-            if existing.status in models.TERMINAL_STATUSES:
-                old_status = existing.status
-                existing.status = "Lead Assigned"
-                existing.lead_closed_at = None
-                existing.closed_reason = None
-                models.log_status_change(db, existing.id, old_status, "Lead Assigned", "Website Inbound Re-Engagement")
-                reopened = True
-
-            # Bump priority score to high intent
-            existing.priority_score = 100
-            existing.lead_started_at = datetime.now(timezone.utc)
+            # LI03: If existing lead is in a terminal state (e.g. Disqualified / Completed / Won),
+            # DO NOT alter the closed status or wipe closed metadata. Preserve deal state for sales review.
+            is_terminal = existing.status in models.TERMINAL_STATUSES
+            if not is_terminal:
+                existing.priority_score = 100
+                existing.lead_started_at = datetime.now(timezone.utc)
 
             # Record detailed re-engagement note
             reengage_text = (
@@ -499,8 +543,9 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
                 f"• Re-Engagement: Inbound early access request received from marketing site\n"
                 f"• Team Size: {team_size or 'Not specified'}\n"
                 f"• Primary Interest: {interest or 'General Conversation OS'}\n"
-                f"• Notes: {user_notes or 'None'}"
-                + ("\n• Status Update: Lead re-opened from previous terminal state" if reopened else "")
+                f"• Notes: {user_notes or 'None'}\n"
+                f"• Attribution: {attribution_summary}"
+                + (f"\n• Status Note: Lead is currently in terminal state '{existing.status}'. Lifecycle state preserved for sales review." if is_terminal else "")
             )
             db.add(models.Note(lead_id=existing.id, content=reengage_text, author="Website (Inbound)"))
             db.commit()
@@ -513,11 +558,24 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
             except Exception:
                 pass
 
+            # Dispatch owner alert in background (LI07)
+            try:
+                import threading
+                from access_notifications import notify_new_inbound_lead_in_background
+                threading.Thread(
+                    target=notify_new_inbound_lead_in_background,
+                    args=(existing.id,),
+                    kwargs={"is_repeat": True, "attribution": {"source": inbound_source_label, "attribution": attribution_summary}},
+                    daemon=True
+                ).start()
+            except Exception as e:
+                logger.warning(f"[InboundLead] Could not spawn notification thread: {e}")
+
+            # LI05: Return neutral response without internal ID leakage
             return {
                 "success": True,
-                "lead_id": existing.id,
-                "status": "existing_updated",
-                "message": "Thank you! We have updated your priority early access request."
+                "status": "received",
+                "message": "Thank you! Your early access request has been recorded."
             }
 
         # 5. Create Brand-New Lead in AlternateCRM Database
@@ -531,10 +589,10 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
             phone=phone,
             company=company,
             status="Lead Assigned",
-            lead_source="Website - Early Access Request",
+            lead_source=inbound_source_label,
             lead_started_at=datetime.now(timezone.utc),
             priority_score=100,
-            talking_points=f"Inbound early access request. Primary interest: {interest or 'General OS'}. Team size: {team_size or 'Not specified'}.",
+            talking_points=f"Inbound early access request. Primary interest: {interest or 'General OS'}. Team size: {team_size or 'Not specified'}. Source: {attribution_summary}.",
         )
         db.add(new_lead)
         db.flush()
@@ -563,7 +621,8 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
             f"• Company: {company}\n"
             f"• Team Size: {team_size or 'Not specified'}\n"
             f"• Primary Interest: {interest or 'General Conversation OS'}\n"
-            f"• Notes: {user_notes or 'None'}"
+            f"• Notes: {user_notes or 'None'}\n"
+            f"• Attribution: {attribution_summary}"
         )
         db.add(models.Note(lead_id=new_lead.id, content=note_content, author="Website (Inbound)"))
 
@@ -580,9 +639,14 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
                 metadata={
                     "company": company,
                     "email": clean_email,
-                    "source": "website_early_access",
+                    "source": inbound_source_label,
                     "team_size": team_size,
-                    "primary_interest": interest
+                    "primary_interest": interest,
+                    "utm_source": utm_source,
+                    "utm_medium": utm_medium,
+                    "utm_campaign": utm_campaign,
+                    "referrer": referrer,
+                    "landing_page": landing_page,
                 }
             )
         except Exception as e:
@@ -602,10 +666,23 @@ def create_inbound_lead(payload: InboundLeadPayload, db: Session = Depends(get_d
         except Exception:
             pass
 
+        # Dispatch owner alert in background (LI07)
+        try:
+            import threading
+            from access_notifications import notify_new_inbound_lead_in_background
+            threading.Thread(
+                target=notify_new_inbound_lead_in_background,
+                args=(new_lead.id,),
+                kwargs={"is_repeat": False, "attribution": {"source": inbound_source_label, "attribution": attribution_summary}},
+                daemon=True
+            ).start()
+        except Exception as e:
+            logger.warning(f"[InboundLead] Could not spawn notification thread: {e}")
+
+        # LI05: Return neutral response without internal ID leakage
         return {
             "success": True,
-            "lead_id": new_lead.id,
-            "status": "created",
+            "status": "received",
             "message": "Thank you! Your early access request has been recorded."
         }
     except HTTPException:

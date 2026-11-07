@@ -177,3 +177,98 @@ def notify_account_assigned_in_background(admin_user_id, csm_user_id, account_id
             db.close()
     except Exception as e:
         logger.warning("[AccessNotify] Account-assigned email failed: %s", e, exc_info=True)
+
+
+def notify_new_inbound_lead(db, lead, is_repeat: bool = False, attribution: dict = None) -> bool:
+    """Dispatches owner and team alerts for new inbound marketing inquiries (LI07).
+    Fires in background after successful database commit.
+    Supports email relay via connected Super Admin mailbox, plus optional Telegram bot alert
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are configured in environment.
+    Never raises; failures do not disrupt intake acceptance.
+    """
+    if not lead:
+        return False
+
+    success = False
+    lead_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip() or "Prospect"
+    company = lead.company or "Unknown Company"
+    subject = f"[{'Repeat Inquiry' if is_repeat else 'New Inbound Lead'}] {lead_name} ({company})"
+
+    fe_url = os.getenv("FRONTEND_URL", "").strip()
+    link = f"{fe_url}/index.html#leads" if fe_url else ""
+
+    # 1. Telegram Alert (if configured)
+    telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    telegram_chat = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if telegram_token and telegram_chat:
+        try:
+            import requests
+            tg_text = (
+                f"🚨 *{'Repeat Website Inquiry' if is_repeat else 'New Website Lead'}*\n"
+                f"• *Contact:* {lead_name}\n"
+                f"• *Company:* {company}\n"
+                f"• *Email:* {lead.email}\n"
+                f"• *Source:* {lead.lead_source or 'Website'}\n"
+            )
+            if link:
+                tg_text += f"• [Open in CRM]({link})\n"
+            resp = requests.post(
+                f"https://api.telegram.org/bot{telegram_token}/sendMessage",
+                json={"chat_id": telegram_chat, "text": tg_text, "parse_mode": "Markdown"},
+                timeout=5
+            )
+            if resp.status_code == 200:
+                success = True
+                logger.info(f"[InboundNotify] Dispatched Telegram alert for lead {lead.id}")
+            else:
+                logger.warning(f"[InboundNotify] Telegram alert responded with status {resp.status_code}")
+        except Exception as tg_err:
+            logger.warning(f"[InboundNotify] Telegram alert failed: {tg_err}")
+
+    # 2. Internal Email Alert to Admin with connected mailbox
+    sender = (
+        db.query(models.User)
+        .join(models.UserMailbox, models.UserMailbox.user_id == models.User.id)
+        .filter(models.User.role.in_(["Super Admin", "Admin"]), models.UserMailbox.status == "connected")
+        .first()
+    )
+    if sender and sender.email:
+        body = (
+            f"<p>A {'repeat website inquiry' if is_repeat else 'new inbound lead'} has been captured in Alternate CRM:</p>"
+            f"<ul>"
+            f"<li><strong>Name:</strong> {lead_name}</li>"
+            f"<li><strong>Email:</strong> {lead.email}</li>"
+            f"<li><strong>Company:</strong> {company}</li>"
+            f"<li><strong>Source:</strong> {lead.lead_source or 'Website'}</li>"
+            f"</ul>"
+        )
+        if link:
+            body += f'<p><a href="{link}">Open Leads in Alternate CRM &rarr;</a></p>'
+        try:
+            sent = send_report_email(db, sender.id, [sender.email], body, subject)
+            if sent:
+                success = True
+                logger.info(f"[InboundNotify] Sent inbound lead email alert to {sender.email}")
+        except Exception as mail_err:
+            logger.warning(f"[InboundNotify] Email alert failed: {mail_err}")
+
+    return success
+
+
+def notify_new_inbound_lead_in_background(lead_id: str, is_repeat: bool = False, attribution: dict = None) -> None:
+    """Schedule-safe wrapper: own DB session, runs in background thread or async task."""
+    try:
+        from database import SessionLocal
+        import models
+        db = SessionLocal()
+        try:
+            lead = db.query(models.Lead).filter(models.Lead.id == lead_id).first()
+            if lead:
+                notify_new_inbound_lead(db, lead, is_repeat=is_repeat, attribution=attribution)
+            else:
+                logger.warning("[InboundNotify] Lead %s not found for notification", lead_id)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("[InboundNotify] Failed to dispatch inbound notification in background: %s", e)
+

@@ -174,14 +174,14 @@ export default function Home() {
                 <span className="card-badge">01 / Telephony Mesh (Planned Preview)</span>
                 <h3>WebRTC In-Browser Power Dialer Preview</h3>
                 <p>
-                  Architected to launch high-volume outbound queues directly from Chrome. Explore simulated multi-line calling,
-                  voicemail drop workflows, and zero-plugin edge audio directly within the interactive demo.
+                  Architected for browser-based calling without third-party plugins. In the public demo, you can test
+                  a sample interaction and log the outcome directly to customer activity records.
                 </p>
               </div>
               <div className="bento-visual">
                 <div className="flex items-center justify-between text-xs mb-3">
-                  <span className="text-slate-400 font-mono">WebRTC Audio Channel: Client-Side Simulation</span>
-                  <span className="text-emerald-400 font-bold">State: Active Preview</span>
+                  <span className="text-slate-400 font-mono">WebRTC Audio Channel: Architecture Concept</span>
+                  <span className="text-emerald-400 font-bold">State: Planned Preview</span>
                 </div>
                 <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
                   <div className="bg-gradient-to-r from-indigo-500 to-lime-400 h-full w-[88%]" />
@@ -252,8 +252,8 @@ export default function Home() {
         <div className="wrap">
           <div className="section-head">
             <span className="eyebrow">THE SHIFT</span>
-            <h2>Legacy CRM Database vs The Conversation OS</h2>
-            <p>Why modern revenue teams are leaving static database graveyards behind.</p>
+            <h2>Traditional CRM Setups vs Modular Architecture</h2>
+            <p>Comparing common multi-tool configurations with an integrated sales workspace.</p>
           </div>
 
           <div className="comparison-wrap">
@@ -261,35 +261,35 @@ export default function Home() {
               <thead>
                 <tr>
                   <th>Workflow Dimension</th>
-                  <th>Legacy CRM (Salesforce / HubSpot)</th>
-                  <th>Alternate CRM (Conversation OS)</th>
+                  <th>Traditional Point Solutions</th>
+                  <th>Alternate CRM (Modular OS)</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td><b>Data Entry & Notes</b></td>
-                  <td>Reps spend extensive daily time manually typing call notes and status updates</td>
-                  <td>Core CRM logging with planned real-time speech intelligence for automated note drafting</td>
+                  <td>Manual note-taking and administrative pipeline updates frequently consume substantial selling time</td>
+                  <td>Core CRM logging with planned speech-to-intent analysis to assist with automated note drafting</td>
                 </tr>
                 <tr>
                   <td><b>Telephony Integration</b></td>
-                  <td>External desk phones, third-party softphones, or disconnected browser plugins</td>
-                  <td>In-browser WebRTC power dialer preview with native CRM call outcome logging</td>
+                  <td>Often relies on separate softphones, desk phones, or external browser extensions</td>
+                  <td>In-browser WebRTC telephony preview with native customer outcome logging</td>
                 </tr>
                 <tr>
                   <td><b>In-Call Assistance</b></td>
-                  <td>Retrospective call recordings only; no real-time on-screen guidance</td>
-                  <td>Planned streaming speech-to-intent objection battlecards projected in the workspace</td>
+                  <td>Frequently limited to post-call review recordings rather than live contextual assistance</td>
+                  <td>Planned real-time battlecards and objection cues projected directly in the sales view</td>
                 </tr>
                 <tr>
                   <td><b>Tool Sprawl</b></td>
-                  <td>Requires 4–6 disparate subscriptions (dialer, cadence tool, meeting bot, CRM)</td>
-                  <td>1 modular workspace combining customer records, pipeline analytics, and communication previews</td>
+                  <td>Typically combines multiple separate subscriptions across dialers, sequencers, and recording tools</td>
+                  <td>One modular workspace bringing customer accounts, pipeline tracking, and communication previews together</td>
                 </tr>
                 <tr>
                   <td><b>Deployment & Trial</b></td>
-                  <td>Multi-month enterprise implementation with heavy consulting overhead</td>
-                  <td>Instant interactive browser demo with $910k pre-seeded pipeline and zero setup</td>
+                  <td>Often requires extensive setup or professional services before sales reps can test the workflow</td>
+                  <td>Instant browser demo with $910k in sample accounts, allowing immediate workflow evaluation without sign-in</td>
                 </tr>
               </tbody>
             </table>
@@ -319,9 +319,9 @@ export default function Home() {
             <div className="bento-card">
               <div>
                 <span className="card-badge">Step 02</span>
-                <h3>Simulate High-Velocity Workflows</h3>
+                <h3>Simulate Call Outcome Logging</h3>
                 <p>
-                  Simulate outbound dials, log call dispositions, and preview live battlecards from one screen.
+                  Test call disposition logging on sample accounts, and explore architecture previews for speech intelligence and cadences.
                 </p>
               </div>
             </div>

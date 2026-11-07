@@ -146,35 +146,74 @@ export const PERSONAS = [
 const LEADS_STORAGE_KEY = 'crm_sandbox_leads_v2';
 const PERSONA_STORAGE_KEY = 'crm_sandbox_persona';
 
+// In-memory fallback layer ensures zero-crash operation when sessionStorage is blocked or throws
+let memoryLeads = null;
+let memoryPersona = 'alex';
+
+function isValidLead(l) {
+  return Boolean(
+    l &&
+    typeof l === 'object' &&
+    typeof l.id === 'number' &&
+    typeof l.name === 'string' &&
+    typeof l.company === 'string'
+  );
+}
+
 export class SandboxStore {
   static getLeads() {
     try {
-      const stored = sessionStorage.getItem(LEADS_STORAGE_KEY);
+      const stored = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(LEADS_STORAGE_KEY) : null;
       if (stored) {
-        const leads = JSON.parse(stored);
-        if (Array.isArray(leads)) return leads;
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter(isValidLead);
+          if (valid.length > 0) {
+            memoryLeads = valid;
+            return valid;
+          }
+        }
       }
     } catch (e) {
-      console.warn('Sandbox store read error:', e);
+      console.warn('Sandbox store read error (using memory fallback):', e);
     }
+
+    if (memoryLeads && memoryLeads.length > 0) {
+      return memoryLeads;
+    }
+
+    memoryLeads = [...INITIAL_LEADS];
     this.setLeads(INITIAL_LEADS);
     return INITIAL_LEADS;
   }
 
   static setLeads(leads) {
+    const safeLeads = Array.isArray(leads) ? leads.filter(isValidLead) : [...INITIAL_LEADS];
+    memoryLeads = safeLeads;
+    let persisted = false;
     try {
-      sessionStorage.setItem(LEADS_STORAGE_KEY, JSON.stringify(leads));
-      window.dispatchEvent(new CustomEvent('crm:sandbox-updated'));
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(LEADS_STORAGE_KEY, JSON.stringify(safeLeads));
+        persisted = true;
+      }
     } catch (e) {
-      console.warn('Sandbox store write error:', e);
+      console.warn('Sandbox store write error (persisted to in-memory fallback):', e);
     }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('crm:sandbox-updated'));
+    }
+    return persisted;
   }
 
   static updateLead(id, updates) {
     const leads = this.getLeads();
-    const updated = leads.map(l => l.id === Number(id) ? { ...l, ...updates } : l);
+    const targetId = Number(id);
+    const updated = leads
+      .map(l => (isValidLead(l) && l.id === targetId ? { ...l, ...updates } : l))
+      .filter(isValidLead);
     this.setLeads(updated);
-    return updated.find(l => l.id === Number(id));
+    return updated.find(l => l.id === targetId) || null;
   }
 
   static moveLeadStage(id, newStage) {
@@ -187,7 +226,7 @@ export class SandboxStore {
 
   static addCallLog(leadId, callData) {
     const leads = this.getLeads();
-    const target = leads.find(l => l.id === Number(leadId));
+    const target = leads.find(l => l && l.id === Number(leadId));
     if (!target) return null;
 
     const newLog = {
@@ -206,29 +245,49 @@ export class SandboxStore {
 
   static addNote(leadId, noteText) {
     const leads = this.getLeads();
-    const target = leads.find(l => l.id === Number(leadId));
+    const target = leads.find(l => l && l.id === Number(leadId));
     if (!target) return null;
 
     return this.updateLead(leadId, {
-      notes: `${noteText}\n\n[Previous]: ${target.notes}`,
+      notes: `${noteText}\n\n[Previous]: ${target.notes || ''}`,
       last_activity: 'New note logged · Just now'
     });
   }
 
   static reset() {
+    memoryLeads = [...INITIAL_LEADS];
+    memoryPersona = 'alex';
     this.setLeads(INITIAL_LEADS);
     this.setPersona('alex');
-    window.dispatchEvent(new CustomEvent('crm:sandbox-reset'));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('crm:sandbox-reset'));
+    }
   }
 
   static getActivePersona() {
-    const stored = sessionStorage.getItem(PERSONA_STORAGE_KEY) || 'alex';
+    let stored = memoryPersona;
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        stored = sessionStorage.getItem(PERSONA_STORAGE_KEY) || memoryPersona;
+      }
+    } catch {
+      stored = memoryPersona;
+    }
     return PERSONAS.find(p => p.id === stored) || PERSONAS[0];
   }
 
   static setPersona(personaId) {
-    sessionStorage.setItem(PERSONA_STORAGE_KEY, personaId);
-    window.dispatchEvent(new CustomEvent('crm:persona-changed', { detail: personaId }));
+    memoryPersona = personaId;
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(PERSONA_STORAGE_KEY, personaId);
+      }
+    } catch (e) {
+      console.warn('Sandbox persona write error (using memory fallback):', e);
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('crm:persona-changed', { detail: personaId }));
+    }
   }
 }
 

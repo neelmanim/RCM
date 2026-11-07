@@ -13,7 +13,7 @@ export const metadata = {
 };
 
 const subsystems = [
-  { name: "Inbound Lead Intake API Endpoint", status: "Probed Above", badgeClass: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" },
+  { name: "Public API Liveness Probe (/api/public/health)", status: "Probed Above", badgeClass: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" },
   { name: "Interactive Sample Demo Workspace", status: "Client-Side (Session)", badgeClass: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" },
   { name: "WebRTC Power Dialer", status: "Planned Architecture Preview", badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/30" },
   { name: "Speech-to-Intent Streaming Pipeline", status: "Planned Architecture Preview", badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/30" },
@@ -81,9 +81,10 @@ export default function Status() {
           Coverage & Architecture Boundaries
         </h2>
         <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
-          The health check above directly probes the Alternate CRM public API endpoint.
+          The health check above tests HTTP reachability for the Alternate CRM public API health endpoint.
+          It verifies API edge server responsiveness, not database write availability or external provider connections.
           Client-side demo workspaces operate with browser session storage. Telephony, speech coaching,
-          and external CRM sync are planned architecture modules and are not connected to live external carriers or monitored by this endpoint check.
+          and external CRM sync are planned architecture modules and are not monitored by this liveness check.
         </p>
       </section>
     </main>

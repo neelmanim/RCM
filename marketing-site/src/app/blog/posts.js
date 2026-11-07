@@ -56,7 +56,7 @@ export const posts = [
     sections: [
       [
         "The Multi-SaaS Sprawl",
-        "A multi-tool sales stack often combines multiple point solutions: a separate CRM ($165/seat), cadence sequencer ($140/seat), call intelligence tool ($120/seat), phone system ($90/seat), meeting scheduling tool ($16/seat), and contact databases ($250/seat)—which can quickly total $781 to over $1,000 per rep each month once telephony and integration fees are factored in. Beyond the software bill, the invisible tax is context-switching: reps open numerous browser tabs per sales call, copying customer details across disconnected interfaces."
+        "In an illustrative multi-tool sales stack combining separate category point solutions (such as CRM, cadence sequencer, conversation recorder, telephony lines, scheduling, and data lookups), cumulative licensing tiers frequently reach $800 to $1,000+ per representative each month once carrier connectivity and integration connectors are accounted for. Beyond the direct software expense, the primary friction is context-switching: reps frequently jump across multiple browser tabs during active prospecting, manually copying customer details across disconnected interfaces."
       ],
       [
         "Unified System-of-Record Sync",
