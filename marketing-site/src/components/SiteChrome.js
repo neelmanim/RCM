@@ -118,8 +118,7 @@ export function Footer() {
               </span>
             </Link>
             <p>
-              The Autonomous Conversation Operating System for modern sales teams. Unify telephony,
-              live speech intelligence, and automated cadences in one connected platform.
+              A modular CRM for customer records, notes, and pipeline management. Explore the interactive sample workspace or request early access.
             </p>
             <a
               href={SANDBOX_URL}
@@ -133,10 +132,10 @@ export function Footer() {
           <div className="footer-col">
             <h4>Platform</h4>
             <ul>
-              <li><Link href="/#platform">The OS Architecture</Link></li>
-              <li><Link href="/#crm">WebRTC Power Dialer</Link></li>
-              <li><Link href="/#communications">Live Speech-to-Intent</Link></li>
-              <li><Link href="/#integrations">Universal 2-Way Sync</Link></li>
+              <li><Link href="/#platform">Architecture Overview</Link></li>
+              <li><Link href="/#crm">Power Dialer (Preview)</Link></li>
+              <li><Link href="/#communications">Speech-to-Intent (Preview)</Link></li>
+              <li><Link href="/#integrations">Universal Sync (Preview)</Link></li>
               <li><a href={SANDBOX_URL}>Interactive Demo</a></li>
             </ul>
           </div>
@@ -147,7 +146,7 @@ export function Footer() {
               <li><Link href="/blog">Engineering Blog</Link></li>
               <li><Link href="/status">System Status</Link></li>
               <li><Link href="/#outcomes">CRM Comparison</Link></li>
-              <li><a href="mailto:support@alternatecrm.com">Support Center</a></li>
+              <li><a href="mailto:support@alternatecrm.com">Email support</a></li>
             </ul>
           </div>
 
@@ -164,22 +163,22 @@ export function Footer() {
                 </Link>
               </li>
               <li><a href={SIGNIN_URL}>Private Beta Gate ↗</a></li>
-              <li><a href="mailto:security@alternatecrm.com">Security & Compliance</a></li>
+              <li><a href="mailto:security@alternatecrm.com">Security inquiries</a></li>
             </ul>
           </div>
         </div>
 
         <div className="footer-bottom">
           <div className="flex items-center gap-3 flex-wrap">
-            <span>© {year} Alternate CRM Inc. Autonomous Revenue Operating System.</span>
+            <span>© {year} Alternate CRM. Modular Conversation Operating System.</span>
             <Link href="/status" className="version-pill" title="Operational Telemetry">
               <span className="live-pulse" style={{ width: "6px", height: "6px" }} />
-              <span>v14.4.0 • Systems Operational</span>
+              <span>v14.4.0 · Service Telemetry</span>
             </Link>
           </div>
           <div className="flex items-center gap-6">
             <Link href="/status">Status</Link>
-            <a href="mailto:security@alternatecrm.com">Security</a>
+            <a href="mailto:security@alternatecrm.com">Security inquiries</a>
           </div>
         </div>
       </div>

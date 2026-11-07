@@ -19,8 +19,7 @@ export default function Home() {
           </h1>
 
           <p>
-            Alternate CRM unifies a sub-200ms WebRTC power dialer, live speech-to-intent intelligence,
-            and autonomous multi-touch cadences into one high-velocity revenue platform.
+            Alternate CRM unifies core customer records, pipeline stages, and sales activity with modular architecture previews for in-browser telephony, live speech intelligence, and automated sequences.
           </p>
 
           <div className="hero-actions">
@@ -47,9 +46,9 @@ export default function Home() {
           <div className="hero-trust">
             <span>🔒 Zero sign-in required</span>
             <span>•</span>
-            <span>⚡ Pre-seeded interactive demo ($1.42M)</span>
+            <span>⚡ Fictional sample accounts ($910k)</span>
             <span>•</span>
-            <span>🛡️ SOC2 Type II compliance ready</span>
+            <span>📞 Calls and external integrations are simulated</span>
           </div>
 
           {/* ── Behance Hero Showcase (Command Center Window) ──── */}
@@ -65,11 +64,11 @@ export default function Home() {
                 </div>
                 <div className="window-url">
                   <span style={{ color: "var(--lime)" }}>🔒</span>
-                  <span>app.alternatecrm.com/live-workspace</span>
+                  <span>app.alternatecrm.com/sandbox</span>
                 </div>
                 <div className="window-status">
                   <span className="live-pulse" style={{ width: "6px", height: "6px" }} />
-                  <span className="hidden sm:inline">99.99% Systems Operational</span>
+                  <span className="hidden sm:inline">Interactive Architecture Preview · Fictional sample data</span>
                 </div>
               </div>
 
@@ -81,11 +80,11 @@ export default function Home() {
                     <div className="call-lead-avatar">SJ</div>
                     <div className="call-lead-details">
                       <b>Sarah Jenkins · VP Revenue Operations</b>
-                      <span>Stripe · Enterprise Pipeline Tier</span>
+                      <span>Northstar Labs · Sample Account</span>
                     </div>
                   </div>
 
-                  <div className="audio-waveform" title="Live WebRTC Audio Mesh">
+                  <div className="audio-waveform" title="Simulated WebRTC Audio Stream">
                     <span /><span /><span /><span /><span /><span />
                   </div>
 
@@ -93,7 +92,7 @@ export default function Home() {
                     <div className="call-telemetry">
                       <span>● 04:12</span>
                       <span>|</span>
-                      <span>38ms Latency</span>
+                      <span>Simulated Call</span>
                     </div>
                     <span className="hidden md:inline-flex px-3 py-1 rounded-lg text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                       Meeting Booked
@@ -107,46 +106,46 @@ export default function Home() {
                   <div className="showcase-card">
                     <div className="card-label">
                       <span>Live Speech-to-Intent AI</span>
-                      <span style={{ color: "var(--lime)" }}>Active Whisper Probe</span>
+                      <span style={{ color: "var(--lime)" }}>Architecture Preview · Planned</span>
                     </div>
 
                     <div className="speech-intent-box">
                       <div className="intent-quote">
-                        “Budget approved for multi-seat Q4 deployment across 80 reps”
+                        “Evaluating Alternate CRM across our 45-person sales organization”
                       </div>
                       <div className="battlecard-pill">
-                        <span>⚡ Battlecard Matched:</span>
-                        <span>Enterprise Security & SOC2 Type II Architecture</span>
+                        <span>⚡ Sample Battlecard:</span>
+                        <span>Enterprise Architecture & Modular System Overview</span>
                       </div>
                     </div>
 
                     <div className="sync-status">
                       <span>✓</span>
-                      <span>Auto-synced to Salesforce & Nylas mailbox (0.12s)</span>
+                      <span>Universal 2-Way Sync Engine · Planned Preview</span>
                     </div>
                   </div>
 
                   {/* Right: Glass KPI Metrics */}
                   <div className="kpi-row">
                     <div className="kpi-box">
-                      <small>Total Dials</small>
-                      <strong>1,280</strong>
-                      <em>↗ Sub-200ms audio</em>
+                      <small>Sample Dials</small>
+                      <strong>1</strong>
+                      <em>↗ In current demo</em>
                     </div>
                     <div className="kpi-box">
                       <small>Deal Value</small>
-                      <strong>$1.42M</strong>
-                      <em>↗ +18.4% velocity</em>
+                      <strong>$910k</strong>
+                      <em>↗ Sample pipeline</em>
                     </div>
                     <div className="kpi-box">
-                      <small>Meetings</small>
-                      <strong>42</strong>
-                      <em>↗ In sprint</em>
+                      <small>Meetings Booked</small>
+                      <strong>2</strong>
+                      <em>↗ In sample sprint</em>
                     </div>
                     <div className="kpi-box">
-                      <small>Time Saved</small>
-                      <strong>14.8h</strong>
-                      <em>↗ Zero manual admin</em>
+                      <small>Architecture</small>
+                      <strong>Modular OS</strong>
+                      <em>↗ Zero disconnected tabs</em>
                     </div>
                   </div>
                 </div>
@@ -163,8 +162,8 @@ export default function Home() {
             <span className="eyebrow">THE REVENUE ENGINE</span>
             <h2>One unified workspace. Zero disconnected tabs.</h2>
             <p>
-              Stop stitching together Gong, Outreach, Salesforce, and standalone dialers.
-              Alternate CRM combines telephony, speech intelligence, and automated sequences into one modular OS.
+              Replace fragmented point solutions with an integrated workspace.
+              Alternate CRM combines customer records, pipeline analytics, and modular communication previews.
             </p>
           </div>
 
@@ -172,17 +171,17 @@ export default function Home() {
             {/* Card 1: Sub-200ms WebRTC Power Dialer */}
             <div className="bento-card bento-col-7" id="crm">
               <div>
-                <span className="card-badge">01 / Telephony Mesh</span>
-                <h3>Sub-200ms WebRTC In-Browser Power Dialer</h3>
+                <span className="card-badge">01 / Telephony Mesh (Planned Preview)</span>
+                <h3>WebRTC In-Browser Power Dialer Preview</h3>
                 <p>
-                  Launch high-volume outbound queues directly from Chrome. Enjoy multi-line parallel dialing,
-                  automatic voicemail drops, and crystal-clear edge audio with zero desktop plugins or desk phones.
+                  Architected to launch high-volume outbound queues directly from Chrome. Explore simulated multi-line calling,
+                  voicemail drop workflows, and zero-plugin edge audio directly within the interactive demo.
                 </p>
               </div>
               <div className="bento-visual">
                 <div className="flex items-center justify-between text-xs mb-3">
-                  <span className="text-slate-400 font-mono">Edge Node: Washington D.C. (iad1)</span>
-                  <span className="text-emerald-400 font-bold">Latency: 28ms</span>
+                  <span className="text-slate-400 font-mono">WebRTC Audio Channel: Client-Side Simulation</span>
+                  <span className="text-emerald-400 font-bold">State: Active Preview</span>
                 </div>
                 <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
                   <div className="bg-gradient-to-r from-indigo-500 to-lime-400 h-full w-[88%]" />
@@ -193,27 +192,27 @@ export default function Home() {
             {/* Card 2: Live Speech-to-Intent AI */}
             <div className="bento-card bento-col-5" id="communications">
               <div>
-                <span className="card-badge">02 / Conversation AI</span>
-                <h3>Real-Time Live Speech-to-Intent Intelligence</h3>
+                <span className="card-badge">02 / Conversation AI (Planned Preview)</span>
+                <h3>Real-Time Live Speech-to-Intent Intelligence Preview</h3>
                 <p>
-                  Streaming Whisper speech intelligence transcribes calls as they happen, surfaces winning objection
-                  battlecards during live calls, and drafts structured meeting notes automatically.
+                  Designed to stream live speech intelligence, detect objections during sales calls, and surface relevant battlecards
+                  while drafting structured notes directly to customer records.
                 </p>
               </div>
               <div className="bento-visual">
-                <div className="text-xs text-lime-400 font-bold mb-1">“Can you integrate with our Salesforce?”</div>
-                <div className="text-[11px] text-slate-400">Battlecard: Native bi-directional sync ready in 60s.</div>
+                <div className="text-xs text-lime-400 font-bold mb-1">“Can you integrate with our external CRM?”</div>
+                <div className="text-[11px] text-slate-400">Battlecard: Modular sync architecture supports bi-directional mapping.</div>
               </div>
             </div>
 
             {/* Card 3: Autonomous Multi-Touch Cadences */}
             <div className="bento-card bento-col-5" id="how">
               <div>
-                <span className="card-badge">03 / Outreach Automation</span>
-                <h3>Autonomous Multi-Touch Sequences</h3>
+                <span className="card-badge">03 / Outreach Automation (Planned Preview)</span>
+                <h3>Multi-Touch Sales Sequences Preview</h3>
                 <p>
-                  Coordinate phone, email, and social steps that execute automatically based on call dispositions,
-                  eliminating rep busywork and accelerating deal velocity.
+                  Engineered to coordinate multi-channel steps across phone, email, and social touchpoints that adapt based on
+                  call dispositions, eliminating rep busywork and accelerating deal velocity.
                 </p>
               </div>
               <div className="bento-visual">
@@ -230,17 +229,17 @@ export default function Home() {
             {/* Card 4: Universal 2-Way Sync */}
             <div className="bento-card bento-col-7" id="integrations">
               <div>
-                <span className="card-badge">04 / Enterprise Integrity</span>
-                <h3>Universal Bi-directional CRM & Mailbox Sync</h3>
+                <span className="card-badge">04 / Enterprise Integrity (Planned Preview)</span>
+                <h3>Universal Bi-directional System-of-Record Sync Preview</h3>
                 <p>
-                  Never lose enterprise system-of-record fidelity. Alternate CRM syncs two-way with Salesforce,
-                  HubSpot, Postgres, and Nylas email/calendar with zero latency or record drift.
+                  Built to maintain enterprise system-of-record fidelity. Architected for bi-directional synchronization with
+                  Salesforce, HubSpot, Postgres, and Nylas mailboxes without data silos.
                 </p>
               </div>
               <div className="bento-visual">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-200">Salesforce & HubSpot Two-Way Sync</span>
-                  <span className="text-emerald-400 font-bold">100% Synced</span>
+                  <span className="font-semibold text-slate-200">Salesforce & HubSpot Bi-directional Sync</span>
+                  <span className="text-emerald-400 font-bold">Architecture Blueprint</span>
                 </div>
               </div>
             </div>
@@ -268,29 +267,29 @@ export default function Home() {
               </thead>
               <tbody>
                 <tr>
-                  <td><b>Data Entry Overhead</b></td>
-                  <td>Reps spend 68% of time manually logging calls and notes</td>
-                  <td>0% manual entry — live speech AI transcribes & logs autonomously</td>
+                  <td><b>Data Entry & Notes</b></td>
+                  <td>Reps spend extensive daily time manually typing call notes and status updates</td>
+                  <td>Core CRM logging with planned real-time speech intelligence for automated note drafting</td>
                 </tr>
                 <tr>
-                  <td><b>Telephony Latency</b></td>
-                  <td>External desk phones or slow 800ms+ browser plugins</td>
-                  <td>Sub-200ms WebRTC direct mesh with zero jitter</td>
+                  <td><b>Telephony Integration</b></td>
+                  <td>External desk phones, third-party softphones, or disconnected browser plugins</td>
+                  <td>In-browser WebRTC power dialer preview with native CRM call outcome logging</td>
                 </tr>
                 <tr>
                   <td><b>In-Call Assistance</b></td>
-                  <td>Post-call recordings only; zero guidance while on the phone</td>
-                  <td>Live streaming speech-to-intent objection battlecards on-screen</td>
+                  <td>Retrospective call recordings only; no real-time on-screen guidance</td>
+                  <td>Planned streaming speech-to-intent objection battlecards projected in the workspace</td>
                 </tr>
                 <tr>
                   <td><b>Tool Sprawl</b></td>
-                  <td>Requires 5–7 point solutions (Dialer + Sequencer + Meeting Bot)</td>
-                  <td>1 unified modular operating system built on one shared customer context</td>
+                  <td>Requires 4–6 disparate subscriptions (dialer, cadence tool, meeting bot, CRM)</td>
+                  <td>1 modular workspace combining customer records, pipeline analytics, and communication previews</td>
                 </tr>
                 <tr>
-                  <td><b>Deployment Time</b></td>
-                  <td>3–6 months complex enterprise rollout</td>
-                  <td>Instant 1-click workspace with live seeded demo ready immediately</td>
+                  <td><b>Deployment & Trial</b></td>
+                  <td>Multi-month enterprise implementation with heavy consulting overhead</td>
+                  <td>Instant interactive browser demo with $910k pre-seeded pipeline and zero setup</td>
                 </tr>
               </tbody>
             </table>
@@ -304,34 +303,34 @@ export default function Home() {
           <div className="section-head">
             <span className="eyebrow">PLAYBOOK</span>
             <h2>Deploy in minutes. Scale with zero friction.</h2>
-            <p>Everything your revenue organization needs to close more pipeline.</p>
+            <p>Everything your revenue organization needs to manage and close pipeline.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bento-card">
               <div>
                 <span className="card-badge">Step 01</span>
-                <h3>Connect System of Record</h3>
+                <h3>Review Customer Records</h3>
                 <p>
-                  Bi-directional sync with Salesforce, HubSpot, or Postgres plus Nylas email & calendar in seconds.
+                  Explore accounts, deal stages, and interaction history in the interactive sample workspace.
                 </p>
               </div>
             </div>
             <div className="bento-card">
               <div>
                 <span className="card-badge">Step 02</span>
-                <h3>Execute High-Velocity Cadences</h3>
+                <h3>Simulate High-Velocity Workflows</h3>
                 <p>
-                  Reps launch WebRTC parallel dials with live AI battlecards and automated follow-up sequences from one screen.
+                  Simulate outbound dials, log call dispositions, and preview live battlecards from one screen.
                 </p>
               </div>
             </div>
             <div className="bento-card">
               <div>
                 <span className="card-badge">Step 03</span>
-                <h3>Automate Pipeline Velocity</h3>
+                <h3>Track Pipeline Velocity</h3>
                 <p>
-                  Every conversation qualifies leads, scores deals, updates stages, and logs notes autonomously.
+                  Monitor deal distribution, stage conversion rates, and revenue analytics as deals advance.
                 </p>
               </div>
             </div>
@@ -345,7 +344,7 @@ export default function Home() {
           <div className="cta-banner">
             <h2>Accelerate your pipeline velocity.</h2>
             <p>
-              Experience the Conversation OS live in the interactive demo workspace or request priority onboarding.
+              Experience the modular Conversation OS live in the interactive demo workspace or request early access.
             </p>
             <div className="flex justify-center gap-4 flex-wrap">
               <a

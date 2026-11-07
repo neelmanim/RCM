@@ -4,12 +4,12 @@ import { posts } from "./posts";
 export const metadata = {
   title: "Engineering & Product Insights",
   description:
-    "Architectural breakdowns, edge WebRTC telemetry, and lessons learned from building the autonomous revenue engine for modern sales teams.",
+    "Architectural breakdowns, WebRTC media concepts, and engineering blueprints from building the Alternate CRM platform.",
   alternates: { canonical: "/blog" },
   openGraph: {
     title: "Engineering & Product Insights | Alternate CRM",
     description:
-      "Architectural breakdowns, edge WebRTC telemetry, and lessons learned from building the autonomous revenue engine for modern sales teams.",
+      "Architectural breakdowns, WebRTC media concepts, and engineering blueprints from building the Alternate CRM platform.",
     url: "/blog",
   },
 };
@@ -26,7 +26,7 @@ export default function Blog() {
           The Conversation OS <span className="gradient-text">Chronicles</span>
         </h1>
         <p style={{ fontSize: "16px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-          Architectural breakdowns, edge WebRTC telemetry, and lessons learned from building the autonomous revenue engine for modern sales teams.
+          Architectural breakdowns, WebRTC media concepts, and engineering blueprints from building the Alternate CRM platform.
         </p>
       </div>
 

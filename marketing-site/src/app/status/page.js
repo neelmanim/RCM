@@ -1,23 +1,23 @@
 import HealthCheck from "../../components/HealthCheck";
 
 export const metadata = {
-  title: "System Status & Service Telemetry",
+  title: "Service Telemetry & Endpoint Probe",
   description:
-    "Real-time API probe reachability, cluster status, and architecture availability across Alternate CRM services.",
+    "Live API probe reachability and architecture availability status for Alternate CRM services.",
   alternates: { canonical: "/status" },
   openGraph: {
     title: "System Status | Alternate CRM",
-    description: "Real-time API reachability and service telemetry across Alternate CRM clusters.",
+    description: "Live API endpoint reachability and service telemetry across Alternate CRM.",
     url: "/status",
   },
 };
 
 const subsystems = [
-  { name: "Zero-Config Client-Side Stateful Sandbox", status: "Operational" },
-  { name: "Inbound Lead Intake API Gateway", status: "Operational" },
-  { name: "WebRTC Power Dialer & Edge Media Mesh", status: "Active Preview" },
-  { name: "Speech-to-Intent Whisper Streaming Pipeline", status: "Active Preview" },
-  { name: "Universal CRM Bi-directional Sync (Salesforce / HubSpot)", status: "Active Preview" },
+  { name: "Inbound Lead Intake API Endpoint", status: "Probed Above", badgeClass: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" },
+  { name: "Interactive Sample Demo Workspace", status: "Client-Side (Session)", badgeClass: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" },
+  { name: "WebRTC Power Dialer", status: "Planned Architecture Preview", badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/30" },
+  { name: "Speech-to-Intent Streaming Pipeline", status: "Planned Architecture Preview", badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/30" },
+  { name: "Universal CRM Bi-directional Sync", status: "Planned Architecture Preview", badgeClass: "bg-slate-500/10 text-slate-400 border-slate-500/30" },
 ];
 
 export default function Status() {
@@ -29,10 +29,10 @@ export default function Status() {
           <span>INFRASTRUCTURE & SERVICE TELEMETRY</span>
         </div>
         <h1 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 900, letterSpacing: "-0.04em", margin: "0 0 16px" }}>
-          System <span className="gradient-text">Status</span>
+          Service <span className="gradient-text">Telemetry</span>
         </h1>
         <p style={{ fontSize: "16px", color: "var(--text-secondary)", margin: 0 }}>
-          Live API endpoint reachability, cluster health, and service availability across Alternate CRM.
+          Live API endpoint reachability probe and architecture module availability status.
         </p>
       </div>
 
@@ -44,8 +44,8 @@ export default function Status() {
           <span style={{ fontSize: "11px", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
             Subsystem Architecture
           </span>
-          <span style={{ fontSize: "11px", fontWeight: 800, color: "var(--emerald)" }}>
-            Deployment State
+          <span style={{ fontSize: "11px", fontWeight: 800, color: "var(--text-secondary)" }}>
+            Status / Scope
           </span>
         </div>
 
@@ -68,7 +68,7 @@ export default function Status() {
                   {sys.name}
                 </span>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${sys.badgeClass}`}>
                 {sys.status}
               </span>
             </div>
@@ -81,9 +81,9 @@ export default function Status() {
           Coverage & Architecture Boundaries
         </h2>
         <p style={{ fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
-          The health check directly probes the Alternate CRM public API edge in Washington D.C. (iad1).
-          Client-side demo workspaces operate with zero-loss in-memory state. Real-time telephony, speech coaching,
-          and external CRM sync are running in active enterprise preview mode.
+          The health check above directly probes the Alternate CRM public API endpoint.
+          Client-side demo workspaces operate with browser session storage. Telephony, speech coaching,
+          and external CRM sync are planned architecture modules and are not connected to live external carriers or monitored by this endpoint check.
         </p>
       </section>
     </main>
